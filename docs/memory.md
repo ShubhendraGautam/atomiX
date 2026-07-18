@@ -35,7 +35,7 @@ overridden for interactive experiments.
 
 ## Delayed backing store
 
-`rtl/soc/axdram_model.sv` implements the future controller-facing shape today:
+`components/memory/reference/axdram_model.sv` implements the future controller-facing shape today:
 one independently stalled aXbus port for instruction traffic and one for data
 traffic. Each request is latched, responds after a fixed three-cycle delay,
 honors byte writes, and reports malformed/out-of-range requests at completion.
@@ -43,7 +43,7 @@ The backing array is `$readmemh` initialized, so the normal RAM image loader
 continues to work.
 
 This is a timing and protocol model, not a claim that an FPGA has 32 MiB of
-BRAM. The board path replaces it with `rtl/soc/axsdram.sv`, preserving the
+BRAM. The board path replaces it with `components/memory/reference/axsdram.sv`, preserving the
 same two aXbus RAM ports while arbitrating them onto one x16 SDR channel.
 
 ## ULX3S SDRAM controller
@@ -62,7 +62,7 @@ the same physical-controller path.
 
 ## Cache contract
 
-`rtl/soc/axcache.sv` is a small direct-mapped cache: 16 lines of four 32-bit
+`components/cache/direct-mapped/axcache.sv` is a small direct-mapped cache: 16 lines of four 32-bit
 words (16-byte lines). It is intentionally small so the control path is easy
 to audit before choosing board RAM resources.
 
@@ -100,7 +100,7 @@ instruction on ISS, QEMU, and cached delayed RTL.
 
 ## SPI SD-card foundation
 
-`rtl/soc/axspi.sv` is a polling SPI mode-0 controller at `0x1001_0000`.
+`components/spi/polling_mode0/axspi.sv` is a polling SPI mode-0 controller at `0x1001_0000`.
 `DATA` (`+0`) holds the transmit/received byte, `CTRL` (`+4`) controls
 `GO` bit 0 and `CS_N` bit 1, `STATUS` (`+8`) reports `BUSY` bit 0 and
 `RX_VALID` bit 1, and `CLKDIV` (`+12`) sets the half-cycle divider. The three

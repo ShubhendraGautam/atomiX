@@ -42,9 +42,14 @@ STORAGE_WRITE_OUTPUT = (
 
 def run(label: str, command: list[str], input_file: Path, expected: str | None) -> None:
     try:
+        # The command may need to build a fresh Verilated model when a selected
+        # component lives in a new directory.  This is host compilation time,
+        # not simulated execution time; the runner still enforces its own
+        # MAX_CYCLES limit. Leave enough room for a cold build on a developer
+        # workstation before classifying a platform as hung.
         result = subprocess.run(command, cwd=ROOT, text=True,
                                 input=input_file.read_text(), capture_output=True,
-                                timeout=15)
+                                timeout=60)
     except subprocess.TimeoutExpired:
         if label == "QEMU":
             raise SystemExit(

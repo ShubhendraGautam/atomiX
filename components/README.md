@@ -2,9 +2,12 @@
 
 This directory makes atomiX a DIY platform rather than a collection of
 hard-wired implementation choices. Each `kind/implementation/component.json`
-file describes a selectable implementation. The corresponding RTL may remain
-in its established source directory or live beside an external manifest; the
-manifest, not a particular folder layout, is the build boundary.
+file describes a selectable implementation. Built-in RTL, harness, board, and
+aXos-service assets live beside their owning component; an external manifest
+may instead keep its sources in its own portable folder. Software components
+remain project roots because their build contract includes startup code,
+linker scripts, and produced images. The manifest, not a particular build
+directory, is the integration boundary.
 
 The built-in selections are deliberately modest: the verified five-stage CPU,
 reference SoC shell, three reference memory modes, standard peripherals,

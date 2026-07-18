@@ -3,7 +3,7 @@
   "id": "harness.verilator-soc",
   "kind": "harness",
   "title": "Verilator complete-SoC console harness",
-  "sources": ["sim/soc/tb_soc.cpp"],
+  "sources": ["components/harness/verilator-soc/tb_soc.cpp"],
   "make": {"SIM_TOP": "soc_top"},
   "capabilities": ["verilator", "uart-script", "virtual-sd", "test-finisher"]
 }

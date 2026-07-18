@@ -3,7 +3,7 @@
   "id": "soc.reference",
   "kind": "soc",
   "title": "QEMU-virt-aligned aXbus SoC shell",
-  "sources": ["rtl/soc/soc_top.sv"],
+  "sources": ["components/soc/reference/soc_top.sv"],
   "stock_sim_module": "soc_top",
   "capabilities": ["axbus", "qemu-virt-map", "rom", "clint", "spi", "uart"]
 }

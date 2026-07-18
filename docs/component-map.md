@@ -31,9 +31,17 @@ the reference implementation.
 ## Current boundaries and future work
 
 The current manifests cover everything selected by the stock simulation, FPGA,
-software, and kernel build pipelines. The following items are not missing
-components; they are future systems that will introduce their own coherent
-boundaries when they exist:
+software, and kernel build pipelines. Built-in component RTL, board assets,
+harnesses, and aXos services are
+  co-located with their manifests. The `memory.*` profiles intentionally share
+  the private `components/memory/reference/` source family because BRAM,
+  delayed-memory, and SDRAM are compatible configurations of one `axmem`
+  implementation. `rtl/`, `sim/soc/`, and `sw/kernel/` retain architecture,
+  runner, and kernel-orchestration material rather than duplicating selectable
+  implementations.
+
+The following items are not missing components; they are future systems that
+will introduce their own coherent boundaries when they exist:
 
 - Host-link transports and accelerator roles (Phase 7) will be `host_link` and
   `role` components, with a virtual-pipe simulation implementation first.

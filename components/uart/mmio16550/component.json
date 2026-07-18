@@ -3,7 +3,7 @@
   "id": "uart.mmio16550",
   "kind": "uart",
   "title": "16550-compatible aXbus UART subset",
-  "sources": ["rtl/soc/uart.sv"],
+  "sources": ["components/uart/mmio16550/uart.sv"],
   "stock_soc_module": "uart",
   "capabilities": ["thr", "rbr", "lsr", "tx-backpressure"]
 }

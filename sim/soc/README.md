@@ -1,6 +1,6 @@
 # sim/soc/ — complete-SoC simulations
 
-This runner instantiates `rtl/soc/soc_top.sv`, initializes its RAM from a
+This runner instantiates the selected `soc_top` component, initializes its RAM from a
 word-per-line `$readmemh` image, and captures UART output until the standard
 `sifive_test` finisher exits. The UART includes a one-byte RX holding register:
 pass a byte script with `UART_INPUT_FILE` to drive a software console.

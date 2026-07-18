@@ -3,6 +3,6 @@
   "id": "block.spi-sd",
   "kind": "block",
   "title": "aXos polling SPI SDHC block driver",
-  "sources": ["sw/kernel/sd.c"],
+  "sources": ["components/block/spi-sd/sd.c"],
   "capabilities": ["spi-mode0", "sdhc", "cmd17", "cmd24"]
 }

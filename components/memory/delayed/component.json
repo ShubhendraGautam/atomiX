@@ -3,7 +3,13 @@
   "id": "memory.delayed",
   "kind": "memory",
   "title": "Reference delayed external-memory configuration",
-  "sources": ["rtl/soc/axmem.sv"],
+  "sources": [
+    "components/memory/reference/axram.sv",
+    "components/memory/reference/axdram_model.sv",
+    "components/memory/reference/axsdram.sv",
+    "components/memory/reference/axmem_reference.sv",
+    "components/memory/reference/axmem.sv"
+  ],
   "stock_soc_module": "axmem",
   "make": {"USE_DRAM_MODEL": 1, "USE_SDRAM": 0, "SIM_RUNNER": "run"},
   "capabilities": ["dual-axbus", "delayed-model"]

@@ -3,6 +3,6 @@
   "id": "allocator.free-list",
   "kind": "allocator",
   "title": "aXos in-page free-list physical page allocator",
-  "sources": ["sw/kernel/page.c"],
+  "sources": ["components/allocator/free-list/page.c"],
   "capabilities": ["page-size-4096", "physical-pages", "freelist"]
 }

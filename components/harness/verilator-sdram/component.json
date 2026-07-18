@@ -4,9 +4,9 @@
   "kind": "harness",
   "title": "Verilator physical-SDRAM and ROM-boot harness",
   "sources": [
-    "sim/soc/ax_sdram_sim.sv",
-    "sim/soc/soc_sdram_test_top.sv",
-    "sim/soc/tb_soc_sdram.cpp"
+    "components/harness/verilator-sdram/ax_sdram_sim.sv",
+    "components/harness/verilator-sdram/soc_sdram_test_top.sv",
+    "components/harness/verilator-sdram/tb_soc_sdram.cpp"
   ],
   "make": {"SIM_TOP": "soc_sdram_test_top"},
   "capabilities": ["verilator", "physical-sdram-model", "rom-sd-boot", "virtual-sd"]

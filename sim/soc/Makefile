@@ -20,11 +20,9 @@ $(COMPONENT_MK): $(COMPONENT_CONFIG) ../../tools/configure.py $(COMPONENT_MANIFE
 # regenerates the selected build without touching the profile JSON.
 $(COMPONENT_MK): $(COMPONENT_SELECTED_MANIFESTS)
 
-RTL_SOC  := ../../rtl/soc
 SOC_SVS  := $(COMPONENT_CORE_SOURCES) \
-  $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) $(RTL_SOC)/axram.sv \
-  $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv \
-  $(RTL_SOC)/axmem_reference.sv $(COMPONENT_MEMORY_SOURCES) \
+  $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) \
+  $(COMPONENT_MEMORY_SOURCES) \
   $(COMPONENT_ROM_SOURCES) $(COMPONENT_CLINT_SOURCES) \
   $(COMPONENT_UART_SOURCES) $(COMPONENT_SPI_SOURCES) \
   $(COMPONENT_FINISHER_SOURCES) $(COMPONENT_SOC_SOURCES)
@@ -45,10 +43,13 @@ BUILD_ID ?= default
 UART_INPUT ?=
 UART_INPUT_FILE ?=
 
-# The RAM image and elaborated memory/cache parameters are compiled into the
-# Verilator model. Keep configurations separate so one run cannot accidentally
-# execute a binary built for a different image.
-BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)-$(BUILD_ID)
+# The RAM image, elaborated memory/cache parameters, and selected source paths
+# are compiled into the Verilator model. Hash the resolved source list as well
+# as the runtime settings: a DIY component can move to another directory (or
+# an external manifest) without reusing a generated Makefile that names the
+# old C++ harness path.
+SOURCE_LAYOUT_TAG := $(shell printf '%s' '$(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)' | cksum | awk '{print $$1}')
+BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)-src$(SOURCE_LAYOUT_TAG)-$(BUILD_ID)
 MDIR := obj_dir_$(BUILD_TAG)
 
 config: $(COMPONENT_MK)

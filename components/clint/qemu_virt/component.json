@@ -3,7 +3,7 @@
   "id": "clint.qemu-virt",
   "kind": "clint",
   "title": "QEMU-virt compatible CLINT",
-  "sources": ["rtl/soc/clint.sv"],
+  "sources": ["components/clint/qemu_virt/clint.sv"],
   "stock_soc_module": "clint",
   "capabilities": ["msip", "mtime", "mtimecmp"]
 }

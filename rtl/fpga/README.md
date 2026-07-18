@@ -1,12 +1,13 @@
-# rtl/fpga/ — board targets
+# rtl/fpga/ — FPGA flow entry point
 
-Board-specific top-levels, pin constraints, clocking, and bitstream build
-rules. This is the **only** place vendor/board-specific code is allowed;
-everything under `core/`, `soc/`, and `roles/` remains board-agnostic.
+The generic ECP5 synthesis, place-and-route, packing, and programming flow.
+Board-specific top-level RTL, pin constraints, and physical I/O live beside
+their `board` component manifest; this directory does not own a board design.
 
 ## ULX3S 85F target
 
-`ulx3s_85f_top.sv` targets an ULX3S v2/v3 with LFE5U-85F-6BG381C:
+`components/board/ulx3s_85f/ulx3s_85f_top.sv` targets an ULX3S v2/v3 with
+LFE5U-85F-6BG381C:
 
 - 25 MHz system clock; `ODDRX1F` launches the SDRAM clock half a cycle later.
 - FT231X USB-serial console at 115200 8-N-1 (`axuart_phy.sv`).
@@ -15,9 +16,10 @@ everything under `core/`, `soc/`, and `roles/` remains board-agnostic.
 - boot ROM preloaded from `sw/bootrom/build/bootrom.hex`; it loads aXos from
   the SD card, so no kernel image is compiled into FPGA BRAM.
 
-`ulx3s_85f.lpf` is reduced from the ULX3S project's published v2/v3 pin map.
-It constrains only pins used by the shell. The Makefile targets `--85k`,
-`CABGA381`, ECP5 speed grade 6, and a 25 MHz timing goal.
+`components/board/ulx3s_85f/ulx3s_85f.lpf` is reduced from the ULX3S
+project's published v2/v3 pin map. It constrains only pins used by the shell.
+The Makefile targets `--85k`, `CABGA381`, ECP5 speed grade 6, and a 25 MHz
+timing goal.
 
 Build after the ECP5 tools in [docs/toolchain.md](../../docs/toolchain.md) are
 on `PATH`:

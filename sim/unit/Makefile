@@ -4,16 +4,32 @@ VERILATOR ?= verilator
 VFLAGS    := -Wall --cc -O2
 
 CORE_COMPONENT := ../../components/core/pipeline5
-RTL_SOC  := ../../rtl/soc
+COMPONENTS := ../../components
+MEMORY_REFERENCE := $(COMPONENTS)/memory/reference
+INTERCONNECT_REFERENCE := $(COMPONENTS)/interconnect/axbus-reference
+CACHE_REFERENCE := $(COMPONENTS)/cache/direct-mapped
+ROM_REFERENCE := $(COMPONENTS)/rom/axrom
+CLINT_REFERENCE := $(COMPONENTS)/clint/qemu_virt
+UART_REFERENCE := $(COMPONENTS)/uart/mmio16550
+SPI_REFERENCE := $(COMPONENTS)/spi/polling_mode0
+FINISHER_REFERENCE := $(COMPONENTS)/finisher/sifive-test
+SOC_REFERENCE := $(COMPONENTS)/soc/reference
+HARNESS_SDRAM := $(COMPONENTS)/harness/verilator-sdram
+BOARD_ULX3S := $(COMPONENTS)/board/ulx3s_85f
 
 MODULES := regfile alu immdec decoder branch_cmp muldiv
 
 CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 CORE_SOURCES := $(CORE_SVS:%=$(CORE_COMPONENT)/%.sv)
+MEMORY_SOURCES := $(MEMORY_REFERENCE)/axram.sv $(MEMORY_REFERENCE)/axdram_model.sv \
+  $(MEMORY_REFERENCE)/axsdram.sv $(MEMORY_REFERENCE)/axmem_reference.sv \
+  $(MEMORY_REFERENCE)/axmem.sv
 SOC_SVS := $(CORE_SOURCES) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv $(RTL_SOC)/axmem_reference.sv $(RTL_SOC)/axmem.sv $(RTL_SOC)/axrom.sv \
-  $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv $(RTL_SOC)/test_finisher.sv \
-  $(RTL_SOC)/soc_top.sv
+  $(INTERCONNECT_REFERENCE)/axbus_mux.sv $(CACHE_REFERENCE)/axcache.sv \
+  $(MEMORY_SOURCES) $(ROM_REFERENCE)/axrom.sv \
+  $(CLINT_REFERENCE)/clint.sv $(UART_REFERENCE)/uart.sv \
+  $(SPI_REFERENCE)/axspi.sv $(FINISHER_REFERENCE)/test_finisher.sv \
+  $(SOC_REFERENCE)/soc_top.sv
 
 test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
 
@@ -99,7 +115,7 @@ run-sv32: $(CORE_SOURCES) tb_axcore.cpp ../../tests/directed/sv32.S
 
 # Phase 6 memory contract: both ports incur a fixed delayed response, honor
 # byte lanes, and report bad requests only at completion.
-run-axdram-model: $(RTL_SOC)/axdram_model.sv tb_axdram_model.cpp
+run-axdram-model: $(MEMORY_REFERENCE)/axdram_model.sv tb_axdram_model.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axdram_model --Mdir obj_dir_axdram_model \
 	  -GBYTES=64 -GLATENCY=3 --exe --build -o tb_axdram_model \
 	  $< $(CURDIR)/tb_axdram_model.cpp >/dev/null
@@ -107,23 +123,23 @@ run-axdram-model: $(RTL_SOC)/axdram_model.sv tb_axdram_model.cpp
 
 # Physical-SDRAM controller contract against a CAS-2 x16 SDRAM behavioural
 # model, including init, bank/row/column sequencing, byte masks, and faults.
-run-axsdram: $(RTL_SOC)/axsdram.sv ../soc/ax_sdram_sim.sv axsdram_test_top.sv tb_axsdram.cpp
+run-axsdram: $(MEMORY_REFERENCE)/axsdram.sv $(HARNESS_SDRAM)/ax_sdram_sim.sv axsdram_test_top.sv tb_axsdram.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axsdram_test_top --Mdir obj_dir_axsdram \
-	  --exe --build -o tb_axsdram $(RTL_SOC)/axsdram.sv ../soc/ax_sdram_sim.sv $(CURDIR)/axsdram_test_top.sv \
+	  --exe --build -o tb_axsdram $(MEMORY_REFERENCE)/axsdram.sv $(HARNESS_SDRAM)/ax_sdram_sim.sv $(CURDIR)/axsdram_test_top.sv \
 	  $(CURDIR)/tb_axsdram.cpp >/dev/null
 	./obj_dir_axsdram/tb_axsdram
 
-run-axuart-phy: ../../rtl/fpga/axuart_phy.sv axuart_phy_loopback_top.sv tb_axuart_phy.cpp
+run-axuart-phy: $(BOARD_ULX3S)/axuart_phy.sv axuart_phy_loopback_top.sv tb_axuart_phy.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axuart_phy_loopback_top --Mdir obj_dir_axuart_phy \
 	  --exe --build -o tb_axuart_phy $^ >/dev/null
 	./obj_dir_axuart_phy/tb_axuart_phy
 
-run-axcache: $(RTL_SOC)/axcache.sv $(RTL_SOC)/axdram_model.sv axcache_test_top.sv tb_axcache.cpp
+run-axcache: $(CACHE_REFERENCE)/axcache.sv $(MEMORY_REFERENCE)/axdram_model.sv axcache_test_top.sv tb_axcache.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcache_test_top --Mdir obj_dir_axcache \
 	  --exe --build -o tb_axcache $^ >/dev/null
 	./obj_dir_axcache/tb_axcache
 
-run-axspi: $(RTL_SOC)/axspi.sv tb_axspi.cpp
+run-axspi: $(SPI_REFERENCE)/axspi.sv tb_axspi.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axspi --Mdir obj_dir_axspi \
 	  --exe --build -o tb_axspi $^ >/dev/null
 	./obj_dir_axspi/tb_axspi

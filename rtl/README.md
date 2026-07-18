@@ -1,16 +1,19 @@
 # rtl/ — synthesizable hardware
 
-All hardware description lives here, in **SystemVerilog restricted to the
-Yosys-synthesizable subset**: synchronous single-clock design, BRAM-shaped
-memories, no latches. Everything must pass both Verilator (simulation) and
-Yosys (synthesis) — that dual gate is what keeps us FPGA-portable.
+Synthesizable hardware lives in component folders, with this directory holding
+the generic FPGA flow, architecture notes, and future role area. All authored
+SystemVerilog stays within the Yosys-synthesizable subset: synchronous
+single-clock design, BRAM-shaped memories, no latches. Everything must pass
+both Verilator (simulation) and Yosys (synthesis) — that dual gate is what
+keeps us FPGA-portable.
 
 | Subdirectory | Role |
 |---|---|
 | [../components/core/](../components/core/) | Replaceable `aXcore` implementations |
-| [soc/](soc/) | The SoC **shell**: aXbus, memories, peripherals, top-level |
+| [../components/](../components/README.md) | SoC shell, fabric, memory, peripherals, and board implementations |
 | [roles/](roles/) | Swappable accelerator roles (loopback, TPU-lite, …) |
-| [fpga/](fpga/) | Board-specific top-levels and constraints |
+| [soc/](soc/) | SoC architecture notes and integration entry point |
+| [fpga/](fpga/) | Generic ECP5 synthesis, P&R, and programming flow |
 
 The reference design is also available through the component catalog in
 [`components/`](../components/README.md). A custom source can replace a CPU,
@@ -22,5 +25,5 @@ listed in [docs/component-map.md](../docs/component-map.md).
 Conventions:
 
 - One module per file, filename = module name.
-- No vendor primitives outside `fpga/`; inference (BRAM, DSP) over instantiation.
+- No vendor primitives outside a `board` component; inference (BRAM, DSP) over instantiation.
 - Every module gets at least a smoke testbench under `sim/` before integration.

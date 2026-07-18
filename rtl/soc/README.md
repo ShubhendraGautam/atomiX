@@ -1,7 +1,13 @@
-# rtl/soc/ — the SoC shell
+# rtl/soc/ — SoC architecture entry point
 
-Everything around the core that is **fixed in every bitstream** (the "shell"
-of the shell + role platform, DESIGN.md §3.3):
+The selectable SoC implementation files live in their owning component
+directories. This directory keeps the architecture overview and the generic
+integration vocabulary; `components/soc/reference/` owns the reference shell,
+and the fabric, memory, peripheral, and finisher folders own their respective
+implementations.
+
+Everything around the core that forms the stock shell + role platform
+(DESIGN.md §3.3):
 
 - `axbus_*` — the interconnect: minimal synchronous valid/ready bus, address
   decode, arbiter slot for future DMA/debug masters. Deliberately a

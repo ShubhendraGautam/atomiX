@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED = "aXos: S-mode Sv32 timer online\n"
+EXPECTED = "aXos: S-mode Sv32 timer + allocator online\n"
 
 
 def run(label: str, command: list[str]) -> None:

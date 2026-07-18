@@ -17,12 +17,12 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S kernel.c
+SOURCES := boot.S trap.S kernel.c page.c
 
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) link.ld include/platform.h | build
+$(ELF): $(SOURCES) link.ld include/platform.h include/page.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)

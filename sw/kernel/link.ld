@@ -27,6 +27,9 @@ SECTIONS {
     __bss_end = .;
   } > RAM
 
+  /* Reserve one page for the initial M/S/trap stack. The allocator owns only
+   * pages below this boundary, never the live bootstrap stack. */
+  __stack_bottom = ORIGIN(RAM) + LENGTH(RAM) - 4K;
   __stack_top = ORIGIN(RAM) + LENGTH(RAM);
   _end = .;
 

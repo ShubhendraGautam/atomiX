@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#include "page.h"
 #include "platform.h"
 
 /* Sv32 PTE bits. The bootstrap installs A/D eagerly for its identity/device
@@ -115,8 +116,26 @@ void supervisor_trap(void) {
   supervisor_ticks++;
 }
 
+static void page_allocator_self_test(void) {
+  void *pages[32];
+  const uint32_t total = page_free_count();
+
+  if (total == 0 || total > (sizeof(pages) / sizeof(pages[0]))) test_finish(1);
+  for (uint32_t i = 0; i < total; ++i) {
+    pages[i] = page_alloc();
+    if (pages[i] == 0 || ((uintptr_t)pages[i] & (PAGE_SIZE - 1u)))
+      test_finish(1);
+    *(volatile uint32_t *)pages[i] = 0xa50a0000u | i;
+    if (*(volatile uint32_t *)pages[i] != (0xa50a0000u | i)) test_finish(1);
+  }
+  if (page_alloc() != 0 || page_free_count() != 0) test_finish(1);
+  while (total != page_free_count()) page_free(pages[page_free_count()]);
+}
+
 void kmain(void) {
   while (supervisor_ticks == 0) __asm__ volatile("nop");
-  uart_puts("aXos: S-mode Sv32 timer online\n");
+  page_init();
+  page_allocator_self_test();
+  uart_puts("aXos: S-mode Sv32 timer + allocator online\n");
   test_finish(0);
 }

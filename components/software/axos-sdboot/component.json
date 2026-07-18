@@ -7,6 +7,7 @@
     "SOFTWARE_RUNNER": "sdboot",
     "SOFTWARE_MAKE_DIR": "sw/kernel",
     "SOFTWARE_MAKE_TARGET": "boot-disk",
+    "KERNEL_CONFIG": "configs/kernel-default.json",
     "SOFTWARE_ROM_HEX": "sw/bootrom/build/bootrom.hex",
     "SOFTWARE_SD_IMAGE": "sw/kernel/build/axos_boot.img",
     "SOFTWARE_UART_INPUT": "sw/kernel/shell_input.txt",

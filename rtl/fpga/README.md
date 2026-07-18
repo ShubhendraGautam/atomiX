@@ -47,4 +47,4 @@ source RTL. This is a tool-frontend adapter, not a second hardware design.
 Until the ECP5 P&R tools are installed, `make -C rtl/fpga` fails immediately
 at its tool preflight rather than spending time on synthesis. The checked-in
 target has passed Yosys synthesis; the P&R timing report and physical-board
-transcript are still Phase 7 evidence to record.
+transcript are deferred to the final Phase 10 evidence gate.

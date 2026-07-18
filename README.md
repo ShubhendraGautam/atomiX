@@ -11,10 +11,10 @@ decision, the architecture, and the phased roadmap live there.
 ## Build it your way
 
 The verified reference machine is the default, but it is not a fixed appliance.
-CPU, SoC, memory, UART, CLINT, SPI, board, and software implementations are
-selectable components. The component catalog keeps contracts at integration
-seams rather than prescribing how a user must implement their hardware or
-kernel.
+CPU, SoC, memory, UART, CLINT, SPI, board, software, aXos scheduler, and aXos
+virtual-memory implementations are selectable components. The component catalog
+keeps contracts at integration seams rather than prescribing how a user must
+implement their hardware or kernel.
 
 ```bash
 make component-list
@@ -22,6 +22,7 @@ make config-check CONFIG=configs/sim-delayed.json
 make sim CONFIG=configs/sim-bram.json \
   RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
 make software CONFIG=configs/sim-axos.json
+make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
 ```
 
 See [components/README.md](components/README.md) for out-of-tree component
@@ -69,11 +70,13 @@ make -C sw/baremetal check-sd           # SPI SDHC init + sector read on RTL
 make -C sw/kernel check-storage         # aXos mounts AXFS files from SD RTL
 make -C sw/kernel check-storage-write   # CMD24 write, directory update, readback
 make -C sw/kernel check-sdboot           # ROM SD boot through physical SDRAM RTL
+make -C sw/kernel kernel-component-test QEMU=/tmp/qemu-8.2.10/build/qemu-system-riscv32
 ```
 
 The ULX3S-85F hardware target, constraints, and reversible SRAM programming
-procedure are in [rtl/fpga/README.md](rtl/fpga/README.md); use the explicit
-[bring-up checklist](docs/ulx3s-bringup.md) before writing board flash.
+procedure are in [rtl/fpga/README.md](rtl/fpga/README.md). Physical board
+bring-up is deliberately the final roadmap gate while hardware is unavailable;
+the explicit [bring-up checklist](docs/ulx3s-bringup.md) remains ready for it.
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).
 

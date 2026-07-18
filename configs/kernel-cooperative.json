@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "kernel-cooperative",
+  "components": {
+    "scheduler": "scheduler.cooperative",
+    "vm": "vm.sv32"
+  }
+}

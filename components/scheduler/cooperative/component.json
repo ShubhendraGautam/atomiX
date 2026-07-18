@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "scheduler.cooperative",
+  "kind": "scheduler",
+  "title": "Cooperative-until-blocked aXos scheduler policy",
+  "sources": ["components/scheduler/cooperative/scheduler.c"],
+  "capabilities": ["deterministic", "cooperative", "task-state-selection"]
+}

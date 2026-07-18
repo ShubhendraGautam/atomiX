@@ -24,6 +24,27 @@ value zero; the parent receives a child PID, blocks in `wait`, wakes when the
 child exits, and reaps it. The shell test accepts either valid first scheduling
 order, `PCW` or `CPW`.
 
+## Replaceable kernel policies
+
+The trap/syscall kernel is stable, but scheduler and virtual-memory policy are
+selected at build time. The default profile is
+`../../configs/kernel-default.json`, which selects `scheduler.round-robin` and
+`vm.sv32`. A working alternative retains the current task across timer ticks
+until it blocks or exits:
+
+```bash
+make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
+make -C sw/kernel check-boot \
+  KERNEL_CONFIG=../../configs/kernel-cooperative.json \
+  QEMU=/path/to/qemu-system-riscv32
+```
+
+`include/scheduler.h` defines the narrow task-selection contract and
+`include/vm.h` defines bootstrap and user-address-space lifecycle. An external
+manifest can supply either source file without copying it into aXos. These
+interfaces do not constrain a custom kernel: it can instead supply a separate
+software component and its own build rules.
+
 ## Run and verify
 
 Run the complete shell and fork/wait regression on the ISS, QEMU, and RTL:
@@ -40,6 +61,7 @@ make -C sw/kernel check-memory
 make -C sw/kernel check-storage
 make -C sw/kernel check-storage-write
 make -C sw/kernel check-sdboot
+make -C sw/kernel kernel-component-test QEMU=/path/to/qemu-system-riscv32
 ```
 
 `check-sdboot` builds `build/axos_boot.img`, a bootable SD-card image with the

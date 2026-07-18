@@ -14,7 +14,7 @@ of the shell + role platform, DESIGN.md §3.3):
 - `clint.sv` — timer + software interrupts (`mtime`, `mtimecmp`, `msip`),
   RISC-V-standard programming model. PLIC joins when there is more than one
   external interrupt source.
-- Host-link endpoint (USB-serial framing, phase 8) and the role slot that
+- Host-link endpoint (USB-serial framing, phase 7) and the role slot that
   `rtl/roles/` designs plug into.
 - `axbus_mux.sv` — one fixed-map aXbus decode fabric per aXcore master;
   unmapped accesses complete with an error rather than hanging.

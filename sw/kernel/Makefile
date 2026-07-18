@@ -1,5 +1,22 @@
 RISCV_PREFIX ?= riscv64-unknown-elf-
 RISCV_ARCH   ?= rv32im
+PYTHON ?= python3
+KERNEL_CONFIG ?= ../../configs/kernel-default.json
+# A profile may be outside this worktree; use its absolute location in the
+# generated filename so equal basenames cannot collide.
+KERNEL_CONFIG_KEY := $(subst /,_,$(basename $(abspath $(KERNEL_CONFIG))))
+KERNEL_COMPONENT_MK := build/component$(KERNEL_CONFIG_KEY).mk
+KERNEL_COMPONENT_MANIFESTS := $(wildcard ../../components/*/*/component.json)
+
+$(KERNEL_COMPONENT_MK): $(KERNEL_CONFIG) ../../tools/configure.py $(KERNEL_COMPONENT_MANIFESTS)
+	mkdir -p $(@D)
+	$(PYTHON) ../../tools/configure.py resolve --config "$(KERNEL_CONFIG)" --output $@
+
+-include $(KERNEL_COMPONENT_MK)
+$(KERNEL_COMPONENT_MK): $(COMPONENT_SELECTED_MANIFESTS)
+
+.DEFAULT_GOAL := all
+
 CC      := $(RISCV_PREFIX)gcc
 OBJCOPY := $(RISCV_PREFIX)objcopy
 QEMU    ?= qemu-system-riscv32
@@ -24,12 +41,13 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S user.S kernel.c page.c shell.c fs.c sd.c
+SOURCES := boot.S trap.S user.S kernel.c page.c shell.c fs.c sd.c \
+           $(COMPONENT_SCHEDULER_SOURCES) $(COMPONENT_VM_SOURCES)
 
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) link.ld include/platform.h include/page.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)
@@ -80,7 +98,28 @@ boot-disk: images
 check-sdboot: boot-disk
 	SD_IMAGE=$(abspath build/axos_boot.img) BOOT_ROM=$(abspath ../bootrom/build/bootrom.hex) python3 check_boot.py --sd-boot
 
+kernel-config: $(KERNEL_COMPONENT_MK)
+	@test -n "$(COMPONENT_SCHEDULER_ID)" || { echo "$(KERNEL_CONFIG): select a scheduler component"; exit 2; }
+	@test -n "$(COMPONENT_VM_ID)" || { echo "$(KERNEL_CONFIG): select a vm component"; exit 2; }
+	@echo "[kernel] scheduler: $(COMPONENT_SCHEDULER_ID)"
+	@echo "[kernel] vm:        $(COMPONENT_VM_ID)"
+
+kernel-config-check:
+	$(PYTHON) ../../tools/configure.py resolve --config "$(KERNEL_CONFIG)"
+
+kernel-config-check-all:
+	@for kernel_config in ../../configs/kernel-*.json; do \
+	  $(PYTHON) ../../tools/configure.py resolve --config "$$kernel_config" >/dev/null || exit $$?; \
+	  echo "kernel configuration: $$kernel_config: PASS"; \
+	done
+
+# Both policies must preserve the same shell/fork semantics. The cooperative
+# profile is an actual alternate scheduler, not merely a manifest parse test.
+kernel-component-test: kernel-config-check-all
+	$(MAKE) -B check-boot KERNEL_CONFIG=$(abspath ../../configs/kernel-default.json)
+	$(MAKE) -B check-boot KERNEL_CONFIG=$(abspath ../../configs/kernel-cooperative.json)
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-storage-write boot-disk check-sdboot clean
+.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-storage-write boot-disk check-sdboot kernel-config kernel-config-check kernel-config-check-all kernel-component-test clean

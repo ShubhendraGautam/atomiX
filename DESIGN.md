@@ -52,7 +52,7 @@ we build.
 | Build order | **ISS first, then RTL** | RTL debugging starts with a trusted golden model and cosim from day one |
 | Kernel | **Monolithic, xv6-inspired scope**, our own code | Achievable scope with a known-good reference for when we're stuck |
 | Platform model | **Shell + role** (AWS F1 / Catapult style): aXcore + aXos fixed in every bitstream, role region swapped per mode | Kernel is genuinely common across modes; host driver never sees role internals, only the shell protocol |
-| Component composition | **Manifest-selected implementations with lenient stock seams** | Users may substitute CPU, memory, peripheral, SoC, board, or software/kernel code; manifests compose sources but do not prescribe microarchitecture or verification claims |
+| Component composition | **Manifest-selected implementations with lenient stock seams** | Users may substitute CPU, memory, peripheral, SoC, board, software/kernel code, or aXos scheduler/VM policy; manifests compose sources but do not prescribe microarchitecture or verification claims |
 | Mode switching | **Full bitstream swap** (host uploads new bitstream, FPGA reboots) | Partial reconfiguration is effectively unsupported in the open Yosys/nextpnr flow; full swap is simple and reliable |
 | Host link | **USB** — FTDI USB-serial first (~1–3 MB/s), soft USB device core later | Zero extra hardware on ULX3S-class boards; models as a virtual pipe in simulation |
 | Role interface | **aXbus MMIO device with doorbell + descriptor ring** | Same idiom as real NVMe/GPU hardware; one driver model for every role |
@@ -267,7 +267,7 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 - **Bare-metal phase:** crt0 + linker script + tiny libc subset (`printf` over
   UART) for bring-up programs and tests.
 - **Kernel (`aXos`):** monolithic, xv6-inspired scope, our own code:
-  boot → paging on (Sv32) → trap handling → processes + round-robin scheduler
+  boot → paging on (Sv32) → trap handling → processes + selectable scheduler
   (preemption via CLINT timer) → fork/exec/exit/wait/read/write/pipe →
   simple inode filesystem (RAM-disk first, SD card later) → userland: init,
   `sh`, `ls`, `cat`, `echo`.
@@ -285,15 +285,15 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 | **4. Privileged CPU** ✅ | S/U modes, Sv32 MMU + TLB, delegation | `rv32si` and paging-heavy lock-step cosim — **met 2026-07-18** (6 upstream supervisor tests in ISS and RTL; 100,000 randomized Sv32/U-mode events across 10 seeds) |
 | **5. Kernel bring-up** ✅ | `aXos` core: paging, processes, syscalls, shell on RAM-disk | Interactive shell on the RTL simulation console — **met 2026-07-18** (`help`, `ls`, `cat`, `echo`, `fork`, `exit`; shell and fork/wait sessions pass unchanged on ISS, QEMU, and RTL) |
 | **6. Real memory** ✅ *(RTL verified)* | Delayed 32 MiB model + I$/D$; ULX3S x16 SDRAM controller boundary; SPI SDHC CMD17/CMD24; writable AXFS; ROM SD boot | Kernel boots from SD into the physical SDRAM-controller simulation path — **met 2026-07-18** |
-| **7. FPGA bring-up** *(in progress)* | ULX3S-85F top, LPF constraints, UART PHY, synthesis adapter, reproducible bitstream and reversible programming flow ✅; P&R timing and board proof pending | Same bitstream-driven shell on physical hardware |
-| **8. Host link + role framework** | USB framed protocol, `axhost` host tool, role slot on aXbus (doorbell + descriptor ring), null "loopback" role | Host submits a buffer, loopback role echoes it, completion reaches `axhost` — end-to-end in sim and on hardware |
-| **9. TPU-lite role** | int8 systolic GEMM array + aXos role service + host matmul library | Offloaded matmul matches reference results; measured speedup vs aXcore software matmul |
-| **10. Platform polish** | Bitstream-swap mode switching from `axhost`, second role (stretch), docs | One-command mode switch; same `axhost` drives both roles |
+| **7. Host link + role framework** | USB framed protocol, `axhost` host tool, role slot on aXbus (doorbell + descriptor ring), null "loopback" role | Host submits a buffer, loopback role echoes it, completion reaches `axhost` — end-to-end in simulation |
+| **8. TPU-lite role** | int8 systolic GEMM array + aXos role service + host matmul library | Offloaded matmul matches reference results; measured speedup vs aXcore software matmul |
+| **9. Platform polish** | Bitstream-swap mode switching from `axhost`, second role (stretch), docs | One-command mode switch; same `axhost` drives both roles |
+| **10. Physical FPGA bring-up** *(final gate)* | ULX3S-85F top, LPF constraints, UART PHY, synthesis adapter, P&R timing, reversible programming, and board proof | Same bitstream-driven shell on physical hardware |
 
-Phases 0–5 need no hardware purchase and are unchanged by the platform pivot —
-they build the shell. Phase 8's framework can be developed entirely in
-simulation (virtual-pipe host link). Phase 7 uses the ULX3S-85F target and
-records P&R/timing and board evidence before it is marked complete.
+Phases 0–9 can progress without a board; simulation remains the integration
+environment until hardware arrives. Phase 10 is deliberately the final gate:
+it records P&R/timing and ULX3S board evidence without blocking component,
+kernel, host-link, or accelerator work.
 
 ## 9. Repository layout
 
@@ -307,8 +307,8 @@ atomiX/
 ├── rtl/
 │   ├── core/            # aXcore: pipeline stages, CSR file, MMU
 │   ├── soc/             # aXbus, memories, UART, CLINT, top-level (the shell)
-│   ├── roles/           # role designs: loopback, tpu/ (phase 8+)
-│   └── fpga/            # board top-levels + constraints (phase 7)
+│   ├── roles/           # role designs: loopback, tpu/ (phase 7+)
+│   └── fpga/            # board top-levels + constraints (final Phase 10 gate)
 ├── sim/
 │   ├── axsim/           # the ISS golden model
 │   ├── cosim/           # Verilator harness, lock-step checker
@@ -334,7 +334,7 @@ atomiX/
 4. **UART model:** full 16550 register compatibility vs minimal
    data/status pair. QEMU-`virt` alignment argues for the 16550 subset.
 
-**To close in phase 8 (platform):**
+**To close in phase 7 (platform):**
 
 5. **Host-link protocol:** framing, flow control, error recovery over
    USB-serial; whether bitstream upload goes through the same channel or

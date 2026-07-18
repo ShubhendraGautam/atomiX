@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "kernel-default",
+  "components": {
+    "scheduler": "scheduler.round-robin",
+    "vm": "vm.sv32"
+  }
+}

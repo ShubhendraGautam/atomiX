@@ -41,6 +41,8 @@ custom component may define its own knobs without changing the common resolver.
 | `sim-hello.json` | reference BRAM machine plus selectable bare-metal payload |
 | `sim-axos.json` | reference SDRAM machine plus selectable aXos SD-boot payload |
 | `ulx3s-85f.json` | ULX3S/ECP5 board implementation and constraints |
+| `kernel-default.json` | aXos round-robin scheduling with the reference Sv32 VM |
+| `kernel-cooperative.json` | aXos cooperative-until-blocked scheduling with the reference Sv32 VM |
 
 Validate before building:
 
@@ -49,4 +51,5 @@ make config-check CONFIG=configs/sim-sdram.json
 make config-check-all
 make software CONFIG=configs/sim-hello.json
 make software CONFIG=configs/sim-axos.json
+make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
 ```

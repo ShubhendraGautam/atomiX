@@ -7,8 +7,9 @@ in its established source directory or live beside an external manifest; the
 manifest, not a particular folder layout, is the build boundary.
 
 The built-in selections are deliberately modest: the verified five-stage CPU,
-reference SoC shell, three reference memory modes, standard peripherals, and
-simulation/ULX3S boards. `core.finisher-smoke` is a deliberately tiny,
+reference SoC shell, three reference memory modes, standard peripherals,
+simulation/ULX3S boards, and aXos scheduler/virtual-memory policies.
+`core.finisher-smoke` is a deliberately tiny,
 non-RISC-V composition example: it proves an alternate CPU source can replace
 the reference core, but is explicitly not a software-compatible CPU.
 
@@ -21,6 +22,7 @@ make config-check CONFIG=configs/sim-sdram.json
 make sim CONFIG=configs/sim-bram.json \
   RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
 make fpga CONFIG=configs/ulx3s-85f.json
+make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
 ```
 
 `configs/` contains ready-to-run profiles. `sim-bram`, `sim-delayed`, and
@@ -51,6 +53,8 @@ module is plugged in:
 | `spi` | `axspi` | SPI0 aXbus device and four SPI pins |
 | `soc` | `soc_top` | complete-SoC simulation/board shell |
 | `software` | its own Make target and produced image(s) | payload built independently, then supplied to the selected hardware profile |
+| `scheduler` | `scheduler_select` | choose a runnable aXos task; context switching and syscalls stay in the kernel |
+| `vm` | `vm_*` | bootstrap mappings and the user part of an aXos task address space |
 
 The real SystemVerilog instantiation is the authoritative port list; no second
 hand-maintained IDL can drift from it. A user who wants a different boundary
@@ -64,6 +68,14 @@ image; `make software CONFIG=configs/sim-axos.json` builds aXos and boots it
 through the selected SDRAM/SD profile. An external kernel may use the same
 small manifest fields while keeping all of its sources and build rules outside
 atomiX.
+
+For the supplied aXos kernel, `KERNEL_CONFIG` selects the `scheduler` and `vm`
+components independently of the system profile. The default is
+`configs/kernel-default.json`; `configs/kernel-cooperative.json` is a working
+alternative policy that retains a task until it blocks or exits. An external
+component may include `sw/kernel/include/scheduler.h` or `vm.h`, build beside
+its manifest, and be selected through the same `{ "manifest": ... }` form.
+These headers intentionally expose no trap or syscall internals.
 
 ## External component example
 

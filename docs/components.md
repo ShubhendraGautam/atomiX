@@ -18,15 +18,17 @@ python3 tools/configure.py resolve --config configs/sim-sdram.json
 A configuration selects `core`, `soc`, `memory`, `uart`, `clint`, `spi`,
 `board`, and optionally `software` components. The supplied profiles select
 the reference versions, but every one can name a built-in ID or an external
-manifest file. Custom component kinds such as `gpio` are also preserved for a
-custom SoC or harness. A profile may carry arbitrary `settings`; known
-settings set RAM size, cache enable, and reset PC, while unknown settings are
-exported rather than rejected.
+manifest file. aXos has an independent `KERNEL_CONFIG` profile for its
+`scheduler` and `vm` components. Custom component kinds such as `gpio` are
+also preserved for a custom SoC or harness. A profile may carry arbitrary
+`settings`; known settings set RAM size, cache enable, and reset PC, while
+unknown settings are exported rather than rejected.
 
 ```text
 configuration JSON → configure.py → generated component-config.mk
                                       ├─ sim/soc Makefile
-                                      └─ rtl/fpga Makefile
+                                      ├─ rtl/fpga Makefile
+                                      └─ sw/kernel Makefile (scheduler + VM)
 ```
 
 `make sim CONFIG=configs/sim-delayed.json ...` composes a Verilated SoC;
@@ -34,6 +36,8 @@ configuration JSON → configure.py → generated component-config.mk
 directory-level build commands continue to work with their reference defaults.
 `make software CONFIG=configs/sim-axos.json` delegates to the selected
 software component's own build target and then boots its resulting images.
+`make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-default.json`
+shows the selected kernel policy pair.
 
 ## Reference adapters
 
@@ -49,6 +53,15 @@ outputs; only the buses, interrupts, and minimal cache-maintenance trace are
 connected. Users who need an incompatible interface should provide a custom
 `soc_top` component instead of adding compatibility shims merely to satisfy a
 catalog rule.
+
+The aXos contract is intentionally smaller still. `scheduler_select` receives
+the task states and returns a runnable slot; the kernel retains trap frames,
+context switching, timer delivery, and syscall semantics. The selected VM
+component owns only bootstrap mappings and per-task user address-space
+creation/cloning/destruction through `vm.h`; kernel stacks remain kernel-owned.
+`scheduler.cooperative` is an executable alternate policy, while `vm.sv32` is
+the reference mapping implementation. A custom kernel is free to select none
+of these and provide its own software build altogether.
 
 ## Verification posture
 
@@ -68,3 +81,9 @@ kernel payload, not an imposed operating system. A custom software manifest
 may build another kernel, monitor, or entirely bare-metal program from outside
 this repository. The hardware composition layer only receives the images and
 runner mode it declares.
+
+The reference `scheduler.round-robin` and `vm.sv32` together retain the
+existing ISS/QEMU/RTL regression evidence. `make -C sw/kernel
+kernel-component-test` runs that same evidence for both the reference and
+cooperative scheduler profiles; a custom policy earns its own compatibility
+claim by running a suitable test suite.

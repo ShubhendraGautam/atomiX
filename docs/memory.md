@@ -3,7 +3,7 @@
 Status: Phase 6's RTL path is complete and regressed. It provides the delayed
 32 MiB model plus split I/D caches, a ULX3S-targeted MT48LC16M16 SDRAM
 controller boundary, SPI SDHC CMD17/CMD24, writable AXFS v1, and ROM SD boot.
-The physical-board proof remains Phase 7 work; no simulation result is
+The physical-board proof remains the final Phase 10 gate; no simulation result is
 presented as electrical SDRAM validation.
 
 ## Boundary and configuration

@@ -58,7 +58,7 @@ software: $(COMPONENT_MK)
 	@test -n "$(COMPONENT_SOFTWARE_ID)" || { echo "$(CONFIG): no software component selected"; exit 2; }
 	@case "$(COMPONENT_SOFTWARE_RUNNER)" in ram|sdboot) ;; *) \
 	  echo "unsupported software runner: $(COMPONENT_SOFTWARE_RUNNER)"; exit 2;; esac
-	$(MAKE) -C "$(COMPONENT_SOFTWARE_MAKE_DIR)" "$(COMPONENT_SOFTWARE_MAKE_TARGET)"
+	$(MAKE) -C "$(COMPONENT_SOFTWARE_MAKE_DIR)" "$(COMPONENT_SOFTWARE_MAKE_TARGET)" $(if $(COMPONENT_KERNEL_CONFIG),KERNEL_CONFIG="$(COMPONENT_KERNEL_CONFIG)")
 	@if [ "$(COMPONENT_SOFTWARE_RUNNER)" = "ram" ]; then \
 	  $(MAKE) sim CONFIG="$(COMPONENT_CONFIG_PATH)" \
 	    RAM_INIT_FILE="$(COMPONENT_SOFTWARE_RAM_HEX)" \

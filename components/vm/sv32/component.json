@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "vm.sv32",
+  "kind": "vm",
+  "title": "aXos Sv32 bootstrap and per-task address spaces",
+  "sources": ["components/vm/sv32/vm.c"],
+  "capabilities": ["sv32", "user-mappings", "fork-copy", "page-tables"]
+}

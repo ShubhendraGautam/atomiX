@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "scheduler.round-robin",
+  "kind": "scheduler",
+  "title": "Preemptive round-robin aXos scheduler policy",
+  "sources": ["components/scheduler/round-robin/scheduler.c"],
+  "capabilities": ["preemptive", "round-robin", "task-state-selection"]
+}

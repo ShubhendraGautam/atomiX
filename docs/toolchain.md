@@ -76,7 +76,7 @@ distro version on a normal Ubuntu `PATH`. `/opt/sby` similarly places `sby` in
 `/usr/local/bin`. `/opt/riscv-formal` remains an external reference checkout;
 the atomiX repository never modifies it.
 
-## ECP5 FPGA tools (Phase 7)
+## ECP5 FPGA tools (final Phase 10 hardware gate)
 
 The ULX3S target needs the ECP5-specific tools `nextpnr-ecp5` and `ecppack`
 from Project Trellis in addition to Yosys. Ubuntu 22.04 packages generic and
@@ -197,7 +197,7 @@ SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si
 # Phase-5 aXos shell plus U-mode fork/wait on ISS, QEMU, and RTL
 make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
 
-# Phase-6 storage/SDRAM regressions and the Phase-7 synthesis preflight
+# Phase-6 storage/SDRAM regressions and the final hardware-gate synthesis preflight
 make -C sim/unit run-axsdram run-axuart-phy
 make -C sw/kernel check-storage-write check-sdboot
 source "$HOME/opt/oss-cad-suite/environment"  # if using the suite above

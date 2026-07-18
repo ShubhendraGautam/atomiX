@@ -6,7 +6,7 @@ VFLAGS    := -Wall --cc -O2
 
 RTL_CORE  := ../../rtl/core
 AXSIM     := ../axsim/src
-CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file axcore
+CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 
 axcosim: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_cosim.cpp $(AXSIM)/bus.h \
          $(AXSIM)/cpu.h $(AXSIM)/cpu.cpp $(AXSIM)/elf.h $(AXSIM)/elf.cpp

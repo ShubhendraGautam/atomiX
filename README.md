@@ -31,8 +31,13 @@ make -C sim/unit run-soc-timer        # RTL SoC + CLINT interrupt integration
 make -C sw/baremetal check-hello      # same C image: ISS, QEMU, and RTL
 make -C sw/baremetal check-timer      # CLINT interrupts: ISS, QEMU, and RTL
 make -C sw/baremetal check-preempt    # timer-preempted tasks: all three
+make -C sim/unit run-privilege        # M/S/U transitions, delegation, sret
+make -C sim/unit run-sv32             # Sv32 walks, A/D updates, page fault
+make -C sim/testgen paging             # 100k randomized Sv32/U-mode cosim events
 make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
 tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
+tests/run-riscv-tests.sh rv32si        # supervisor ISA suite: 6 passed expected
+SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si  # lock-step
 ```
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).

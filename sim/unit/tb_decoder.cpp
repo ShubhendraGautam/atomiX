@@ -11,7 +11,8 @@ enum { WB_ALU, WB_MEM, WB_PC4, WB_CSR };
 enum { MEM_NONE, MEM_LOAD, MEM_STORE };
 enum { BR_NONE, BR_COND, BR_JAL, BR_JALR };
 enum { CSR_NONE, CSR_RW, CSR_RS, CSR_RC };
-enum { SYS_NONE, SYS_ECALL, SYS_EBREAK, SYS_MRET, SYS_WFI, SYS_FENCE_I };
+enum { SYS_NONE, SYS_ECALL, SYS_EBREAK, SYS_MRET, SYS_SRET, SYS_WFI,
+       SYS_FENCE_I, SYS_SFENCE };
 enum { IMM_I, IMM_S, IMM_B, IMM_U, IMM_J };
 
 struct Exp {  // defaults mirror the decoder's legal-instruction defaults
@@ -94,8 +95,11 @@ int main(int argc, char** argv) {
   e = Exp{}; e.sys = SYS_ECALL;   chk("ecall", 0x00000073, e);
   e = Exp{}; e.sys = SYS_EBREAK;  chk("ebreak", 0x00100073, e);
   e = Exp{}; e.sys = SYS_MRET;    chk("mret", 0x30200073, e);
+  e = Exp{}; e.sys = SYS_SRET;    chk("sret", 0x10200073, e);
   e = Exp{}; e.sys = SYS_WFI;     chk("wfi", 0x10500073, e);
   e = Exp{}; e.sys = SYS_FENCE_I; chk("fence.i", 0x0000100F, e);
+  // sfence.vma x1, x2 — privilege legality is dynamic, decode is legal
+  e = Exp{}; e.sys = SYS_SFENCE;  chk("sfence.vma", 0x12208073, e);
   e = Exp{};                      chk("fence", 0x0000000F, e);
 
   e = Exp{}; e.rd_we = 1; e.wb = WB_CSR; e.csr = CSR_RW; e.rs1 = 1;
@@ -116,7 +120,7 @@ int main(int argc, char** argv) {
   chk("slli bad f7", 0x40109093, e);
   chk("OP bad funct7", 0x04208033, e);
   chk("fence f3=2", 0x0000200F, e);
-  chk("sret (no S-mode)", 0x10200073, e);
+  chk("sfence.vma rd!=0", 0x122080F3, e);
   chk("branch f3=2", 0x00062063, e);
   chk("load f3=3", 0x0000B103, e);
 

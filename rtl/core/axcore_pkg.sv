@@ -55,8 +55,10 @@ package axcore_pkg;
     SYS_ECALL,
     SYS_EBREAK,
     SYS_MRET,
-    SYS_WFI,     // executes as nop in v1
-    SYS_FENCE_I  // serializing flush; memory effect is a nop until caches
+    SYS_SRET,
+    SYS_WFI,     // executes as nop in v1 (illegal below M when mstatus.TW)
+    SYS_FENCE_I, // serializing flush; memory effect is a nop until caches
+    SYS_SFENCE   // sfence.vma: serialized TLB flush
   } sys_e;
 
   // ALU operation: {modifier, funct3}. The modifier bit is funct7[5]

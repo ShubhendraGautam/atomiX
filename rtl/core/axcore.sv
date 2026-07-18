@@ -25,9 +25,12 @@ module axcore #(
   input  logic        clk,
   input  logic        rst,       // synchronous, active high
 
-  // instruction fetch master (reads only)
+  // instruction fetch master (writes only for Sv32 PTE A-bit updates by
+  // the fetch-side page-table walker)
   output logic        ibus_valid,
   output logic [31:0] ibus_addr,
+  output logic [31:0] ibus_wdata,
+  output logic [3:0]  ibus_wstrb,
   input  logic        ibus_ready,
   input  logic [31:0] ibus_rdata,
   input  logic        ibus_err,
@@ -66,6 +69,7 @@ module axcore #(
   output logic [31:0] trace_mscratch,
   output logic [31:0] trace_mie,
   output logic [31:0] trace_mip,
+  output logic [1:0]  trace_prv,
 
   // One-retire RVFI trace for riscv-formal.  Like trace_*, these are sampled
   // at the MEM commit point immediately before the active clock edge.
@@ -99,7 +103,8 @@ module axcore #(
                          EXC_ILL = 4'd2, EXC_BREAK = 4'd3,
                          EXC_LADDR = 4'd4, EXC_LFAULT = 4'd5,
                          EXC_SADDR = 4'd6, EXC_SFAULT = 4'd7,
-                         EXC_ECALL_M = 4'd11;
+                         EXC_IPAGE = 4'd12, EXC_LPAGE = 4'd13,
+                         EXC_SPAGE = 4'd15;
 
   // ---------------------------------------------------------------- control
   logic        stall_ld;                    // load-use: ID holds, EX bubbles
@@ -116,15 +121,20 @@ module axcore #(
   logic        halt_q;    // serialized instruction draining
   logic        ser_in_id; // (from ID) serialized instruction sits in ID now
 
+  // Fetch runs through the instruction-side MMU (bare mode passes straight
+  // through); the MMU owns the ibus master ports.
+  logic        if_valid, if_ready, if_err, if_pgf;
+  logic [31:0] if_rdata;
+
   wire fetch_halt    = halt_q || ser_in_id;
   wire pc_misaligned = pc_q[1:0] != 2'b00;
   wire want_fetch    = !fetch_halt && !pc_misaligned;
-  wire pend_hold     = ibus_valid && !ibus_ready;   // must keep valid+addr
+  wire pend_hold     = if_valid && !if_ready;       // must keep valid+addr
 
   logic pend_q;                                     // request crossed an edge
-  assign ibus_valid = !rst && (pend_q || want_fetch);
-  assign ibus_addr  = pc_q;
-  wire fetch_done   = ibus_valid && ibus_ready;
+  assign if_valid = !rst && (pend_q || want_fetch);
+  wire [31:0] if_addr = pc_q;
+  wire fetch_done = if_valid && if_ready;
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -173,9 +183,9 @@ module axcore #(
       if (if_capture) begin
         ifid_v_q     <= 1'b1;
         ifid_pc_q    <= pc_q;
-        ifid_insn_q  <= ibus_rdata;
-        ifid_exc_q   <= ibus_err;
-        ifid_cause_q <= EXC_IFAULT;
+        ifid_insn_q  <= if_rdata;
+        ifid_exc_q   <= if_err || if_pgf;
+        ifid_cause_q <= if_pgf ? EXC_IPAGE : EXC_IFAULT;
         ifid_tval_q  <= pc_q;
       end else if (pc_misaligned && !fetch_halt) begin
         ifid_v_q     <= 1'b1;             // inject fetch-misalign exception
@@ -366,9 +376,14 @@ module axcore #(
                  (idex_br_q == BR_JAL || idex_br_q == BR_JALR ||
                   (idex_br_q == BR_COND && br_taken_cond));
 
+  // A misaligned target traps on the jump/branch itself (IALIGN=32, no C):
+  // the redirect is suppressed and the instruction carries EXC_IADDR to
+  // commit, so rd is never written and epc names the jump, not the target.
+  wire ex_take_misal = ex_take && br_target[1:0] != 2'b00;
+
   // Branch acts only when this instruction actually advances, and an older
   // committing instruction's redirect wins (it flushes EX anyway).
-  assign redirect_ex    = ex_take && !mem_busy && !redirect_mem;
+  assign redirect_ex    = ex_take && !ex_take_misal && !mem_busy && !redirect_mem;
   assign redirect_ex_pc = br_target;
 
   // Misaligned data address detect (address is known here).
@@ -414,10 +429,12 @@ module axcore #(
       exmem_sys_q       <= idex_sys_q;
       exmem_muldiv_q    <= idex_muldiv_q;
       exmem_csr_rs1x0_q <= csr_rs1x0;
-      exmem_exc_q       <= idex_exc_q || ex_mem_exc;
+      exmem_exc_q       <= idex_exc_q || ex_mem_exc || ex_take_misal;
       exmem_cause_q     <= idex_exc_q ? idex_cause_q
+                         : ex_take_misal ? EXC_IADDR
                          : (idex_mem_q == MEM_LOAD ? EXC_LADDR : EXC_SADDR);
-      exmem_tval_q      <= idex_exc_q ? idex_tval_q : alu_y;
+      exmem_tval_q      <= idex_exc_q ? idex_tval_q
+                         : ex_take_misal ? br_target : alu_y;
     end
   end
 
@@ -427,21 +444,26 @@ module axcore #(
   wire [1:0]  moff  = exmem_y_q[1:0];
   wire        is_ld = exmem_mem_q == MEM_LOAD;
 
-  assign dbus_valid = exmem_v_q && !exmem_exc_q && exmem_mem_q != MEM_NONE;
-  assign dbus_addr  = {exmem_y_q[31:2], 2'b00};
-  assign dbus_wdata = exmem_data_q << {moff, 3'b000};
+  // Data access runs through the data-side MMU; it owns the dbus master.
+  logic        dm_valid, dm_ready, dm_err, dm_pgf;
+  logic [31:0] dm_addr, dm_wdata, dm_rdata;
+  logic [3:0]  dm_wstrb;
+
+  assign dm_valid = exmem_v_q && !exmem_exc_q && exmem_mem_q != MEM_NONE;
+  assign dm_addr  = {exmem_y_q[31:2], 2'b00};
+  assign dm_wdata = exmem_data_q << {moff, 3'b000};
   always_comb begin
-    if (exmem_mem_q != MEM_STORE) dbus_wstrb = 4'b0000;
+    if (exmem_mem_q != MEM_STORE) dm_wstrb = 4'b0000;
     else unique case (mf3[1:0])
-      2'b00:   dbus_wstrb = 4'b0001 << moff;
-      2'b01:   dbus_wstrb = moff[1] ? 4'b1100 : 4'b0011;
-      default: dbus_wstrb = 4'b1111;
+      2'b00:   dm_wstrb = 4'b0001 << moff;
+      2'b01:   dm_wstrb = moff[1] ? 4'b1100 : 4'b0011;
+      default: dm_wstrb = 4'b1111;
     endcase
   end
-  assign mem_busy = dbus_valid && !dbus_ready;
+  assign mem_busy = dm_valid && !dm_ready;
 
   // Load result extraction.
-  wire [31:0] ld_shift = dbus_rdata >> {moff, 3'b000};
+  wire [31:0] ld_shift = dm_rdata >> {moff, 3'b000};
   logic [31:0] ld_val;
   always_comb begin
     unique case (mf3)
@@ -454,15 +476,27 @@ module axcore #(
   end
 
   // CSR file access (serialized: nothing younger is live).
-  logic [31:0] csr_rdata, trap_vector, mepc_out;
+  logic [31:0] csr_rdata, trap_vector, mepc_out, sepc_out;
   logic [31:0] csr_mstatus, csr_mtvec, csr_mepc, csr_mcause, csr_mtval;
-  logic [31:0] csr_mscratch, csr_mie, csr_mip;
-  logic        csr_illegal;
+  logic [31:0] csr_mscratch, csr_mie, csr_mip, csr_satp;
+  logic [1:0]  csr_prv;
+  logic        csr_illegal, csr_irq_take;
+  logic [3:0]  csr_irq_cause;
   wire mem_commit = exmem_v_q && !mem_busy;
   wire csr_acc_en = mem_commit && !exmem_exc_q && exmem_csr_q != CSR_NONE;
 
+  // Dynamic (privilege-dependent) SYSTEM legality, resolved at commit.
+  wire sys_ill =
+      (exmem_sys_q == SYS_MRET && csr_prv != 2'b11) ||
+      (exmem_sys_q == SYS_SRET &&
+       (csr_prv == 2'b00 || (csr_prv == 2'b01 && csr_mstatus[22]))) ||
+      (exmem_sys_q == SYS_WFI && csr_prv != 2'b11 && csr_mstatus[21]) ||
+      (exmem_sys_q == SYS_SFENCE &&
+       (csr_prv == 2'b00 || (csr_prv == 2'b01 && csr_mstatus[20])));
+
   // Final exception resolution at commit.
-  wire bus_fault = dbus_valid && dbus_ready && dbus_err;
+  wire bus_fault = dm_valid && dm_ready && dm_err;
+  wire bus_pgf   = dm_valid && dm_ready && dm_pgf;
   logic       trap_now;
   logic [3:0] trap_cause;
   logic [31:0] trap_tval;
@@ -473,43 +507,49 @@ module axcore #(
     if (mem_commit) begin
       if (exmem_exc_q) begin
         trap_now = 1'b1; trap_cause = exmem_cause_q; trap_tval = exmem_tval_q;
+      end else if (bus_pgf) begin
+        trap_now   = 1'b1;
+        trap_cause = is_ld ? EXC_LPAGE : EXC_SPAGE;
+        trap_tval  = exmem_y_q;
       end else if (bus_fault) begin
         trap_now   = 1'b1;
         trap_cause = is_ld ? EXC_LFAULT : EXC_SFAULT;
         trap_tval  = exmem_y_q;
-      end else if (csr_illegal) begin
+      end else if (csr_illegal || sys_ill) begin
         trap_now = 1'b1; trap_cause = EXC_ILL; trap_tval = exmem_insn_q;
       end else if (exmem_sys_q == SYS_ECALL) begin
-        trap_now = 1'b1; trap_cause = EXC_ECALL_M; trap_tval = 32'b0;
+        trap_now = 1'b1; trap_cause = {2'b10, csr_prv};  // 8 + privilege
+        trap_tval = 32'b0;
       end else if (exmem_sys_q == SYS_EBREAK) begin
         trap_now = 1'b1; trap_cause = EXC_BREAK; trap_tval = exmem_pc_q;
       end
     end
   end
 
-  // The architectural interrupt priority is MEI, MSI, then MTI.  An
-  // interrupt is taken only after a committing instruction, so that
-  // instruction's side effects are visible and mepc names its successor.
-  wire irq_pending = csr_mstatus[3] && |(csr_mie & csr_mip);
-  logic [3:0] irq_cause;
-  always_comb begin
-    if (csr_mie[11] && csr_mip[11]) irq_cause = 4'd11;
-    else if (csr_mie[3] && csr_mip[3]) irq_cause = 4'd3;
-    else irq_cause = 4'd7;
-  end
-  wire irq_now = mem_commit && !trap_now && irq_pending;
+  // Interrupt take/cause (delegation-aware) live in the CSR file; taken
+  // only after a committing instruction, so its side effects are visible
+  // and the epc names its successor.
+  wire irq_now = mem_commit && !trap_now && csr_irq_take;
 
-  // Not gated on irq_now: an interrupt landing on an mret commit still
-  // retires the mret (mepc <= its target, MIE restore folded into the trap
-  // entry's MPIE save inside csr_file).
+  // Not gated on irq_now: an interrupt landing on an xret commit still
+  // retires it (epc <= its target, the IE restore folded into the trap
+  // entry's PIE save inside csr_file).
   wire mret_now = mem_commit && !trap_now && exmem_sys_q == SYS_MRET;
+  wire sret_now = mem_commit && !trap_now && exmem_sys_q == SYS_SRET;
   wire ser_done = mem_commit && !trap_now && !irq_now &&
                   (exmem_csr_q != CSR_NONE || exmem_sys_q == SYS_WFI ||
-                   exmem_sys_q == SYS_FENCE_I || exmem_muldiv_q);
+                   exmem_sys_q == SYS_FENCE_I || exmem_sys_q == SYS_SFENCE ||
+                   exmem_muldiv_q);
 
-  assign redirect_mem    = trap_now || irq_now || mret_now || ser_done;
+  // Conservative TLB maintenance: flush on every serialized commit (covers
+  // sfence.vma and satp writes; over-flushing is always safe).
+  wire tlb_flush = ser_done || mret_now || sret_now || trap_now || irq_now;
+
+  assign redirect_mem    = trap_now || irq_now || mret_now || sret_now ||
+                           ser_done;
   assign redirect_mem_pc = (trap_now || irq_now) ? trap_vector
                          : mret_now ? mepc_out
+                         : sret_now ? sepc_out
                                     : exmem_pc_q + 32'd4;
 
   wire retire = mem_commit && !trap_now;
@@ -522,18 +562,52 @@ module axcore #(
     .acc_rdata(csr_rdata), .acc_illegal(csr_illegal),
     .trap_en(trap_now || irq_now), .trap_interrupt(irq_now),
     // An interrupt names the retired instruction's architectural successor:
-    // the branch target is already in exmem_npc_q; an mret's successor is
+    // the branch target is already in exmem_npc_q; an xret's successor is
     // its return address, which only the CSR file knows.
-    .trap_pc(!irq_now ? exmem_pc_q : mret_now ? mepc_out : exmem_npc_q),
-    .trap_cause(irq_now ? irq_cause : trap_cause),
+    .trap_pc(!irq_now ? exmem_pc_q
+             : mret_now ? mepc_out
+             : sret_now ? sepc_out : exmem_npc_q),
+    .trap_cause(irq_now ? csr_irq_cause : trap_cause),
     .trap_tval(trap_tval), .trap_vector(trap_vector),
-    .mret_en(mret_now), .mepc_out(mepc_out),
+    .mret_en(mret_now), .sret_en(sret_now),
+    .mepc_out(mepc_out), .sepc_out(sepc_out),
     .retire(retire), .irq_software(irq_software), .irq_timer(irq_timer),
     .irq_external(irq_external),
+    .irq_take(csr_irq_take), .irq_cause(csr_irq_cause),
+    .prv(csr_prv), .satp_out(csr_satp),
     .state_mstatus(csr_mstatus), .state_mtvec(csr_mtvec),
     .state_mepc(csr_mepc), .state_mcause(csr_mcause),
     .state_mtval(csr_mtval), .state_mscratch(csr_mscratch),
     .state_mie(csr_mie), .state_mip(csr_mip)
+  );
+
+  // ------------------------------------------------------------- MMUs
+  // Fetch translates at the current privilege; data applies the MPRV
+  // substitution (loads/stores as MPP when mstatus.MPRV is set).
+  wire [1:0] data_eprv = csr_mstatus[17] ? csr_mstatus[12:11] : csr_prv;
+
+  sv32_mmu #(.IS_FETCH(1'b1)) u_immu (
+    .clk(clk), .rst(rst),
+    .satp(csr_satp), .eprv(csr_prv),
+    .sum(csr_mstatus[18]), .mxr(csr_mstatus[19]), .flush(tlb_flush),
+    .c_valid(if_valid), .c_addr(if_addr), .c_wdata(32'b0), .c_wstrb(4'b0),
+    .c_ready(if_ready), .c_rdata(if_rdata), .c_err(if_err),
+    .c_pgfault(if_pgf),
+    .m_valid(ibus_valid), .m_addr(ibus_addr), .m_wdata(ibus_wdata),
+    .m_wstrb(ibus_wstrb), .m_ready(ibus_ready), .m_rdata(ibus_rdata),
+    .m_err(ibus_err)
+  );
+
+  sv32_mmu #(.IS_FETCH(1'b0)) u_dmmu (
+    .clk(clk), .rst(rst),
+    .satp(csr_satp), .eprv(data_eprv),
+    .sum(csr_mstatus[18]), .mxr(csr_mstatus[19]), .flush(tlb_flush),
+    .c_valid(dm_valid), .c_addr(dm_addr), .c_wdata(dm_wdata),
+    .c_wstrb(dm_wstrb), .c_ready(dm_ready), .c_rdata(dm_rdata),
+    .c_err(dm_err), .c_pgfault(dm_pgf),
+    .m_valid(dbus_valid), .m_addr(dbus_addr), .m_wdata(dbus_wdata),
+    .m_wstrb(dbus_wstrb), .m_ready(dbus_ready), .m_rdata(dbus_rdata),
+    .m_err(dbus_err)
   );
 
   // ---------------------------------------------------------------- MEM/WB
@@ -586,6 +660,7 @@ module axcore #(
   assign trace_mscratch = csr_mscratch;
   assign trace_mie = csr_mie;
   assign trace_mip = csr_mip;
+  assign trace_prv = csr_prv;
 
   // ---------------------------------------------------------------- RVFI
   // rvfi_order is the index of this commit; it advances for both retirement
@@ -603,7 +678,7 @@ module axcore #(
     rvfi_trap      = trap_now;
     rvfi_halt      = 1'b0;
     rvfi_intr      = irq_now;
-    rvfi_mode      = 2'b11;               // M-mode only
+    rvfi_mode      = csr_prv;
     rvfi_ixl       = 2'b01;               // RV32
     rvfi_rs1_addr  = exmem_rs1_q;
     rvfi_rs2_addr  = exmem_rs2_q;
@@ -614,16 +689,17 @@ module axcore #(
     rvfi_pc_rdata  = exmem_pc_q;
     rvfi_pc_wdata  = (trap_now || irq_now) ? trap_vector
                    : mret_now ? mepc_out
+                   : sret_now ? sepc_out
                               : exmem_npc_q;
-    rvfi_mem_addr  = dbus_addr;
+    rvfi_mem_addr  = dm_addr;
     rvfi_mem_rmask = is_ld && !trap_now ?
                      (mf3[1:0] == 2'b00 ? (4'b0001 << moff) :
                       mf3[1:0] == 2'b01 ? (moff[1] ? 4'b1100 : 4'b0011) :
                                           4'b1111) : 4'b0000;
-    rvfi_mem_wmask = exmem_mem_q == MEM_STORE && !trap_now ? dbus_wstrb
+    rvfi_mem_wmask = exmem_mem_q == MEM_STORE && !trap_now ? dm_wstrb
                                                               : 4'b0000;
-    rvfi_mem_rdata = dbus_rdata;
-    rvfi_mem_wdata = dbus_wdata;
+    rvfi_mem_rdata = dm_rdata;
+    rvfi_mem_wdata = dm_wdata;
   end
 
   // Unused instruction bits (decoder/slices take what they need).

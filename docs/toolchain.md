@@ -131,4 +131,11 @@ make -C formal check            # bounded RVFI/riscv-formal suite
 # build the official ISA tests, then run them against aXsim
 make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
 tests/run-riscv-tests.sh          # expect: 41 passed, 0 failed
+
+# Phase-4 supervisor and virtual-memory regressions
+tests/run-riscv-tests.sh rv32si   # expect: 6 passed, 0 failed
+make -C sim/unit run-privilege    # M/S/U transitions, delegation, sret
+make -C sim/unit run-sv32         # Sv32 walk, A/D update, page fault
+make -C sim/testgen paging        # 10 seeds × 10k user-mode Sv32 instructions
+SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si
 ```

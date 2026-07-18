@@ -152,13 +152,16 @@ module decoder #(
 
       7'b1110011: begin  // SYSTEM
         if (f3 == 3'b000 || f3 == 3'b100) begin
-          unique case (insn)
-            32'h0000_0073: sys = SYS_ECALL;
-            32'h0010_0073: sys = SYS_EBREAK;
-            32'h3020_0073: sys = SYS_MRET;
-            32'h1050_0073: sys = SYS_WFI;
-            default:       illegal = 1'b1;
-          endcase
+          // Privilege legality (mret/sret below their level, TW/TVM/TSR
+          // traps) is dynamic state — resolved at the commit point, not here.
+          if (insn == 32'h0000_0073)       sys = SYS_ECALL;
+          else if (insn == 32'h0010_0073)  sys = SYS_EBREAK;
+          else if (insn == 32'h3020_0073)  sys = SYS_MRET;
+          else if (insn == 32'h1020_0073)  sys = SYS_SRET;
+          else if (insn == 32'h1050_0073)  sys = SYS_WFI;
+          else if (f7 == 7'b0001001 && f3 == 3'b000 && insn[11:7] == 5'b0)
+            sys = SYS_SFENCE;              // sfence.vma rs1, rs2
+          else illegal = 1'b1;
         end else begin  // Zicsr
           rd_we    = 1'b1;
           wb_sel   = WB_CSR;

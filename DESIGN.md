@@ -279,7 +279,7 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 | **1. Core, M-mode** ✅ | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence — **met 2026-07-18** (41 rv32ui/rv32mi tests; 10,000,060 generated lock-step events) |
 | **2. Formal + M ext** ✅ | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass — **met 2026-07-18** (insn add/beq/lw/sw sby checks; 8 rv32um tests lock-step on RTL) |
 | **3. SoC v1** ✅ | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL — **met 2026-07-18** (`check-preempt`; interrupt/commit collision regressions added) |
-| **4. Privileged CPU** | S/U modes, Sv32 MMU + TLB, delegation | rv32si tests + cosim with paging-heavy random tests |
+| **4. Privileged CPU** ✅ | S/U modes, Sv32 MMU + TLB, delegation | `rv32si` and paging-heavy lock-step cosim — **met 2026-07-18** (6 upstream supervisor tests in ISS and RTL; 100,000 randomized Sv32/U-mode events across 10 seeds) |
 | **5. Kernel bring-up** | `aXos` core: paging, processes, syscalls, shell on RAM-disk | Interactive shell on the RTL simulation console |
 | **6. Real memory** | SDRAM controller + I$/D$ (board-dependent), SD card (SPI) + on-disk FS | Kernel boots from SD, runs in SDRAM |
 | **7. FPGA bring-up** | Board purchase decision, pinout/constraints, timing closure | Same bitstream-driven shell on physical hardware |

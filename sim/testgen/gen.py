@@ -85,7 +85,12 @@ def instruction(rng):
     if kind == 10:
         # Keep CSR traffic away from timing counters: architectural cycle
         # counts differ between an ISS and a wait-state-tolerant pipeline.
-        csr = rng.choice((0x300, 0x304, 0x305, 0x340, 0x341, 0x342, 0x343, 0x344))
+        # Keep this legacy, linear M-mode corpus free of software-pending
+        # interrupts. In Phase 4 mip[1/5/9] became architecturally writable;
+        # random writes there can correctly interrupt at an intentionally
+        # unset mtvec, which turns a core-fuzz test into a trap-vector test.
+        # Privilege/interrupt coverage belongs to the directed Phase-4 suite.
+        csr = rng.choice((0x300, 0x304, 0x305, 0x340, 0x341, 0x342, 0x343))
         return csr_type(csr, rs1 if rng.randrange(2) else 0,
                         rng.choice((1, 2, 3, 5, 6, 7)), rd)
     # RV32M: the serializing 32-cycle execution path and its forwarding

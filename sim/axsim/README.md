@@ -15,8 +15,8 @@ Scope grows with the CPU phases:
 4. CLINT + UART device models, interrupt injection (phase 3)
 5. M extension (phase 2); S/U modes, medeleg/mideleg trap delegation, and
    Sv32 page-table walks with hardware A/D update (phase 4). The `Cpu::ext_su`
-   flag (default on) gates the privileged extension; the cosim harness clears
-   it until the RTL catches up, keeping lock-step semantics identical.
+   flag (default on) gates the privileged extension; lock-step cosimulation
+   runs with it enabled and compares the effective privilege at every event.
 
 Interfaces it must expose:
 

@@ -105,11 +105,16 @@ int main(int argc, char** argv) {
     const bool icomp = top->ibus_valid && top->ibus_ready;
     const bool dcomp = top->dbus_valid && top->dbus_ready;
     const bool ivalid = top->ibus_valid, dvalid = top->dbus_valid;
+    const uint32_t iaddr = top->ibus_addr, iw = top->ibus_wdata;
+    const uint8_t istrb = top->ibus_wstrb;
+    const bool ierr = top->ibus_err;
     const uint32_t daddr = top->dbus_addr, dw = top->dbus_wdata;
     const uint8_t dstrb = top->dbus_wstrb;
 
     top->clk = 1; top->eval();  // rising edge
 
+    // Sv32's fetch walker updates instruction PTE A-bits through ibus.
+    if (icomp && istrb && !ierr) bus_write(iaddr, iw, istrb);
     if (dcomp && dstrb && !top->dbus_err) bus_write(daddr, dw, dstrb);
     icnt = icomp ? 0 : (ivalid ? icnt + 1 : 0);
     dcnt = dcomp ? 0 : (dvalid ? dcnt + 1 : 0);

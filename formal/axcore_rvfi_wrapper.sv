@@ -33,14 +33,16 @@ module rvfi_wrapper (
   (* anyseq *) reg [31:0] dbus_rdata;
 
   wire        ibus_valid;
-  wire [31:0] ibus_addr;
+  wire [31:0] ibus_addr, ibus_wdata;
+  wire [3:0]  ibus_wstrb;
   wire        dbus_valid;
   wire [31:0] dbus_addr, dbus_wdata;
   wire [3:0]  dbus_wstrb;
 
   axcore #(.ENABLE_M(1'b0)) uut (
     .clk(clock), .rst(reset),
-    .ibus_valid(ibus_valid), .ibus_addr(ibus_addr), .ibus_ready(1'b1),
+    .ibus_valid(ibus_valid), .ibus_addr(ibus_addr), .ibus_wdata(ibus_wdata),
+    .ibus_wstrb(ibus_wstrb), .ibus_ready(1'b1),
     .ibus_rdata(ibus_rdata), .ibus_err(1'b0),
     .dbus_valid(dbus_valid), .dbus_addr(dbus_addr), .dbus_wdata(dbus_wdata),
     .dbus_wstrb(dbus_wstrb), .dbus_ready(1'b1), .dbus_rdata(dbus_rdata),
@@ -50,7 +52,7 @@ module rvfi_wrapper (
     .trace_cause(), .trace_tval(), .trace_rd_we(), .trace_rd(),
     .trace_rd_val(), .trace_mstatus(), .trace_mtvec(), .trace_mepc(),
     .trace_mcause(), .trace_mtval(), .trace_mscratch(), .trace_mie(),
-    .trace_mip(),
+    .trace_mip(), .trace_prv(),
     .rvfi_valid(rvfi_valid), .rvfi_order(rvfi_order), .rvfi_insn(rvfi_insn),
     .rvfi_trap(rvfi_trap), .rvfi_halt(rvfi_halt), .rvfi_intr(rvfi_intr),
     .rvfi_mode(rvfi_mode), .rvfi_ixl(rvfi_ixl),

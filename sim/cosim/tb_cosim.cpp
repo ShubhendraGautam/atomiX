@@ -144,6 +144,8 @@ static bool compare_event(uint64_t n, const Event& rtl, Cpu& iss,
     return mismatch(n, "mie", top->trace_mie, iss.csr.mie);
   if (top->trace_mip != iss.csr.mip)
     return mismatch(n, "mip", top->trace_mip, iss.csr.mip);
+  if (top->trace_prv != iss.prv)
+    return mismatch(n, "privilege", top->trace_prv, iss.prv);
   if (stop == Stop::Fault) {
     fprintf(stderr, "[cosim] ISS stopped after matching event %llu\n",
             (unsigned long long)n);
@@ -177,10 +179,6 @@ int main(int argc, char** argv) {
   rtl_bus.tohost_en = iss_bus.tohost_en;
   rtl_bus.tohost_addr = iss_bus.tohost_addr;
   Cpu iss(iss_bus, reset_pc);
-  // The RTL is still M-only: run the ISS with the phase-4 S/U + Sv32
-  // extension off so lock-step semantics stay identical. Remove when the
-  // privileged aXcore lands.
-  iss.ext_su = false;
 
   Vaxcore* top = new Vaxcore;
   int icnt = 0, dcnt = 0;
@@ -208,6 +206,10 @@ int main(int argc, char** argv) {
     const uint32_t daddr = top->dbus_addr, dwdata = top->dbus_wdata;
     const uint8_t dwstrb = top->dbus_wstrb;
     const bool derr = top->dbus_err;
+    // The fetch-side page-table walker writes PTE A-bits through the ibus.
+    const uint32_t iaddr = top->ibus_addr, iwdata = top->ibus_wdata;
+    const uint8_t iwstrb = top->ibus_wstrb;
+    const bool ierr = top->ibus_err;
     const Event event = {bool(top->trace_valid), bool(top->trace_trap),
                          bool(top->trace_rd_we), top->trace_pc, top->trace_insn,
                          top->trace_cause, top->trace_tval, top->trace_rd,
@@ -215,6 +217,7 @@ int main(int argc, char** argv) {
 
     top->clk = 1; top->eval();
     if (dcomp && dwstrb && !derr) rtl_bus.write(daddr, dwdata, dwstrb);
+    if (icomp && iwstrb && !ierr) rtl_bus.write(iaddr, iwdata, iwstrb);
     icnt = icomp ? 0 : (ivalid ? icnt + 1 : 0);
     dcnt = dcomp ? 0 : (dvalid ? dcnt + 1 : 0);
 

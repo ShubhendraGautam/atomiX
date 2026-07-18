@@ -15,7 +15,8 @@ module soc_top #(
   output logic [15:0] exit_code
 );
   logic ibus_valid, ibus_ready, ibus_err;
-  logic [31:0] ibus_addr, ibus_rdata;
+  logic [31:0] ibus_addr, ibus_rdata, ibus_wdata;
+  logic [3:0] ibus_wstrb;
   logic dbus_valid, dbus_ready, dbus_err;
   logic [31:0] dbus_addr, dbus_wdata, dbus_rdata;
   logic [3:0] dbus_wstrb;
@@ -34,7 +35,8 @@ module soc_top #(
   // verilator lint_off PINCONNECTEMPTY
   axcore #(.RESET_PC(RESET_PC)) u_core (
     .clk(clk), .rst(rst),
-    .ibus_valid(ibus_valid), .ibus_addr(ibus_addr), .ibus_ready(ibus_ready),
+    .ibus_valid(ibus_valid), .ibus_addr(ibus_addr), .ibus_wdata(ibus_wdata),
+    .ibus_wstrb(ibus_wstrb), .ibus_ready(ibus_ready),
     .ibus_rdata(ibus_rdata), .ibus_err(ibus_err),
     .dbus_valid(dbus_valid), .dbus_addr(dbus_addr), .dbus_wdata(dbus_wdata),
     .dbus_wstrb(dbus_wstrb), .dbus_ready(dbus_ready), .dbus_rdata(dbus_rdata),
@@ -45,7 +47,7 @@ module soc_top #(
     .trace_cause(), .trace_tval(), .trace_rd_we(), .trace_rd(),
     .trace_rd_val(), .trace_mstatus(), .trace_mtvec(), .trace_mepc(),
     .trace_mcause(), .trace_mtval(), .trace_mscratch(), .trace_mie(),
-    .trace_mip(),
+    .trace_mip(), .trace_prv(),
     .rvfi_valid(), .rvfi_order(), .rvfi_insn(), .rvfi_trap(), .rvfi_halt(),
     .rvfi_intr(), .rvfi_mode(), .rvfi_ixl(), .rvfi_rs1_addr(),
     .rvfi_rs2_addr(), .rvfi_rs1_rdata(), .rvfi_rs2_rdata(), .rvfi_rd_addr(),
@@ -81,9 +83,10 @@ module soc_top #(
     .d_wstrb(dbus_wstrb), .d_ready(d_rom_ready), .d_rdata(d_rom_rdata), .d_err(d_rom_err)
   );
 
+  // The fetch-side page-table walker writes PTE A-bits through the I port.
   axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
-    .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(ibus_addr), .i_wdata(32'b0),
-    .i_wstrb(4'b0), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
+    .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(ibus_addr), .i_wdata(ibus_wdata),
+    .i_wstrb(ibus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
     .d_valid(d_ram_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata),
     .d_wstrb(dbus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
   );

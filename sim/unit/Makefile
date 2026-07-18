@@ -8,13 +8,13 @@ RTL_SOC  := ../../rtl/soc
 
 MODULES := regfile alu immdec decoder branch_cmp muldiv
 
-CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file axcore
+CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
   $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axrom.sv \
   $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-soc run-soc-timer
 
 run-%: $(RTL_CORE)/%.sv tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -66,6 +66,36 @@ run-irq-collide: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_irq_collide.cpp
 	./obj_dir_irq_collide/tb_irq_collide build/irq_csr.bin $(IRQ_MARKER_irq_csr)
 	./obj_dir_irq_collide/tb_irq_collide build/irq_mret.bin $(IRQ_MARKER_irq_mret)
 
+# M/S/U transition and trap-routing regression.  The directed program is
+# self-checking and uses the same behavioral aXbus testbench as run-axcore.
+run-privilege: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed/privilege.S
+	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_privilege \
+	  --exe --build -o tb_axcore \
+	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_axcore.cpp >/dev/null
+	@mkdir -p build
+	$(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
+	  -Wl,-T,../../sw/baremetal/link.ld -o build/privilege.elf \
+	  ../../tests/directed/privilege.S
+	$(RISCV_PREFIX)objcopy -O binary build/privilege.elf build/privilege.bin
+	./obj_dir_privilege/tb_axcore build/privilege.bin
+	./obj_dir_privilege/tb_axcore build/privilege.bin --ws 2
+	@echo "tb_privilege: PASS"
+
+# End-to-end Sv32 execution: M-mode page-table setup, U-mode fetch/data
+# walks, hardware A/D updates, and a precise store-page-fault trap.
+run-sv32: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed/sv32.S
+	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_sv32 \
+	  --exe --build -o tb_axcore \
+	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_axcore.cpp >/dev/null
+	@mkdir -p build
+	$(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
+	  -Wl,-T,../../sw/baremetal/link.ld -o build/sv32.elf \
+	  ../../tests/directed/sv32.S
+	$(RISCV_PREFIX)objcopy -O binary build/sv32.elf build/sv32.bin
+	./obj_dir_sv32/tb_axcore build/sv32.bin
+	./obj_dir_sv32/tb_axcore build/sv32.bin --ws 2
+	@echo "tb_sv32: PASS"
+
 run-soc: $(SOC_SVS) tb_soc.cpp data/soc_smoke.hex
 	$(VERILATOR) $(VFLAGS) --top-module soc_top --Mdir obj_dir_soc \
 	  -GROM_INIT_FILE=\"$(CURDIR)/data/soc_smoke.hex\" --exe --build -o tb_soc \
@@ -81,4 +111,4 @@ run-soc-timer: $(SOC_SVS) tb_soc_timer.cpp data/soc_timer.hex
 clean:
 	rm -rf obj_dir_* build
 
-.PHONY: test clean run-axcore run-interrupt run-irq-collide run-soc run-soc-timer
+.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-soc run-soc-timer

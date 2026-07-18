@@ -38,6 +38,7 @@ we build.
 | Decision | Choice | Key consequence |
 |---|---|---|
 | Build vs adopt | **Scratch-build only what teaches** (core, bus, kernel, roles); **adopt the industry standard everywhere else** (RISC-V ISA, stock GCC, ELF, riscv-tests, riscv-formal, Verilator, QEMU-`virt` map, 16550 UART, xv6 scope, Wishbone-adjacent bus) | Maximum support and knowledge base; our effort concentrates where the learning is |
+| Languages | **Polyglot, right tool per layer**: C for target software (kernel, bare-metal, userland), C++ for host tooling (ISS/cosim — Verilator emits C++), Python for scripts | Cross-language conflicts are resolved at the boundary where they appear, case by case |
 | ISA | RISC-V **RV32I + Zicsr**, privileged spec M/S/U, **Sv32** MMU; add **M** ext. in phase 2 | Free GCC/LLVM/QEMU ecosystem; privileged spec is mandatory for the kernel goal |
 | HDL | **SystemVerilog** (synthesizable subset supported by Yosys) | Verilator for fast sim; portable to any vendor flow |
 | Microarchitecture | **Classic 5-stage pipeline from day one** (IF ID EX MEM WB) | Precise exceptions and hazard handling are designed in from the start, not retrofitted |
@@ -96,6 +97,7 @@ bug" from "hardware bug".
 | Base | Size | Device |
 |---|---|---|
 | `0x0000_1000` | 4 KB | Boot ROM (BRAM, `$readmemh`-initialized) |
+| `0x0010_0000` | 4 KB | Test finisher (QEMU `sifive_test`-compatible: `0x5555`=pass, `0x3333`\|code≪16=fail; simulation platforms only) |
 | `0x0200_0000` | 64 KB | CLINT: `msip`, `mtimecmp`, `mtime` |
 | `0x0C00_0000` | 4 MB | PLIC (reserved; implemented when we have >1 interrupt source) |
 | `0x1000_0000` | 4 KB | UART0 (16550-compatible subset) |
@@ -312,8 +314,8 @@ atomiX/
 
 ## 10. Open questions (to close in phase 0)
 
-1. **ISS language:** C++ (easier Verilator linkage for cosim) vs Rust
-   (safety, nicer tooling). Leaning C++ for the cosim boundary.
+1. ~~**ISS language**~~ **Closed:** C++ (direct linkage into the Verilator
+   cosim testbench). See the Languages row in §2 for the project-wide policy.
 2. **License** for the repo (BSD/MIT/Apache-2.0).
 3. **Random test generation:** write our own generator vs adopt
    riscv-dv-lite approaches — decide when phase 1 cosim starts.

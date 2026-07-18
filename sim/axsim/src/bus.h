@@ -6,11 +6,13 @@
 
 // Physical memory map — DESIGN.md §3.2, QEMU-virt aligned.
 namespace map {
-constexpr uint32_t ROM_BASE  = 0x00001000;
-constexpr uint32_t ROM_SIZE  = 0x1000;
-constexpr uint32_t UART_BASE = 0x10000000;
-constexpr uint32_t UART_SIZE = 0x1000;
-constexpr uint32_t RAM_BASE  = 0x80000000;
+constexpr uint32_t ROM_BASE   = 0x00001000;
+constexpr uint32_t ROM_SIZE   = 0x1000;
+constexpr uint32_t TEST_BASE  = 0x00100000;  // QEMU sifive_test finisher
+constexpr uint32_t TEST_SIZE  = 0x1000;
+constexpr uint32_t UART_BASE  = 0x10000000;
+constexpr uint32_t UART_SIZE  = 0x1000;
+constexpr uint32_t RAM_BASE   = 0x80000000;
 }  // namespace map
 
 // System bus: routes CPU accesses to ROM/RAM/devices.
@@ -45,8 +47,26 @@ class Bus {
       uart_write(addr - map::UART_BASE, (uint8_t)val);
       return true;
     }
+    if (addr >= map::TEST_BASE && addr < map::TEST_BASE + map::TEST_SIZE) {
+      // QEMU sifive_test protocol: 0x5555 = pass, 0x3333 | code<<16 = fail,
+      // 0x7777 = reset (treated as a clean exit). Same binary exits
+      // identically under QEMU -machine virt.
+      const uint32_t status = val & 0xFFFF;
+      if (status == 0x5555 || status == 0x7777) {
+        exit_req = true;
+        exit_code = 0;
+      } else if (status == 0x3333) {
+        exit_req = true;
+        exit_code = (int)(val >> 16);
+        if (exit_code == 0) exit_code = 1;
+      }
+      return true;
+    }
     return false;
   }
+
+  bool exit_req = false;  // set by a test-finisher write
+  int exit_code = 0;
 
   // Direct image load (bypasses device decode); false if out of range.
   bool load_image(const uint8_t* data, size_t len, uint32_t addr) {

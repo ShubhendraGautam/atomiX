@@ -1,0 +1,28 @@
+# trap_ecall: hand-assembled M-mode trap test. Loads at 0x80000000.
+# Installs a handler in mtvec, verifies CSR readback, takes an ecall trap,
+# checks mcause == 11 in the handler, mret's past the ecall, and reports
+# pass/fail via the test finisher.
+# Exercises: csrrw, csrrs, ecall, trap entry (mepc/mcause), mret.
+800002b7    # 80000000  lui   t0, 0x80000
+04028293    # 80000004  addi  t0, t0, 0x40    ; t0 = &handler
+30529073    # 80000008  csrw  mtvec, t0
+30502373    # 8000000c  csrrs t1, mtvec, x0   ; readback
+00531e63    # 80000010  bne   t1, t0, fail    ; (+28)
+00000073    # 80000014  ecall                 ; -> handler, mret returns below
+00100537    # 80000018  lui   a0, 0x100       ; pass: finisher = 0x5555
+000055b7    # 8000001c  lui   a1, 0x5
+55558593    # 80000020  addi  a1, a1, 0x555
+00b52023    # 80000024  sw    a1, 0(a0)
+0000006f    # 80000028  jal   x0, .           ; not reached
+00100537    # 8000002c  fail: lui  a0, 0x100  ; finisher = 0x3333
+000033b7    # 80000030  lui   a1, 0x3
+33358593    # 80000034  addi  a1, a1, 0x333
+00b52023    # 80000038  sw    a1, 0(a0)
+0000006f    # 8000003c  jal   x0, .           ; not reached
+342023f3    # 80000040  handler: csrrs t2, mcause, x0
+00b00e13    # 80000044  addi  t3, x0, 11      ; ECALL-from-M cause
+ffc392e3    # 80000048  bne   t2, t3, fail    ; (-28)
+341023f3    # 8000004c  csrrs t2, mepc, x0
+00438393    # 80000050  addi  t2, t2, 4       ; skip past the ecall
+34139073    # 80000054  csrw  mepc, t2
+30200073    # 80000058  mret

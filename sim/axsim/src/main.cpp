@@ -71,23 +71,12 @@ int main(int argc, char** argv) {
   cpu.trace = trace;
 
   while (max_insns == 0 || cpu.retired() < max_insns) {
-    const uint32_t at = cpu.pc;
-    const Stop s = cpu.step();
-    switch (s) {
-      case Stop::None:
-        continue;
-      case Stop::Ebreak:
-        // Temporary halt convention until the trap machinery lands.
-        fprintf(stderr, "[axsim] ebreak @ %08x — halt (retired=%" PRIu64 ")\n",
-                at, cpu.retired());
-        return 0;
-      case Stop::Ecall:
-        fprintf(stderr,
-                "[axsim] ecall @ %08x — trap machinery not implemented yet\n",
-                at);
-        return 2;
-      case Stop::Fault:
-        return 1;  // diagnostics already printed by the CPU
+    if (cpu.step() == Stop::Fault)
+      return 127;  // diagnostics already printed by the CPU
+    if (bus.exit_req) {
+      fprintf(stderr, "[axsim] exit %d via test finisher (retired=%" PRIu64 ")\n",
+              bus.exit_code, cpu.retired());
+      return bus.exit_code;
     }
   }
   fprintf(stderr, "[axsim] max instruction count reached (%" PRIu64 ")\n",

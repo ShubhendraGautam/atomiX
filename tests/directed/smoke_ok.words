@@ -1,6 +1,7 @@
 # smoke_ok: hand-assembled RV32I bring-up test. Loads at 0x80000000.
-# Prints "OK\n" over the UART iff sum(5..1) == 15, then halts via ebreak.
-# Exercises: lui, addi, add, sb, a backward branch, a forward branch.
+# Prints "OK\n" over the UART iff sum(5..1) == 15, then exits via the test
+# finisher (0x100000: 0x5555 = pass, 0x3333 = fail — QEMU sifive_test).
+# Exercises: lui, addi, add, sb, sw, a backward branch, a forward branch.
 10000537    # 80000000  lui   a0, 0x10000     ; a0 = UART base
 04f00593    # 80000004  addi  a1, x0, 'O'
 00b50023    # 80000008  sb    a1, 0(a0)
@@ -12,10 +13,16 @@
 fff68693    # 80000020  addi  a3, a3, -1      ; i--
 fe069ce3    # 80000024  bne   a3, x0, loop    ; (-8)
 00f00713    # 80000028  addi  a4, x0, 15
-00e61863    # 8000002c  bne   a2, a4, fail    ; (+16)
+02e61063    # 8000002c  bne   a2, a4, fail    ; (+32)
 00a00593    # 80000030  addi  a1, x0, '\n'
 00b50023    # 80000034  sb    a1, 0(a0)
-00100073    # 80000038  ebreak                ; PASS halt
-03f00593    # 8000003c  fail: addi a1, x0, '?'
-00b50023    # 80000040  sb    a1, 0(a0)
-00100073    # 80000044  ebreak                ; FAIL halt (no newline printed)
+001002b7    # 80000038  lui   t0, 0x100       ; t0 = test finisher
+00005337    # 8000003c  lui   t1, 0x5
+55530313    # 80000040  addi  t1, t1, 0x555   ; t1 = 0x5555 (pass)
+0062a023    # 80000044  sw    t1, 0(t0)
+0000006f    # 80000048  jal   x0, .           ; not reached
+001002b7    # 8000004c  fail: lui  t0, 0x100
+00003337    # 80000050  lui   t1, 0x3
+33330313    # 80000054  addi  t1, t1, 0x333   ; t1 = 0x3333 (fail)
+0062a023    # 80000058  sw    t1, 0(t0)
+0000006f    # 8000005c  jal   x0, .           ; not reached

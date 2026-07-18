@@ -42,6 +42,32 @@ SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si  # lock-step
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).
 
+## Tested host toolchain
+
+This is the known-working baseline used for the current verification results
+(recorded 2026-07-18). It is a compatibility record, not a requirement to use
+these exact patch releases.
+
+| Component | Running version | Role / note |
+|---|---:|---|
+| Host OS | Ubuntu 22.04.5 LTS | WSL2 host used for bring-up |
+| RISC-V GCC | 10.2.0 (`gcc-riscv64-unknown-elf`) | Use `-march=rv32im`; this older parser rejects explicit `_zicsr` |
+| Verilator | 4.038 | RTL simulation |
+| QEMU | 8.2.10 (local `~/.local` install) | Three-platform checks; invoke with `-cpu rv32,pmp=false` for the PMP-less aXcore model. Ubuntu 22.04's packaged 6.2.0 is insufficient for Phase 5 S/U mode. |
+| Yosys | 0.67+ (upstream, `45ea2b8d6`) | Formal flow; Ubuntu's bundled 0.9 is insufficient |
+| SymbiYosys | upstream install | Formal-job launcher; see the exact setup in `docs/toolchain.md` |
+| Boolector | 1.5.118 | SMT solver |
+| Z3 | 4.8.12 | Alternate SMT solver |
+| Python | 3.10.12 | Test generation and runners |
+| GNU Make | 4.3 | Build orchestration |
+| Git | 2.34.1 | Source and submodule management |
+
+Ubuntu deliberately keeps a stable package set for an LTS release, applying
+security and critical bug fixes rather than automatically tracking every
+upstream release. That is why `apt install qemu-system-misc` installs 6.2 on
+Ubuntu 22.04 instead of the newest QEMU. A local newer QEMU can coexist with
+the distro package; the safe setup is documented in [docs/toolchain.md](docs/toolchain.md).
+
 ## Layout
 
 | Path | Contents |

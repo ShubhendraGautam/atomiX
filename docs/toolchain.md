@@ -139,3 +139,35 @@ make -C sim/unit run-sv32         # Sv32 walk, A/D update, page fault
 make -C sim/testgen paging        # 10 seeds × 10k user-mode Sv32 instructions
 SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si
 ```
+
+## QEMU required for Phase 5
+
+The Ubuntu 22.04 `qemu-system-riscv32` package is 6.2. Its RISC-V model has a
+known upstream PMP bug: `mret` into S/U mode traps when no PMP entries are
+configured, even when the CPU is requested with `pmp=false`. aXcore does not
+implement optional PMP, so the first S-mode kernel needs **QEMU 7 or newer**.
+
+Build a small, RISC-V-only current QEMU locally; this does not replace the
+distro package and needs no `sudo`:
+
+```bash
+sudo apt update
+sudo apt install build-essential git meson ninja-build pkg-config python3 python3-venv \
+  libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev
+git clone --depth 1 --branch v8.2.10 https://github.com/qemu/qemu.git /tmp/qemu-8.2.10
+cd /tmp/qemu-8.2.10
+mkdir build
+./configure --target-list=riscv32-softmmu --prefix="$HOME/.local"
+ninja -C build
+ninja -C build install
+export PATH="$HOME/.local/bin:$PATH"
+qemu-system-riscv32 --version       # expect 8.2.x (or any version >= 7)
+```
+
+The source tree under `/tmp` may be removed after installation. Keep the
+`PATH` export in your shell profile if you want this QEMU to be the default.
+Then verify the platform-neutral kernel bootstrap:
+
+```bash
+make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
+```

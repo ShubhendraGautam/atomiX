@@ -18,3 +18,19 @@ OS of the accelerator card in every mode:
   `axhost` over USB — buffer transfer, work submission, events
 
 Exit criterion (phase 5): interactive shell on the RTL simulation console.
+
+## Bootstrap milestone
+
+`make check-boot` builds the first aXos image. M-mode constructs an Sv32
+identity map for kernel RAM plus UART, CLINT, and the test finisher; it then
+enters S-mode with `mret`. The S-mode kernel prints
+`aXos: S-mode Sv32 online` and exits through the usual finisher. It is the
+foundation for the S-mode trap path, timer shim, allocator, and process work.
+
+Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
+pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.
+
+The Ubuntu 22.04 QEMU 6.2 package has an upstream RISC-V PMP bug that rejects
+`mret` to S/U when no PMP region exists. This project does not implement PMP,
+so the cross-platform kernel check requires QEMU 7 or newer with
+`-cpu rv32,pmp=false`; setup is in [docs/toolchain.md](../../docs/toolchain.md).

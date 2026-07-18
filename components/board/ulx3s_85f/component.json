@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "board.ulx3s-85f",
+  "kind": "board",
+  "title": "ULX3S v2/v3 ECP5-85F board target",
+  "sources": [
+    "rtl/fpga/axuart_phy.sv",
+    "rtl/fpga/ulx3s_85f_top.sv"
+  ],
+  "make": {
+    "FPGA_TOP": "ulx3s_85f_top",
+    "FPGA_LPF": "rtl/fpga/ulx3s_85f.lpf",
+    "NEXTPNR_ARGS": ["--85k", "--package", "CABGA381", "--speed", "6", "--freq", "25"],
+    "ECPPACK_ARGS": ["--idcode", "0x41113043"]
+  },
+  "capabilities": ["ecp5", "sdram", "ftdi-uart", "micro-sd"]
+}

@@ -12,6 +12,11 @@ Yosys (synthesis) — that dual gate is what keeps us FPGA-portable.
 | [roles/](roles/) | Swappable accelerator roles (loopback, TPU-lite, …) |
 | [fpga/](fpga/) | Board-specific top-levels and constraints |
 
+The reference design is also available through the component catalog in
+[`components/`](../components/README.md). A custom source can replace a CPU,
+memory backend, stock peripheral, SoC shell, or board target at the build
+boundary without requiring a rewrite of unrelated RTL.
+
 Conventions:
 
 - One module per file, filename = module name.

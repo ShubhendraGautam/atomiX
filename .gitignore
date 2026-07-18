@@ -20,6 +20,11 @@ __pycache__/
 
 # FPGA flow outputs
 *.json
+# Component manifests and supplied build profiles are source inputs, not
+# generated FPGA JSON. Keep these exceptions adjacent to the broad rule so
+# new profiles are visible to Git by default.
+!components/**/component.json
+!configs/*.json
 *.asc
 *.bit
 *.svf

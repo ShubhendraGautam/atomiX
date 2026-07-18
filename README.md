@@ -8,6 +8,25 @@ CPU, TPU-style matrix engine, or other roles, managed by our own kernel
 **Start here: [DESIGN.md](DESIGN.md)** — the design contract. Every closed
 decision, the architecture, and the phased roadmap live there.
 
+## Build it your way
+
+The verified reference machine is the default, but it is not a fixed appliance.
+CPU, SoC, memory, UART, CLINT, SPI, board, and software implementations are
+selectable components. The component catalog keeps contracts at integration
+seams rather than prescribing how a user must implement their hardware or
+kernel.
+
+```bash
+make component-list
+make config-check CONFIG=configs/sim-delayed.json
+make sim CONFIG=configs/sim-bram.json \
+  RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
+make software CONFIG=configs/sim-axos.json
+```
+
+See [components/README.md](components/README.md) for out-of-tree component
+selection and [docs/components.md](docs/components.md) for the architecture.
+
 ## Principles
 
 - **Scratch-build only what teaches** (CPU core, bus, kernel, accelerator
@@ -91,6 +110,9 @@ the distro package; the safe setup is documented in [docs/toolchain.md](docs/too
 | Path | Contents |
 |---|---|
 | [docs/](docs/) | Per-block specifications as they solidify |
+| [components/](components/) | Selectable implementation manifests and extension guide |
+| [configs/](configs/) | Reproducible [system profiles](configs/README.md) for simulation and boards |
+| [tools/](tools/) | Dependency-free component configuration resolver |
 | [rtl/](rtl/) | All synthesizable SystemVerilog: core, SoC shell, roles, board tops |
 | [sim/](sim/) | ISS golden model, cosimulation harness, test generator |
 | [formal/](formal/) | riscv-formal + SymbiYosys configurations |

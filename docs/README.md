@@ -9,6 +9,7 @@ Expected documents (created in the phase that needs them):
 - `axbus.md` — bus signals, timing diagrams, error semantics (phase 1)
 - `csr-map.md` — implemented CSRs, reset values, WARL behavior (phase 1)
 - `memory-map.md` — authoritative device map if it outgrows DESIGN.md §3.2
+- `components.md` — selectable implementation model and extension boundary
 - `host-protocol.md` — USB framing between `axhost` and the shell (phase 8)
 - `role-interface.md` — doorbell, descriptor ring, role ID discovery (phase 8)
 

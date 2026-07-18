@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "sim-axos",
+  "components": {
+    "core": "core.pipeline5",
+    "soc": "soc.reference",
+    "memory": "memory.sdram",
+    "uart": "uart.mmio16550",
+    "clint": "clint.qemu-virt",
+    "spi": "spi.polling-mode0",
+    "board": "board.sim",
+    "software": "software.axos-sdboot"
+  },
+  "settings": {"ram_bytes": 33554432, "caches": true, "reset_pc": "0x00001000"}
+}

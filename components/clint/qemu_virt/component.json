@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "clint.qemu-virt",
+  "kind": "clint",
+  "title": "QEMU-virt compatible CLINT",
+  "sources": ["rtl/soc/clint.sv"],
+  "stock_soc_module": "clint",
+  "capabilities": ["msip", "mtime", "mtimecmp"]
+}

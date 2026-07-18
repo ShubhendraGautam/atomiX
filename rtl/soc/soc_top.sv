@@ -72,8 +72,11 @@ module soc_top #(
   logic core_trace_valid, core_trace_trap;
   logic [31:0] core_trace_insn;
 
-  // The standalone SoC does not consume debug/RVFI observability signals.
-  // verilator lint_off PINCONNECTEMPTY
+  // This is deliberately a lean CPU plug-in boundary.  A component supplies
+  // the execution bus, interrupt inputs, and only the three commit signals
+  // needed for cache maintenance.  RVFI and richer tracing stay optional
+  // implementation features rather than requirements of the stock SoC.
+  // verilator lint_off PINMISSING
   axcore #(.RESET_PC(RESET_PC)) u_core (
     .clk(clk), .rst(rst),
     .ibus_valid(ibus_valid), .ibus_addr(ibus_addr), .ibus_wdata(ibus_wdata),
@@ -83,19 +86,10 @@ module soc_top #(
     .dbus_wstrb(dbus_wstrb), .dbus_ready(dbus_ready), .dbus_rdata(dbus_rdata),
     .dbus_err(dbus_err),
     .irq_software(irq_software), .irq_timer(irq_timer),
-    .irq_external(irq_external),
-    .trace_valid(core_trace_valid), .trace_trap(core_trace_trap), .trace_pc(), .trace_insn(core_trace_insn),
-    .trace_cause(), .trace_tval(), .trace_rd_we(), .trace_rd(),
-    .trace_rd_val(), .trace_mstatus(), .trace_mtvec(), .trace_mepc(),
-    .trace_mcause(), .trace_mtval(), .trace_mscratch(), .trace_mie(),
-    .trace_mip(), .trace_prv(),
-    .rvfi_valid(), .rvfi_order(), .rvfi_insn(), .rvfi_trap(), .rvfi_halt(),
-    .rvfi_intr(), .rvfi_mode(), .rvfi_ixl(), .rvfi_rs1_addr(),
-    .rvfi_rs2_addr(), .rvfi_rs1_rdata(), .rvfi_rs2_rdata(), .rvfi_rd_addr(),
-    .rvfi_rd_wdata(), .rvfi_pc_rdata(), .rvfi_pc_wdata(), .rvfi_mem_addr(),
-    .rvfi_mem_rmask(), .rvfi_mem_wmask(), .rvfi_mem_rdata(), .rvfi_mem_wdata()
+    .irq_external(irq_external), .trace_valid(core_trace_valid),
+    .trace_trap(core_trace_trap), .trace_insn(core_trace_insn)
   );
-  // verilator lint_on PINCONNECTEMPTY
+  // verilator lint_on PINMISSING
 
   // A fetch-side page-table walk can write a PTE that the data side cached,
   // so it invalidates the D$ after completing.  The I$ is deliberately not
@@ -179,53 +173,25 @@ module soc_top #(
     .d_wstrb(d_bus_wstrb), .d_ready(d_rom_ready), .d_rdata(d_rom_rdata), .d_err(d_rom_err)
   );
 
-  // The fetch-side page-table walker writes PTE A-bits through the I port.
-  // Phase 6 selects the same external-memory interface with realistic stalls.
-  // The physical SDRAM controller keeps precisely the same dual-port aXbus
-  // boundary; the board top selects it explicitly.
-  generate
-    if (USE_SDRAM != 0) begin : g_sdram
-      axsdram #(.BYTES(RAM_BYTES)) u_ram (
-        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
-        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
-        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
-        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err),
-        .sdram_cke(sdram_cke), .sdram_cs_n(sdram_cs_n), .sdram_ras_n(sdram_ras_n),
-        .sdram_cas_n(sdram_cas_n), .sdram_we_n(sdram_we_n), .sdram_ba(sdram_ba),
-        .sdram_a(sdram_a), .sdram_dqm(sdram_dqm), .sdram_dq_i(sdram_dq_i),
-        .sdram_dq_o(sdram_dq_o), .sdram_dq_oe(sdram_dq_oe),
-        .init_done(sdram_init_done)
-      );
-    end else if (USE_DRAM_MODEL != 0) begin : g_dram
-      axdram_model #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
-        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
-        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
-        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
-        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
-      );
-    end else begin : g_bram
-      axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
-        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
-        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
-        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
-        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
-      );
-    end
-
-    if (USE_SDRAM == 0) begin : g_no_sdram_pins
-      assign sdram_cke = 1'b0;
-      assign sdram_cs_n = 1'b1;
-      assign sdram_ras_n = 1'b1;
-      assign sdram_cas_n = 1'b1;
-      assign sdram_we_n = 1'b1;
-      assign sdram_ba = 2'b00;
-      assign sdram_a = 13'b0;
-      assign sdram_dqm = 2'b00;
-      assign sdram_dq_o = 16'b0;
-      assign sdram_dq_oe = 1'b0;
-      assign sdram_init_done = 1'b0;
-    end
-  endgenerate
+  // `axmem` is a replaceable component boundary. The reference implementation
+  // preserves the Phase-6 BRAM/delayed/SDRAM selection; a DIY memory component
+  // only needs to implement this dual-aXbus/pin-level boundary.
+  axmem #(
+    .RAM_BYTES(RAM_BYTES), .USE_DRAM_MODEL(USE_DRAM_MODEL),
+    .USE_SDRAM(USE_SDRAM), .RAM_INIT_FILE(RAM_INIT_FILE)
+  ) u_ram (
+    .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr),
+    .i_wdata(i_bus_wdata), .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready),
+    .i_rdata(i_ram_rdata), .i_err(i_ram_err), .d_valid(d_ram_valid),
+    .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
+    .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err),
+    .sdram_cke(sdram_cke), .sdram_cs_n(sdram_cs_n),
+    .sdram_ras_n(sdram_ras_n), .sdram_cas_n(sdram_cas_n),
+    .sdram_we_n(sdram_we_n), .sdram_ba(sdram_ba), .sdram_a(sdram_a),
+    .sdram_dqm(sdram_dqm), .sdram_dq_i(sdram_dq_i),
+    .sdram_dq_o(sdram_dq_o), .sdram_dq_oe(sdram_dq_oe),
+    .sdram_init_done(sdram_init_done)
+  );
 
   test_finisher u_test (
     .clk(clk), .rst(rst), .i_valid(i_test_valid), .i_wdata(i_bus_wdata), .i_wstrb(i_bus_wstrb),

@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "sim-hello",
+  "components": {
+    "core": "core.pipeline5",
+    "soc": "soc.reference",
+    "memory": "memory.bram",
+    "uart": "uart.mmio16550",
+    "clint": "clint.qemu-virt",
+    "spi": "spi.polling-mode0",
+    "board": "board.sim",
+    "software": "software.baremetal-hello"
+  },
+  "settings": {"ram_bytes": 131072, "caches": false, "reset_pc": "0x80000000"}
+}

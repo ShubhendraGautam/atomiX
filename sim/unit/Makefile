@@ -10,7 +10,7 @@ MODULES := regfile alu immdec decoder branch_cmp muldiv
 
 CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv $(RTL_SOC)/axrom.sv \
+  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv $(RTL_SOC)/axmem_reference.sv $(RTL_SOC)/axmem.sv $(RTL_SOC)/axrom.sv \
   $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 

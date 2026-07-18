@@ -23,10 +23,17 @@ Build after the ECP5 tools in [docs/toolchain.md](../../docs/toolchain.md) are
 on `PATH`:
 
 ```bash
-make -C rtl/fpga              # boot ROM, Yosys, nextpnr, .bit
+make fpga CONFIG=configs/ulx3s-85f.json  # boot ROM, Yosys, nextpnr, .bit
+make -C rtl/fpga config
 make -C rtl/fpga toolchain-report
 make -C rtl/fpga program      # reversible SRAM configuration
 ```
+
+`configs/ulx3s-85f.json` selects every implementation used by the board.
+Provide another configuration with a custom core, memory backend, peripheral,
+SoC, or board manifest to compose a DIY variant. The reference ULX3S top is
+still the only board target whose synthesis has been checked; selection alone
+does not claim timing or hardware compatibility.
 
 `make flash` writes persistent configuration flash and is intentionally
 separate. Do it only after the physical bring-up checks in

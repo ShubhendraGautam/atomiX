@@ -35,8 +35,13 @@ of the shell + role platform, DESIGN.md §3.3):
   byte registers are packed correctly into aXbus's word-aligned read lanes.
 - `test_finisher.sv` — synthesizable simulation endpoint for QEMU's
   `sifive_test` pass/fail convention.
+- `axmem.sv` — the selected memory-component boundary. The default wrapper
+  delegates to `axmem_reference.sv`, retaining BRAM, delayed memory, and SDRAM
+  behavior; a DIY memory component may provide another `axmem` implementation.
 - `soc_top.sv` — ties the shell together; reset defaults to boot ROM
-  (`0x0000_1000`).
+  (`0x0000_1000`). It accepts selected `axcore`, `axmem`, UART, CLINT, and SPI
+  implementations; the actual named-port instantiations are the compact stock
+  integration contracts.
 
 The memory map is QEMU-`virt`-aligned — see DESIGN.md §3.1/§3.2. Built in
 phase 3. The currently implemented shell is covered by:
@@ -49,3 +54,6 @@ make -C sim/unit run-axcache
 make -C sim/unit run-axsdram
 make -C sim/unit run-axspi
 ```
+
+See [components/README.md](../../components/README.md) to select or supply a
+component without editing this reference shell.

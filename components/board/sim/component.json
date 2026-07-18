@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "board.sim",
+  "kind": "board",
+  "title": "Verilator complete-SoC simulation harness",
+  "capabilities": ["verilator", "virtual-sd", "uart-script"]
+}

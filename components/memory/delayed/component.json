@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "memory.delayed",
+  "kind": "memory",
+  "title": "Reference delayed external-memory configuration",
+  "sources": ["rtl/soc/axmem.sv"],
+  "stock_soc_module": "axmem",
+  "make": {"USE_DRAM_MODEL": 1, "USE_SDRAM": 0, "SIM_RUNNER": "run"},
+  "capabilities": ["dual-axbus", "delayed-model"]
+}

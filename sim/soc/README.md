@@ -17,6 +17,24 @@ For a direct invocation, provide a RAM image and an entry point:
 make -C sim/soc run RAM_INIT_FILE=/absolute/path/program.hex RESET_PC=0x80000000
 ```
 
+The component-aware entry point selects both the source implementation and
+the appropriate runner. The supplied profiles make BRAM, delayed memory, and
+the physical SDRAM behavioral path reproducible:
+
+```bash
+make sim CONFIG=configs/sim-bram.json \
+  RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
+make sim CONFIG=configs/sim-delayed.json \
+  RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
+make sim CONFIG=configs/sim-sdram.json \
+  ROM_INIT_FILE="$PWD/sw/bootrom/build/bootrom.hex" \
+  SD_IMAGE="$PWD/sw/kernel/build/axos_boot.img"
+```
+
+Run `make -C sim/soc config COMPONENT_CONFIG=/absolute/path/profile.json` to
+show the resolved component IDs. Details of custom or external components are
+in [components/README.md](../../components/README.md).
+
 For a scripted aXos shell session:
 
 ```bash

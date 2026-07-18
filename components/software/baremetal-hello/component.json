@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "software.baremetal-hello",
+  "kind": "software",
+  "title": "Freestanding hello-world aXbus image",
+  "make": {
+    "SOFTWARE_RUNNER": "ram",
+    "SOFTWARE_MAKE_DIR": "sw/baremetal",
+    "SOFTWARE_MAKE_TARGET": "build/hello.hex",
+    "SOFTWARE_RAM_HEX": "sw/baremetal/build/hello.hex",
+    "SOFTWARE_MAX_CYCLES": 10000
+  },
+  "capabilities": ["rv32im", "baremetal", "uart", "finisher"]
+}

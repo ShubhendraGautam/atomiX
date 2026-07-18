@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "memory.sdram",
+  "kind": "memory",
+  "title": "Reference ULX3S x16 SDRAM controller configuration",
+  "sources": ["rtl/soc/axmem.sv"],
+  "stock_soc_module": "axmem",
+  "make": {"USE_DRAM_MODEL": 0, "USE_SDRAM": 1, "SIM_RUNNER": "run-sdram"},
+  "capabilities": ["dual-axbus", "x16-sdram", "refresh", "physical-dq"]
+}

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "spi.polling-mode0",
+  "kind": "spi",
+  "title": "Polling SPI mode-0 controller",
+  "sources": ["rtl/soc/axspi.sv"],
+  "stock_soc_module": "axspi",
+  "capabilities": ["spi-mode0", "sdhc"]
+}

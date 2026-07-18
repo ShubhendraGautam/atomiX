@@ -52,6 +52,7 @@ we build.
 | Build order | **ISS first, then RTL** | RTL debugging starts with a trusted golden model and cosim from day one |
 | Kernel | **Monolithic, xv6-inspired scope**, our own code | Achievable scope with a known-good reference for when we're stuck |
 | Platform model | **Shell + role** (AWS F1 / Catapult style): aXcore + aXos fixed in every bitstream, role region swapped per mode | Kernel is genuinely common across modes; host driver never sees role internals, only the shell protocol |
+| Component composition | **Manifest-selected implementations with lenient stock seams** | Users may substitute CPU, memory, peripheral, SoC, board, or software/kernel code; manifests compose sources but do not prescribe microarchitecture or verification claims |
 | Mode switching | **Full bitstream swap** (host uploads new bitstream, FPGA reboots) | Partial reconfiguration is effectively unsupported in the open Yosys/nextpnr flow; full swap is simple and reliable |
 | Host link | **USB** — FTDI USB-serial first (~1–3 MB/s), soft USB device core later | Zero extra hardware on ULX3S-class boards; models as a virtual pipe in simulation |
 | Role interface | **aXbus MMIO device with doorbell + descriptor ring** | Same idiom as real NVMe/GPU hardware; one driver model for every role |
@@ -300,6 +301,9 @@ records P&R/timing and board evidence before it is marked complete.
 atomiX/
 ├── DESIGN.md            # this document
 ├── docs/                # per-block specs as they solidify (bus, CSR map, …)
+├── components/          # selectable implementation manifests + extension guide
+├── configs/             # reproducible component selections for sim/boards
+├── tools/               # dependency-free configuration resolver
 ├── rtl/
 │   ├── core/            # aXcore: pipeline stages, CSR file, MMU
 │   ├── soc/             # aXbus, memories, UART, CLINT, top-level (the shell)

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "software.axos-sdboot",
+  "kind": "software",
+  "title": "aXos kernel booted from SD by ROM",
+  "make": {
+    "SOFTWARE_RUNNER": "sdboot",
+    "SOFTWARE_MAKE_DIR": "sw/kernel",
+    "SOFTWARE_MAKE_TARGET": "boot-disk",
+    "SOFTWARE_ROM_HEX": "sw/bootrom/build/bootrom.hex",
+    "SOFTWARE_SD_IMAGE": "sw/kernel/build/axos_boot.img",
+    "SOFTWARE_UART_INPUT": "sw/kernel/shell_input.txt",
+    "SOFTWARE_MAX_CYCLES": 3000000
+  },
+  "capabilities": ["axos", "sdboot", "axfs", "sv32", "uart-shell"]
+}

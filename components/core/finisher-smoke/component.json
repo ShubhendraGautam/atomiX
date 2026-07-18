@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "core.finisher-smoke",
+  "kind": "core",
+  "title": "Minimal non-RISC-V aXbus finisher smoke core",
+  "sources": ["components/core/finisher-smoke/axcore.sv"],
+  "stock_soc_module": "axcore",
+  "capabilities": ["composition-smoke", "not-riscv", "not-software-compatible"]
+}

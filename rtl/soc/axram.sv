@@ -2,7 +2,8 @@
 // rule combinationally; writes take effect on the following rising edge.
 module axram #(
   parameter logic [31:0] BASE = 32'h8000_0000,
-  parameter int unsigned BYTES = 128 * 1024
+  parameter int unsigned BYTES = 128 * 1024,
+  parameter string INIT_FILE = ""
 ) (
   input  logic        clk,
   input  logic        rst,
@@ -30,6 +31,8 @@ module axram #(
   wire d_ok = d_addr >= BASE && d_offset <= BYTES - 4 && d_addr[1:0] == 2'b00;
   wire [INDEX_BITS-1:0] i_index = i_offset[INDEX_BITS+1:2];
   wire [INDEX_BITS-1:0] d_index = d_offset[INDEX_BITS+1:2];
+
+  initial if (INIT_FILE != "") $readmemh(INIT_FILE, mem);
 
   always_comb begin
     i_ready = i_valid;

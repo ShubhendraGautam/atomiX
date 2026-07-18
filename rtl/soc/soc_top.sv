@@ -3,7 +3,8 @@
 module soc_top #(
   parameter logic [31:0] RESET_PC = 32'h0000_1000,
   parameter int unsigned RAM_BYTES = 128 * 1024,
-  parameter string ROM_INIT_FILE = ""
+  parameter string ROM_INIT_FILE = "",
+  parameter string RAM_INIT_FILE = ""
 ) (
   input  logic       clk,
   input  logic       rst,
@@ -80,7 +81,7 @@ module soc_top #(
     .d_wstrb(dbus_wstrb), .d_ready(d_rom_ready), .d_rdata(d_rom_rdata), .d_err(d_rom_err)
   );
 
-  axram #(.BYTES(RAM_BYTES)) u_ram (
+  axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
     .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(ibus_addr), .i_wdata(32'b0),
     .i_wstrb(4'b0), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
     .d_valid(d_ram_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata),

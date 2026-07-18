@@ -1,14 +1,27 @@
 # sw/baremetal/ — bare-metal runtime and bring-up programs
 
-The no-OS layer used before (and alongside) the kernel:
+The no-OS layer used before (and alongside) the kernel. It uses no libc or
+firmware: the image enters at RAM `0x8000_0000`, and talks directly to the
+QEMU-virt-aligned UART, CLINT, and test-finisher addresses.
 
 - `crt0.S` — reset entry: set `sp`, zero `.bss`, call `main`
 - `link.ld` — linker script for the DESIGN.md §3.2 map (RAM at `0x8000_0000`)
-- A tiny libc subset: `putchar`/`puts`/`printf` over the 16550 UART,
-  `memcpy`/`memset` and friends — only what bring-up needs
-- CSR/trap helpers (`csr.h`), CLINT timer helpers
-- Bring-up programs: hello-UART, timer-interrupt blinky, the phase 3
-  timer-preempted multitasking demo
+- `include/platform.h` — volatile MMIO helpers, a polling 16550 TX console,
+  and the `sifive_test` exit protocol
+- `examples/hello.c` — first platform customer; prints then passes
 
-These programs are the SoC's first customers and double as directed tests in
-`tests/`. Phase 0 (built against aXsim) onward.
+Build and run the current bring-up program:
+
+```bash
+make -C sw/baremetal images      # ELF, flat binary, and RTL RAM .hex image
+make -C sw/baremetal run-iss
+make -C sw/baremetal run-qemu
+make -C sw/baremetal run-rtl
+make -C sw/baremetal check-hello # asserts identical UART output on all three
+```
+
+`RISCV_PREFIX` defaults to `riscv64-unknown-elf-`. GCC 10 accepts
+`RISCV_ARCH=rv32im` (its Zicsr support is included in that spelling); newer
+toolchains may be invoked with `RISCV_ARCH=rv32im_zicsr`.
+
+The timer interrupt and preemptive-demo runtime are the next Phase 3 slice.

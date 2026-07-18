@@ -8,6 +8,7 @@ and enforced (DESIGN.md §6).
 |---|---|
 | [axsim/](axsim/) | `aXsim` — our instruction-set simulator, the golden model |
 | [cosim/](cosim/) | Verilator harness comparing RTL against aXsim per retired instruction |
+| [soc/](soc/) | Complete `soc_top` runner with `$readmemh`-initialized RAM |
 | [testgen/](testgen/) | Random RISC-V instruction-stream generator for cosim fuzzing |
 
 Three-platform rule: all software must run unchanged on aXsim, QEMU

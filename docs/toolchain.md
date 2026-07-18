@@ -27,7 +27,7 @@ sudo apt install \
 |---|---|---|
 | `build-essential` | host `g++`, `make` — builds aXsim and the cosim harness (`clang++` works too; the Makefile auto-detects) | phase 0 |
 | `gcc-riscv64-unknown-elf` | the RISC-V cross-compiler (multilib: targets rv32 despite the name) + binutils | phase 0 |
-| `picolibc-riscv64-unknown-elf` | libc for bare-metal target programs | phase 3 |
+| `picolibc-riscv64-unknown-elf` | optional libc for later, richer bare-metal programs; the current runtime is freestanding and does not need it | later phase 3 |
 | `verilator` | SystemVerilog → C++ simulation | phase 1 |
 | `qemu-system-misc` | `qemu-system-riscv32` — the third platform of the §3.1 three-platform rule | phase 3 |
 | `boolector`, `z3` | optional alternate SMT solvers for exploratory formal work | phase 2 |
@@ -84,9 +84,10 @@ Later phases add:
 ## Known quirks (learned the hard way)
 
 - **`-march` spelling:** distro GCC 10.2 predates the ISA split that moved CSR
-  instructions into `Zicsr`. Use `-march=rv32i -mabi=ilp32` — CSR instructions
-  are accepted implicitly. Newer toolchains (12+) want `rv32i_zicsr`.
-  Makefiles should probe rather than hardcode.
+  instructions into `Zicsr`. Use `-march=rv32im -mabi=ilp32` — CSR instructions
+  are accepted implicitly. Newer toolchains can use `rv32im_zicsr`. The
+  bare-metal Makefile defaults to the GCC-10-compatible spelling and exposes
+  `RISCV_ARCH` for an override.
 - **Failed installs with 404s:** means stale package lists — run
   `sudo apt update` first (with sudo; without it apt can't take its locks).
   A handful of QEMU audio/GUI dependencies (alsa, gstreamer) may still 404
@@ -105,6 +106,10 @@ git clone --recurse-submodules <repo-url> && cd atomiX
 
 # build + directed tests
 make -C sim/axsim test
+
+# build the first freestanding C image and compare its UART output on ISS,
+# QEMU virt, and the complete Verilated SoC
+make -C sw/baremetal check-hello
 
 # confirm the formal toolchain and reference checkout
 sby --version

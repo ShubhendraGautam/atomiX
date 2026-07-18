@@ -36,22 +36,26 @@ enum : uint32_t {
 // immediately after, so the trapping instruction writes no register and does
 // not retire; the next step() fetches from the handler.
 Stop Cpu::trap(uint32_t cause, uint32_t tval) {
+  last.trap = true;
+  last.cause = cause;
+  last.tval = tval;
+  const uint32_t trap_pc = pc;
   if (trace)
     fprintf(stderr, "          TRAP cause=%u tval=%08x pc=%08x\n", cause, tval,
             pc);
-  if (csr.mtvec == 0) {
-    fprintf(stderr,
-            "[axsim] trap (cause=%u tval=%08x) at pc=%08x with mtvec unset — "
-            "halting (retired=%" PRIu64 ")\n",
-            cause, tval, pc, ninsn);
-    return Stop::Fault;
-  }
   csr.mepc = pc;
   csr.mcause = cause;
   csr.mtval = tval;
   const uint32_t mie = (csr.mstatus >> 3) & 1;   // MPIE <= MIE, MIE <= 0
   csr.mstatus = (csr.mstatus & ~0x88u) | (mie << 7) | 0x1800;  // MPP <= M
   pc = csr.mtvec & ~3u;  // direct mode; vectoring applies to interrupts only
+  if (csr.mtvec == 0) {
+    fprintf(stderr,
+            "[axsim] trap (cause=%u tval=%08x) at pc=%08x with mtvec unset — "
+            "halting (retired=%" PRIu64 ")\n",
+            cause, tval, trap_pc, ninsn);
+    return Stop::Fault;
+  }
   return Stop::None;
 }
 
@@ -99,9 +103,13 @@ bool Cpu::csr_write(uint32_t addr, uint32_t val) {
 }
 
 Stop Cpu::step() {
+  last = {};
+  last.valid = true;
+  last.pc = pc;
   if (pc & 3) return trap(EXC_IADDR_MISALIGNED, pc);
   uint32_t insn;
   if (!bus.read(pc, 4, insn)) return trap(EXC_IACCESS_FAULT, pc);
+  last.insn = insn;
 
   const uint32_t op = insn & 0x7F;
   const uint32_t rd = (insn >> 7) & 0x1F;
@@ -254,6 +262,9 @@ Stop Cpu::step() {
   }
 
   if (wr && rd != 0) x[rd] = wval;
+  last.rd_we = wr && rd != 0;
+  last.rd = rd;
+  last.rd_val = wval;
 
   if (trace) {
     fprintf(stderr, "%8" PRIu64 "  %08x: %08x", ninsn, pc, insn);
@@ -261,6 +272,7 @@ Stop Cpu::step() {
     fputc('\n', stderr);
   }
 
+  last.retired = true;
   ninsn++;
   pc = next_pc;
   return Stop::None;

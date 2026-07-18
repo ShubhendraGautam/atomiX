@@ -22,6 +22,23 @@ struct Csrs {
   uint32_t mip = 0;
 };
 
+// Architectural result of the most recent step.  This is deliberately a
+// machine-readable counterpart to trace mode: cosim consumes it directly
+// instead of scraping stderr.  A trap is an executed instruction but not a
+// retirement, matching the RTL commit-point convention.
+struct StepTrace {
+  bool valid = false;
+  bool retired = false;
+  bool trap = false;
+  uint32_t pc = 0;
+  uint32_t insn = 0;
+  uint32_t cause = 0;
+  uint32_t tval = 0;
+  bool rd_we = false;
+  uint32_t rd = 0;
+  uint32_t rd_val = 0;
+};
+
 class Cpu {
  public:
   Cpu(Bus& bus, uint32_t reset_pc) : pc(reset_pc), bus(bus) {}
@@ -31,6 +48,7 @@ class Cpu {
   uint32_t pc;
   uint32_t x[32] = {};       // x0 held at zero by the writeback path
   Csrs csr;
+  StepTrace last;
   bool trace = false;        // one line per retired instruction, to stderr
   uint64_t retired() const { return ninsn; }
 

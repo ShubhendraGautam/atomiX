@@ -35,7 +35,27 @@ module axcore #(
   output logic [3:0]  dbus_wstrb,
   input  logic        dbus_ready,
   input  logic [31:0] dbus_rdata,
-  input  logic        dbus_err
+  input  logic        dbus_err,
+
+  // Commit trace for lock-step cosimulation.  `trace_valid` marks exactly
+  // one architectural event: either a retirement or a precise trap.
+  output logic        trace_valid,
+  output logic        trace_trap,
+  output logic [31:0] trace_pc,
+  output logic [31:0] trace_insn,
+  output logic [3:0]  trace_cause,
+  output logic [31:0] trace_tval,
+  output logic        trace_rd_we,
+  output logic [4:0]  trace_rd,
+  output logic [31:0] trace_rd_val,
+  output logic [31:0] trace_mstatus,
+  output logic [31:0] trace_mtvec,
+  output logic [31:0] trace_mepc,
+  output logic [31:0] trace_mcause,
+  output logic [31:0] trace_mtval,
+  output logic [31:0] trace_mscratch,
+  output logic [31:0] trace_mie,
+  output logic [31:0] trace_mip
 );
 
   import axcore_pkg::*;
@@ -369,6 +389,8 @@ module axcore #(
 
   // CSR file access (serialized: nothing younger is live).
   logic [31:0] csr_rdata, trap_vector, mepc_out;
+  logic [31:0] csr_mstatus, csr_mtvec, csr_mepc, csr_mcause, csr_mtval;
+  logic [31:0] csr_mscratch, csr_mie, csr_mip;
   logic        csr_illegal;
   wire mem_commit = exmem_v_q && !mem_busy;
   wire csr_acc_en = mem_commit && !exmem_exc_q && exmem_csr_q != CSR_NONE;
@@ -420,7 +442,11 @@ module axcore #(
     .trap_en(trap_now), .trap_pc(exmem_pc_q), .trap_cause(trap_cause),
     .trap_tval(trap_tval), .trap_vector(trap_vector),
     .mret_en(mret_now), .mepc_out(mepc_out),
-    .retire(retire)
+    .retire(retire),
+    .state_mstatus(csr_mstatus), .state_mtvec(csr_mtvec),
+    .state_mepc(csr_mepc), .state_mcause(csr_mcause),
+    .state_mtval(csr_mtval), .state_mscratch(csr_mscratch),
+    .state_mie(csr_mie), .state_mip(csr_mip)
   );
 
   // ---------------------------------------------------------------- MEM/WB
@@ -452,6 +478,27 @@ module axcore #(
   assign wb_we  = memwb_v_q && memwb_rd_we_q;
   assign wb_rd  = memwb_rd_q;
   assign wb_val = memwb_val_q;
+
+  // These signals are sampled immediately before a rising edge by the
+  // cosim harness. CSR state is sampled after that edge, once the event's
+  // side effects have taken place.
+  assign trace_valid = mem_commit;
+  assign trace_trap = trap_now;
+  assign trace_pc = exmem_pc_q;
+  assign trace_insn = exmem_insn_q;
+  assign trace_cause = trap_cause;
+  assign trace_tval = trap_tval;
+  assign trace_rd_we = retire && exmem_rd_we_q && exmem_rd_q != 5'd0;
+  assign trace_rd = exmem_rd_q;
+  assign trace_rd_val = wb_mux;
+  assign trace_mstatus = csr_mstatus;
+  assign trace_mtvec = csr_mtvec;
+  assign trace_mepc = csr_mepc;
+  assign trace_mcause = csr_mcause;
+  assign trace_mtval = csr_mtval;
+  assign trace_mscratch = csr_mscratch;
+  assign trace_mie = csr_mie;
+  assign trace_mip = csr_mip;
 
   // Unused instruction bits (decoder/slices take what they need).
   // verilator lint_off UNUSED

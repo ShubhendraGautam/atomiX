@@ -24,3 +24,8 @@ modules: `axcore_pkg.sv` (shared types), `regfile.sv`, `alu.sv`, `immdec.sv`,
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
 **and** riscv-formal — all three. Built in phase 1, after the ISS exists.
+
+`axcore.sv` also exposes a non-invasive `trace_*` commit-observation port.
+It is sampled by `sim/cosim/` immediately before the committing clock edge;
+it has no control-path role and is retained so verification need not reach
+into Verilator-generated internals.

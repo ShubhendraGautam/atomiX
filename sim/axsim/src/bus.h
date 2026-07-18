@@ -76,6 +76,9 @@ class Bus {
   int exit_code = 0;
   bool tohost_en = false;  // watch tohost_addr for HTIF writes
   uint32_t tohost_addr = 0;
+  bool uart_echo = true;   // false lets cosim print the RTL side only
+
+  const std::vector<uint8_t>& ram_image() const { return ram; }
 
   // Direct image load (bypasses device decode); false if out of range.
   bool load_image(const uint8_t* data, size_t len, uint32_t addr) {
@@ -101,7 +104,7 @@ class Bus {
   // 16550 subset: THR (offset 0) transmits; LSR (offset 5) always reports
   // "transmitter empty". RX side arrives with the interactive console.
   void uart_write(uint32_t off, uint8_t b) {
-    if (off == 0) {
+    if (off == 0 && uart_echo) {
       fputc(b, stdout);
       fflush(stdout);
     }

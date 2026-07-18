@@ -27,7 +27,18 @@ module csr_file (
   input  logic        mret_en,
   output logic [31:0] mepc_out,
 
-  input  logic        retire      // minstret increment
+  input  logic        retire,     // minstret increment
+
+  // Architectural-state observation port for the lock-step checker.  These
+  // are outputs only; they do not participate in core control.
+  output logic [31:0] state_mstatus,
+  output logic [31:0] state_mtvec,
+  output logic [31:0] state_mepc,
+  output logic [31:0] state_mcause,
+  output logic [31:0] state_mtval,
+  output logic [31:0] state_mscratch,
+  output logic [31:0] state_mie,
+  output logic [31:0] state_mip
 );
 
   import axcore_pkg::*;
@@ -40,6 +51,14 @@ module csr_file (
 
   assign trap_vector = {mtvec_q[31:2], 2'b00};
   assign mepc_out    = mepc_q;
+  assign state_mstatus = mstatus;
+  assign state_mtvec = mtvec_q;
+  assign state_mepc = mepc_q;
+  assign state_mcause = mcause_q;
+  assign state_mtval = mtval_q;
+  assign state_mscratch = mscratch_q;
+  assign state_mie = mie_reg_q;
+  assign state_mip = 32'b0;
 
   // Read + legality (combinational).
   logic known;

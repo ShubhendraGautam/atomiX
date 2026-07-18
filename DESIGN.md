@@ -272,7 +272,7 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
 | **0. Foundations** ✅ | Repo layout, toolchain container/Makefiles, `aXsim` ISS | ISS passes rv32ui + rv32mi riscv-tests — **met 2026-07-18** (`ma_data` policy-excluded: we trap on misaligned, verified by `ma_addr`) |
-| **1. Core, M-mode** | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence |
+| **1. Core, M-mode** ✅ | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence — **met 2026-07-18** (41 rv32ui/rv32mi tests; 10,000,060 generated lock-step events) |
 | **2. Formal + M ext** | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass |
 | **3. SoC v1** | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL |
 | **4. Privileged CPU** | S/U modes, Sv32 MMU + TLB, delegation | rv32si tests + cosim with paging-heavy random tests |
@@ -317,8 +317,10 @@ atomiX/
 1. ~~**ISS language**~~ **Closed:** C++ (direct linkage into the Verilator
    cosim testbench). See the Languages row in §2 for the project-wide policy.
 2. **License** for the repo (BSD/MIT/Apache-2.0).
-3. **Random test generation:** write our own generator vs adopt
-   riscv-dv-lite approaches — decide when phase 1 cosim starts.
+3. ~~**Random test generation**~~ **Closed:** a small, own-code constrained
+   generator (`sim/testgen/gen.py`) supplies deterministic RV32I+Zicsr
+   streams to lock-step cosim. Revisit riscv-dv only when richer privilege,
+   MMU, or extension coverage makes the small generator insufficient.
 4. **UART model:** full 16550 register compatibility vs minimal
    data/status pair. QEMU-`virt` alignment argues for the 16550 subset.
 

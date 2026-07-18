@@ -20,7 +20,6 @@ $(COMPONENT_MK): $(COMPONENT_CONFIG) ../../tools/configure.py $(COMPONENT_MANIFE
 # regenerates the selected build without touching the profile JSON.
 $(COMPONENT_MK): $(COMPONENT_SELECTED_MANIFESTS)
 
-RTL_CORE := ../../rtl/core
 RTL_SOC  := ../../rtl/soc
 SOC_SVS  := $(COMPONENT_CORE_SOURCES) \
   $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) $(RTL_SOC)/axram.sv \

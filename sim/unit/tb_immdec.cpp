@@ -1,4 +1,4 @@
-// Unit test for rtl/core/immdec.sv: known encodings from our directed tests
+// Unit test for components/core/pipeline5/immdec.sv: known encodings from our directed tests
 // plus random cross-check against the same extractors aXsim uses.
 #include <cstdio>
 #include <cstdint>

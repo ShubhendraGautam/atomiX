@@ -1,4 +1,4 @@
-// Unit test for rtl/core/branch_cmp.sv: random cross-check vs C model.
+// Unit test for components/core/pipeline5/branch_cmp.sv: random cross-check vs C model.
 #include <cstdio>
 #include <cstdint>
 #include "Vbranch_cmp.h"

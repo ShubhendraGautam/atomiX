@@ -1,4 +1,4 @@
-// Unit test for rtl/core/decoder.sv: expected control bundle per encoding.
+// Unit test for components/core/pipeline5/decoder.sv: expected control bundle per encoding.
 #include <cstdio>
 #include <cstdint>
 #include "Vdecoder.h"

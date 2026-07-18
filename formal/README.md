@@ -25,11 +25,11 @@ or exploratory jobs. To preserve reproducibility, do not vendor or edit the
 
 ## Contents
 
-- `axcore_rvfi_wrapper.sv` connects aXcore's one-retire-per-cycle RVFI trace
-  to a formal-only data bus and a stable, arbitrary instruction word. This
-  initial bounded suite proves instruction semantics across all operand/data
-  values without requiring an impractically expensive arbitrary-program
-  history on a developer workstation.
+- `components/core/pipeline5/axcore_rvfi_wrapper.sv` connects aXcore's
+  one-retire-per-cycle RVFI trace to a formal-only data bus and a stable,
+  arbitrary instruction word. This initial bounded suite proves instruction
+  semantics across all operand/data values without requiring an impractically
+  expensive arbitrary-program history on a developer workstation.
 - `checks.cfg` selects the RV32I configuration and bounded check depths. The
   product configuration enables RV32M; its fixed-latency unit is covered by
   directed, randomized, and official RV32M lock-step ISA tests.
@@ -53,5 +53,5 @@ python3 formal/run_checks.py insn_add_ch0
 
 The generated check and its solver log are below `formal/build/sat/`.
 
-CI policy: formal jobs run on every change touching `rtl/core/`; simulation
-legs run on everything.
+CI policy: formal jobs run on every change touching `components/core/pipeline5/`;
+simulation legs run on everything.

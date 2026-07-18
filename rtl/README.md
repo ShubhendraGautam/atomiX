@@ -7,7 +7,7 @@ Yosys (synthesis) — that dual gate is what keeps us FPGA-portable.
 
 | Subdirectory | Role |
 |---|---|
-| [core/](core/) | `aXcore` — the RV32 CPU |
+| [../components/core/](../components/core/) | Replaceable `aXcore` implementations |
 | [soc/](soc/) | The SoC **shell**: aXbus, memories, peripherals, top-level |
 | [roles/](roles/) | Swappable accelerator roles (loopback, TPU-lite, …) |
 | [fpga/](fpga/) | Board-specific top-levels and constraints |

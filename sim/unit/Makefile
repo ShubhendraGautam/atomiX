@@ -3,30 +3,31 @@
 VERILATOR ?= verilator
 VFLAGS    := -Wall --cc -O2
 
-RTL_CORE := ../../rtl/core
+CORE_COMPONENT := ../../components/core/pipeline5
 RTL_SOC  := ../../rtl/soc
 
 MODULES := regfile alu immdec decoder branch_cmp muldiv
 
 CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
-SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
+CORE_SOURCES := $(CORE_SVS:%=$(CORE_COMPONENT)/%.sv)
+SOC_SVS := $(CORE_SOURCES) \
   $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv $(RTL_SOC)/axmem_reference.sv $(RTL_SOC)/axmem.sv $(RTL_SOC)/axrom.sv \
   $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 
 test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
 
-run-%: $(RTL_CORE)/%.sv tb_%.cpp
+run-%: $(CORE_COMPONENT)/%.sv tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
-	  -o tb_$* $(RTL_CORE)/axcore_pkg.sv $< $(CURDIR)/tb_$*.cpp >/dev/null
+	  -o tb_$* $(CORE_COMPONENT)/axcore_pkg.sv $< $(CURDIR)/tb_$*.cpp >/dev/null
 	./obj_dir_$*/tb_$*
 
 # Core-level: run the directed test binaries on the RTL, with and without
 # bus wait states (exercises the stall/hold paths).
-run-axcore: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp
+run-axcore: $(CORE_SOURCES) tb_axcore.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_axcore \
 	  --exe --build -o tb_axcore \
-	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_axcore.cpp >/dev/null
+	  $(CORE_SOURCES) $(CURDIR)/tb_axcore.cpp >/dev/null
 	@mkdir -p build
 	python3 ../../tests/directed/words2bin.py ../../tests/directed/smoke_ok.words build/smoke_ok.bin
 	python3 ../../tests/directed/words2bin.py ../../tests/directed/trap_ecall.words build/trap_ecall.bin
@@ -38,10 +39,10 @@ run-axcore: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp
 
 # Timer line asserted before MTIE/MIE are enabled. The handler's finisher
 # write proves precise delivery and the C++ test checks mcause/mepc/mip.
-run-interrupt: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_interrupt.cpp
+run-interrupt: $(CORE_SOURCES) tb_interrupt.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_interrupt \
 	  --exe --build -o tb_interrupt \
-	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_interrupt.cpp >/dev/null
+	  $(CORE_SOURCES) $(CURDIR)/tb_interrupt.cpp >/dev/null
 	./obj_dir_interrupt/tb_interrupt
 
 # Interrupt/commit collision regressions: a timer interrupt forced onto the
@@ -52,10 +53,10 @@ IRQ_TESTS := irq_csr irq_mret
 IRQ_MARKER_irq_csr  := 34011073   # csrw mscratch, x2
 IRQ_MARKER_irq_mret := 30200073   # mret
 
-run-irq-collide: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_irq_collide.cpp
+run-irq-collide: $(CORE_SOURCES) tb_irq_collide.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_irq_collide \
 	  --exe --build -o tb_irq_collide \
-	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_irq_collide.cpp >/dev/null
+	  $(CORE_SOURCES) $(CURDIR)/tb_irq_collide.cpp >/dev/null
 	@mkdir -p build
 	for t in $(IRQ_TESTS); do \
 	  $(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
@@ -68,10 +69,10 @@ run-irq-collide: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_irq_collide.cpp
 
 # M/S/U transition and trap-routing regression.  The directed program is
 # self-checking and uses the same behavioral aXbus testbench as run-axcore.
-run-privilege: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed/privilege.S
+run-privilege: $(CORE_SOURCES) tb_axcore.cpp ../../tests/directed/privilege.S
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_privilege \
 	  --exe --build -o tb_axcore \
-	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_axcore.cpp >/dev/null
+	  $(CORE_SOURCES) $(CURDIR)/tb_axcore.cpp >/dev/null
 	@mkdir -p build
 	$(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
 	  -Wl,-T,../../sw/baremetal/link.ld -o build/privilege.elf \
@@ -83,10 +84,10 @@ run-privilege: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed
 
 # End-to-end Sv32 execution: M-mode page-table setup, U-mode fetch/data
 # walks, hardware A/D updates, and a precise store-page-fault trap.
-run-sv32: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed/sv32.S
+run-sv32: $(CORE_SOURCES) tb_axcore.cpp ../../tests/directed/sv32.S
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_sv32 \
 	  --exe --build -o tb_axcore \
-	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_axcore.cpp >/dev/null
+	  $(CORE_SOURCES) $(CURDIR)/tb_axcore.cpp >/dev/null
 	@mkdir -p build
 	$(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
 	  -Wl,-T,../../sw/baremetal/link.ld -o build/sv32.elf \

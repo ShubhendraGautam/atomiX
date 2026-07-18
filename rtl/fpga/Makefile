@@ -28,7 +28,6 @@ TEXTCFG := $(BUILD)/$(TOP).config
 BIT := $(BUILD)/$(TOP).bit
 SYNTH_SV := $(BUILD)/atomiX_synth.sv
 
-RTL_CORE := ../core
 RTL_SOC := ../soc
 SOURCES := $(COMPONENT_CORE_SOURCES) \
   $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) $(RTL_SOC)/axram.sv \

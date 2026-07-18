@@ -4,14 +4,15 @@
 VERILATOR ?= verilator
 VFLAGS    := -Wall --cc -O2
 
-RTL_CORE  := ../../rtl/core
+CORE_COMPONENT := ../../components/core/pipeline5
 AXSIM     := ../axsim/src
 CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
+CORE_SOURCES := $(CORE_SVS:%=$(CORE_COMPONENT)/%.sv)
 
-axcosim: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_cosim.cpp $(AXSIM)/bus.h \
+axcosim: $(CORE_SOURCES) tb_cosim.cpp $(AXSIM)/bus.h \
          $(AXSIM)/cpu.h $(AXSIM)/cpu.cpp $(AXSIM)/elf.h $(AXSIM)/elf.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir --exe --build \
-	  -o axcosim $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_cosim.cpp \
+	  -o axcosim $(CORE_SOURCES) tb_cosim.cpp \
 	  $(AXSIM)/cpu.cpp $(AXSIM)/elf.cpp -CFLAGS '-I$(abspath $(AXSIM))'
 
 test: axcosim

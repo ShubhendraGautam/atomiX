@@ -27,9 +27,10 @@ def main() -> None:
     CORE.mkdir(parents=True, exist_ok=True)
     link(REFERENCE / "checks", BUILD / "checks")
     link(REFERENCE / "insns", BUILD / "insns")
-    link(ROOT.parent / "rtl", BUILD / "rtl")
+    link(ROOT.parent / "components", BUILD / "components")
     link(ROOT / "checks.cfg", CORE / "checks.cfg")
-    link(ROOT / "axcore_rvfi_wrapper.sv", CORE / "axcore_rvfi_wrapper.sv")
+    link(ROOT.parent / "components" / "core" / "pipeline5" / "axcore_rvfi_wrapper.sv",
+         CORE / "axcore_rvfi_wrapper.sv")
     subprocess.run(
         ["python3", str(REFERENCE / "checks" / "genchecks.py")],
         cwd=CORE,

@@ -1,4 +1,4 @@
-// Unit test for rtl/core/alu.sv: directed edge cases plus random
+// Unit test for components/core/pipeline5/alu.sv: directed edge cases plus random
 // cross-check against an independent C model.
 #include <cstdio>
 #include <cstdint>

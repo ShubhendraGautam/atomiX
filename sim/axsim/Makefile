@@ -1,8 +1,8 @@
 CXX      := $(or $(shell command -v g++ 2>/dev/null),$(shell command -v clang++ 2>/dev/null))
 CXXFLAGS ?= -std=c++17 -O2 -g -Wall -Wextra
 
-SRC := src/main.cpp src/cpu.cpp
-HDR := src/bus.h src/cpu.h
+SRC := src/main.cpp src/cpu.cpp src/elf.cpp
+HDR := src/bus.h src/cpu.h src/elf.h
 
 axsim: $(SRC) $(HDR)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC)

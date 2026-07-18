@@ -6,14 +6,16 @@
 
 #include "bus.h"
 #include "cpu.h"
+#include "elf.h"
 
 static void usage(const char* argv0) {
   fprintf(stderr,
           "aXsim — atomiX instruction-set simulator (RV32I)\n"
           "usage: %s [options] --bin FILE\n"
-          "  --bin FILE   flat binary image to load\n"
-          "  --base ADDR  load address        (default 0x80000000)\n"
-          "  --pc ADDR    reset PC            (default = --base)\n"
+          "  --bin FILE   program image: ELF (auto-detected; entry point and\n"
+          "               riscv-tests tohost honored) or flat binary\n"
+          "  --base ADDR  flat-binary load address (default 0x80000000)\n"
+          "  --pc ADDR    reset PC (default: ELF entry / --base)\n"
           "  --ram MB     RAM size in MiB     (default 32)\n"
           "  --max N      stop after N instructions (default: unlimited)\n"
           "  --trace      log every retired instruction to stderr\n",
@@ -50,21 +52,32 @@ int main(int argc, char** argv) {
 
   Bus bus(ram_mib << 20);
 
-  FILE* f = fopen(bin_path, "rb");
-  if (!f) { perror(bin_path); return 1; }
-  fseek(f, 0, SEEK_END);
-  long len = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  std::vector<uint8_t> image(len > 0 ? (size_t)len : 0);
-  if (!image.empty() && fread(image.data(), 1, image.size(), f) != image.size()) {
-    fprintf(stderr, "[axsim] short read: %s\n", bin_path);
-    return 1;
-  }
-  fclose(f);
-  if (!bus.load_image(image.data(), image.size(), base)) {
-    fprintf(stderr, "[axsim] image does not fit at 0x%08x (%zu bytes)\n", base,
-            image.size());
-    return 1;
+  if (is_elf(bin_path)) {
+    ElfInfo info;
+    if (!load_elf(bin_path, bus, info)) return 1;
+    if (!have_pc) reset_pc = info.entry, have_pc = true;
+    if (info.has_tohost) {
+      bus.tohost_en = true;
+      bus.tohost_addr = info.tohost;
+    }
+  } else {
+    FILE* f = fopen(bin_path, "rb");
+    if (!f) { perror(bin_path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> image(len > 0 ? (size_t)len : 0);
+    if (!image.empty() &&
+        fread(image.data(), 1, image.size(), f) != image.size()) {
+      fprintf(stderr, "[axsim] short read: %s\n", bin_path);
+      return 1;
+    }
+    fclose(f);
+    if (!bus.load_image(image.data(), image.size(), base)) {
+      fprintf(stderr, "[axsim] image does not fit at 0x%08x (%zu bytes)\n",
+              base, image.size());
+      return 1;
+    }
   }
 
   Cpu cpu(bus, reset_pc);
@@ -74,7 +87,7 @@ int main(int argc, char** argv) {
     if (cpu.step() == Stop::Fault)
       return 127;  // diagnostics already printed by the CPU
     if (bus.exit_req) {
-      fprintf(stderr, "[axsim] exit %d via test finisher (retired=%" PRIu64 ")\n",
+      fprintf(stderr, "[axsim] exit %d (finisher/tohost, retired=%" PRIu64 ")\n",
               bus.exit_code, cpu.retired());
       return bus.exit_code;
     }

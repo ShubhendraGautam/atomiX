@@ -271,7 +271,7 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| **0. Foundations** | Repo layout, toolchain container/Makefiles, `aXsim` ISS | ISS passes rv32ui + rv32mi riscv-tests |
+| **0. Foundations** ✅ | Repo layout, toolchain container/Makefiles, `aXsim` ISS | ISS passes rv32ui + rv32mi riscv-tests — **met 2026-07-18** (`ma_data` policy-excluded: we trap on misaligned, verified by `ma_addr`) |
 | **1. Core, M-mode** | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence |
 | **2. Formal + M ext** | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass |
 | **3. SoC v1** | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL |

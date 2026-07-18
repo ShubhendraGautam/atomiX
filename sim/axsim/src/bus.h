@@ -41,6 +41,13 @@ class Bus {
       return false;  // ROM is read-only; store there = access fault
     if (uint8_t* p = backing(addr, size)) {
       for (unsigned i = 0; i < size; i++) p[i] = (uint8_t)(val >> (8 * i));
+      // riscv-tests HTIF exit protocol: a nonzero word stored to the
+      // `tohost` symbol ends the run — 1 = pass, (n<<1)|1 = fail test n.
+      if (tohost_en && addr == tohost_addr && size == 4 && val != 0) {
+        exit_req = true;
+        exit_code = (val == 1) ? 0 : (int)(val >> 1);
+        if (val != 1 && exit_code == 0) exit_code = 1;
+      }
       return true;
     }
     if (addr >= map::UART_BASE && addr < map::UART_BASE + map::UART_SIZE) {
@@ -65,8 +72,10 @@ class Bus {
     return false;
   }
 
-  bool exit_req = false;  // set by a test-finisher write
+  bool exit_req = false;  // set by a test-finisher or HTIF tohost write
   int exit_code = 0;
+  bool tohost_en = false;  // watch tohost_addr for HTIF writes
+  uint32_t tohost_addr = 0;
 
   // Direct image load (bypasses device decode); false if out of range.
   bool load_image(const uint8_t* data, size_t len, uint32_t addr) {

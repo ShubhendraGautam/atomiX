@@ -499,7 +499,10 @@ module axcore #(
   end
   wire irq_now = mem_commit && !trap_now && irq_pending;
 
-  wire mret_now = mem_commit && !trap_now && !irq_now && exmem_sys_q == SYS_MRET;
+  // Not gated on irq_now: an interrupt landing on an mret commit still
+  // retires the mret (mepc <= its target, MIE restore folded into the trap
+  // entry's MPIE save inside csr_file).
+  wire mret_now = mem_commit && !trap_now && exmem_sys_q == SYS_MRET;
   wire ser_done = mem_commit && !trap_now && !irq_now &&
                   (exmem_csr_q != CSR_NONE || exmem_sys_q == SYS_WFI ||
                    exmem_sys_q == SYS_FENCE_I || exmem_muldiv_q);
@@ -518,7 +521,10 @@ module axcore #(
     .acc_rs1x0(exmem_csr_rs1x0_q), .acc_commit(mem_commit),
     .acc_rdata(csr_rdata), .acc_illegal(csr_illegal),
     .trap_en(trap_now || irq_now), .trap_interrupt(irq_now),
-    .trap_pc(irq_now ? exmem_npc_q : exmem_pc_q),
+    // An interrupt names the retired instruction's architectural successor:
+    // the branch target is already in exmem_npc_q; an mret's successor is
+    // its return address, which only the CSR file knows.
+    .trap_pc(!irq_now ? exmem_pc_q : mret_now ? mepc_out : exmem_npc_q),
     .trap_cause(irq_now ? irq_cause : trap_cause),
     .trap_tval(trap_tval), .trap_vector(trap_vector),
     .mret_en(mret_now), .mepc_out(mepc_out),

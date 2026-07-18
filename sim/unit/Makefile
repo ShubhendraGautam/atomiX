@@ -14,7 +14,7 @@ SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
   $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-axcore run-interrupt run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-soc run-soc-timer
 
 run-%: $(RTL_CORE)/%.sv tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -44,6 +44,28 @@ run-interrupt: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_interrupt.cpp
 	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_interrupt.cpp >/dev/null
 	./obj_dir_interrupt/tb_interrupt
 
+# Interrupt/commit collision regressions: a timer interrupt forced onto the
+# exact commit cycle of a serialized CSR write and of an mret. The .S
+# programs self-check mepc/mstatus/mscratch and exit via the finisher.
+RISCV_PREFIX ?= riscv64-unknown-elf-
+IRQ_TESTS := irq_csr irq_mret
+IRQ_MARKER_irq_csr  := 34011073   # csrw mscratch, x2
+IRQ_MARKER_irq_mret := 30200073   # mret
+
+run-irq-collide: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_irq_collide.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_irq_collide \
+	  --exe --build -o tb_irq_collide \
+	  $(CORE_SVS:%=$(RTL_CORE)/%.sv) $(CURDIR)/tb_irq_collide.cpp >/dev/null
+	@mkdir -p build
+	for t in $(IRQ_TESTS); do \
+	  $(RISCV_PREFIX)gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
+	    -Wl,-T,../../sw/baremetal/link.ld -o build/$$t.elf \
+	    ../../tests/directed/$$t.S || exit 1; \
+	  $(RISCV_PREFIX)objcopy -O binary build/$$t.elf build/$$t.bin || exit 1; \
+	done
+	./obj_dir_irq_collide/tb_irq_collide build/irq_csr.bin $(IRQ_MARKER_irq_csr)
+	./obj_dir_irq_collide/tb_irq_collide build/irq_mret.bin $(IRQ_MARKER_irq_mret)
+
 run-soc: $(SOC_SVS) tb_soc.cpp data/soc_smoke.hex
 	$(VERILATOR) $(VFLAGS) --top-module soc_top --Mdir obj_dir_soc \
 	  -GROM_INIT_FILE=\"$(CURDIR)/data/soc_smoke.hex\" --exe --build -o tb_soc \
@@ -59,4 +81,4 @@ run-soc-timer: $(SOC_SVS) tb_soc_timer.cpp data/soc_timer.hex
 clean:
 	rm -rf obj_dir_* build
 
-.PHONY: test clean run-axcore run-interrupt run-soc run-soc-timer
+.PHONY: test clean run-axcore run-interrupt run-irq-collide run-soc run-soc-timer

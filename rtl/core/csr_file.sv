@@ -101,6 +101,13 @@ module csr_file (
                    : (acc_op == CSR_RS) ? (acc_rdata | acc_wdata)
                                         : (acc_rdata & ~acc_wdata);
 
+  // MIE as left by the committing instruction's own effect. When an
+  // interrupt lands on the same commit, trap entry must save this value —
+  // not the pre-instruction one — into MPIE.
+  wire do_write   = wen && acc_commit && !acc_illegal;
+  wire wr_mstatus = do_write && acc_addr == 12'h300;
+  wire eff_mie    = mret_en ? mpie_q : wr_mstatus ? wval[3] : mie_q;
+
   always_ff @(posedge clk) begin
     if (rst) begin
       mie_q      <= 1'b0;
@@ -117,16 +124,12 @@ module csr_file (
       cycle_q <= cycle_q + 64'd1;
       if (retire) instret_q <= instret_q + 64'd1;
 
-      if (trap_en) begin
-        mepc_q   <= trap_pc;
-        mcause_q <= {trap_interrupt, 27'b0, trap_cause};
-        mtval_q  <= trap_tval;
-        mpie_q   <= mie_q;
-        mie_q    <= 1'b0;
-      end else if (mret_en) begin
-        mie_q  <= mpie_q;
-        mpie_q <= 1'b1;
-      end else if (wen && acc_commit && !acc_illegal) begin
+      // The committing instruction's own effect applies first: an
+      // interrupt (trap_en && trap_interrupt) still retires it, so its CSR
+      // write or mret restore must land. A synchronous trap never
+      // coincides with either — acc_illegal and the axcore commit chain
+      // exclude that by construction.
+      if (do_write) begin
         unique case (acc_addr)
           12'h300: begin mie_q <= wval[3]; mpie_q <= wval[7]; end
           12'h301: ;                             // misa: writes ignored
@@ -140,6 +143,19 @@ module csr_file (
           12'hB00, 12'hB02, 12'hB80, 12'hB82: ;  // counters: ignored
           default: ;
         endcase
+      end
+      if (mret_en) begin
+        mie_q  <= mpie_q;
+        mpie_q <= 1'b1;
+      end
+      // Trap entry last: its assignments override any same-cycle write to
+      // the same register, matching the ISS "effect, then trap" ordering.
+      if (trap_en) begin
+        mepc_q   <= trap_pc;
+        mcause_q <= {trap_interrupt, 27'b0, trap_cause};
+        mtval_q  <= trap_tval;
+        mpie_q   <= eff_mie;
+        mie_q    <= 1'b0;
       end
     end
   end

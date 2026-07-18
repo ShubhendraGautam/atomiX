@@ -1,0 +1,28 @@
+# build outputs
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map
+obj_dir/
+build/
+
+# aXsim binary
+sim/axsim/axsim
+
+# simulation artifacts
+*.vcd
+*.fst
+*.fst.hier
+trace.log
+
+# FPGA flow outputs
+*.json
+*.asc
+*.bit
+*.svf
+
+# editor noise
+*.swp
+.vscode/

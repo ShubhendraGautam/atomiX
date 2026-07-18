@@ -111,6 +111,7 @@ make -C sim/axsim test
 # QEMU virt, and the complete Verilated SoC
 make -C sw/baremetal check-hello
 make -C sw/baremetal check-timer
+make -C sw/baremetal check-preempt
 
 # confirm the formal toolchain and reference checkout
 sby --version

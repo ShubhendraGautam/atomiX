@@ -170,7 +170,9 @@ runs end-to-end under Verilator before any hardware exists.
 - **Phase 2:** M extension (multiply/divide; multi-cycle unit that stalls EX).
 - **Phase 3:** Machine software/timer/external interrupt lines, CLINT, and the
   QEMU-`virt`-aligned SoC shell; a pending enabled interrupt is taken after
-  the current instruction retires.
+  the current instruction retires. The exit demo is a timer-preempted,
+  two-context bare-metal program whose UART transcript is identical on ISS,
+  QEMU, and RTL.
 - **Phase 4:** S and U modes, `sret`, Sv32 page tables, `sfence.vma`, TLB,
   `mstatus` interposition (SUM/MXR), delegation via `medeleg`/`mideleg`.
 - **Deliberately skipped:** C extension (complicates fetch alignment for little

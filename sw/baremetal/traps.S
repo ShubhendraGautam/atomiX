@@ -36,7 +36,11 @@ trap_entry:
   sw t4, 108(sp)
   sw t5, 112(sp)
   sw t6, 116(sp)
+  // machine_trap(frame) returns the frame to resume. It may be the current
+  // frame (ordinary interrupt) or another task's saved frame (scheduler).
+  mv a0, sp
   call machine_trap
+  mv sp, a0
   lw ra,   0(sp)
   lw gp,   4(sp)
   lw tp,   8(sp)

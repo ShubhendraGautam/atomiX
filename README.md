@@ -30,6 +30,7 @@ make -C sim/axsim test                # build the ISS + run directed tests
 make -C sim/unit run-soc-timer        # RTL SoC + CLINT interrupt integration
 make -C sw/baremetal check-hello      # same C image: ISS, QEMU, and RTL
 make -C sw/baremetal check-timer      # CLINT interrupts: ISS, QEMU, and RTL
+make -C sw/baremetal check-preempt    # timer-preempted tasks: all three
 make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
 tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
 ```

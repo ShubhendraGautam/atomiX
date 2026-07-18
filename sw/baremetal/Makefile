@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer
+PROGRAMS := hello timer preempt
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -49,7 +49,11 @@ check-timer: images
 	$(MAKE) -C ../../sim/axsim axsim
 	python3 check_timer.py
 
+check-preempt: images
+	$(MAKE) -C ../../sim/axsim axsim
+	python3 check_preempt.py
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt clean

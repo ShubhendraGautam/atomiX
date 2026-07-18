@@ -9,7 +9,7 @@ extern void trap_entry(void);
 static volatile uint32_t ticks;
 enum { TIMER_INTERVAL = 10000, TIMER_IRQ = 0x80000007u };
 
-void machine_trap(void) {
+uint32_t *machine_trap(uint32_t *frame) {
   if (csr_read_mcause() != TIMER_IRQ) test_finish(1);
   clint_schedule_after(TIMER_INTERVAL);
   uart_putchar('T');
@@ -17,6 +17,7 @@ void machine_trap(void) {
     uart_putchar('\n');
     test_finish(0);
   }
+  return frame;
 }
 
 int main(void) {

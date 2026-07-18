@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_BANNER = "aXos: Sv32 isolated U-mode scheduler online\n"
+EXPECTED_BANNER = "aXos: Sv32 fork/wait online\n"
 
 
 def run(label: str, command: list[str]) -> None:
@@ -26,11 +26,11 @@ def run(label: str, command: list[str]) -> None:
         sys.stderr.write(result.stderr)
         raise SystemExit(f"[kernel] {label}: exit {result.returncode}")
     if (not result.stdout.startswith(EXPECTED_BANNER) or
-            result.stdout[len(EXPECTED_BANNER):] not in {"AB", "BA"}):
+            result.stdout[len(EXPECTED_BANNER):] not in {"PCW", "CPW"}):
         sys.stderr.write(result.stderr)
         raise SystemExit(
             f"[kernel] {label}: UART mismatch\n"
-            f"  expected: banner plus one A and one B\n"
+            f"  expected: banner plus parent, child, and wait output\n"
             f"  got:      {result.stdout!r}")
     print(f"[kernel] {label}: PASS")
 

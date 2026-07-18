@@ -17,20 +17,23 @@ enum {
   MSTATUS_MPP_S = 1u << 11,
   SSTATUS_SPIE = 1u << 5,
   SATP_MODE_SV32 = 1u << 31,
-  TASK_COUNT = 2,
-  TASK_NONE = TASK_COUNT,
-  TASK_RUNNABLE = 0,
-  TASK_RUNNING = 1,
-  TASK_ZOMBIE = 2,
+  TASK_SLOTS = 4,
+  TASK_NONE = TASK_SLOTS,
+  TASK_UNUSED = 0,
+  TASK_RUNNABLE = 1,
+  TASK_RUNNING = 2,
+  TASK_BLOCKED = 3,
+  TASK_ZOMBIE = 4,
   TRAP_FRAME_BYTES = 128,
   TRAP_FRAME_A0 = 8,
   TRAP_FRAME_A7 = 15,
   TRAP_FRAME_SP = 30,
   SCAUSE_USER_ECALL = 8,
   SCAUSE_SUPERVISOR_SOFTWARE = 0x80000001u,
-  SYS_USER_ONLINE = 1,
+  SYS_FORK = 1,
   SYS_CONSOLE_PUTC = 2,
   SYS_EXIT = 3,
+  SYS_WAIT = 4,
   USER_CODE_VA = 0x40000000u,
   USER_STACK_VA = USER_CODE_VA + PAGE_SIZE,
 };
@@ -51,15 +54,16 @@ struct task {
   uint32_t *user_stack;
   uint32_t *kernel_stack;
   uint32_t state;
+  uint32_t pid;
+  uint32_t parent_pid;
 };
 
-static struct task tasks[TASK_COUNT];
+static struct task tasks[TASK_SLOTS];
 static uint32_t current_task = TASK_NONE;
 static volatile uint32_t scheduler_running;
 static volatile uint32_t scheduled_ticks;
-static volatile uint32_t users_online;
-static volatile uint32_t users_printed;
-static volatile uint32_t exited_tasks;
+static uint32_t next_pid = 1;
+static volatile uint32_t console_mask;
 static uint32_t scheduler_free_pages;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
@@ -186,6 +190,10 @@ void m_setup(void) {
   csr_write_mstatus((csr_read_mstatus() & ~MSTATUS_MPP) | MSTATUS_MPP_S);
 }
 
+static uint32_t *sys_fork(uint32_t *trap_frame);
+static uint32_t *sys_wait(uint32_t *trap_frame);
+static uint32_t *sys_exit(uint32_t *trap_frame);
+
 static uint32_t *schedule(uint32_t *trap_frame) {
   if (!scheduler_running) return trap_frame;
 
@@ -195,10 +203,11 @@ static uint32_t *schedule(uint32_t *trap_frame) {
     tasks[current_task].sstatus = csr_read_sstatus();
     tasks[current_task].state = TASK_RUNNABLE;
   }
-  const uint32_t start = current_task == TASK_NONE ? 0u : current_task ^ 1u;
+  const uint32_t start = current_task == TASK_NONE ? 0u :
+      (current_task + 1u) % TASK_SLOTS;
   uint32_t next = TASK_NONE;
-  for (uint32_t i = 0; i < TASK_COUNT; ++i) {
-    const uint32_t candidate = (start + i) % TASK_COUNT;
+  for (uint32_t i = 0; i < TASK_SLOTS; ++i) {
+    const uint32_t candidate = (start + i) % TASK_SLOTS;
     if (tasks[candidate].state == TASK_RUNNABLE) {
       next = candidate;
       break;
@@ -228,46 +237,18 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
 
   if (cause == SCAUSE_USER_ECALL) {
     const uint32_t syscall = trap_frame[TRAP_FRAME_A7];
-    if (syscall == SYS_USER_ONLINE) {
-      const uint32_t id = trap_frame[TRAP_FRAME_A0];
-      if (id >= TASK_COUNT || id != current_task ||
-          *tasks[id].user_stack != (0x51a00000u | id))
-        test_finish(1);
-      users_online |= 1u << id;
-    } else if (syscall == SYS_CONSOLE_PUTC) {
-      if (current_task == TASK_NONE ||
-          trap_frame[TRAP_FRAME_A0] != ('A' + current_task))
-        test_finish(1);
-      uart_putchar((char)trap_frame[TRAP_FRAME_A0]);
-      users_printed |= 1u << current_task;
-    } else if (syscall == SYS_EXIT) {
-      if (current_task == TASK_NONE || trap_frame[TRAP_FRAME_A0] != 0u ||
-          tasks[current_task].state != TASK_RUNNING ||
-          (users_online & users_printed & (1u << current_task)) == 0u)
-        test_finish(1);
-      struct task *const task = &tasks[current_task];
-      task->state = TASK_ZOMBIE;
-      exited_tasks |= 1u << current_task;
-      if (exited_tasks == 3u) {
-        /* Do not invalidate the active root before the kernel has moved off
-         * it; the bootstrap root retains the test-finisher mapping. */
-        csr_write_satp(SATP_MODE_SV32 | ((uint32_t)(uintptr_t)root_pt >> 12));
-        __asm__ volatile("sfence.vma zero, zero");
-      }
-      page_free(task->page_root);
-      page_free(task->user_pt);
-      page_free(task->user_stack);
-      page_free(task->kernel_stack);
-      if (exited_tasks == 3u) {
-        if (page_free_count() != scheduler_free_pages) test_finish(1);
-        test_finish(0);
-      }
-      return schedule(trap_frame);
-    } else {
-      test_finish(1);
+    if (syscall == SYS_FORK) return sys_fork(trap_frame);
+    if (syscall == SYS_WAIT) return sys_wait(trap_frame);
+    if (syscall == SYS_EXIT) return sys_exit(trap_frame);
+    if (syscall == SYS_CONSOLE_PUTC) {
+      const uint32_t c = trap_frame[TRAP_FRAME_A0];
+      if (c != 'P' && c != 'C' && c != 'W') test_finish(1);
+      uart_putchar((char)c);
+      console_mask |= c == 'P' ? 1u : c == 'C' ? 2u : 4u;
+      csr_write_sepc(csr_read_sepc() + 4u);
+      return trap_frame;
     }
-    csr_write_sepc(csr_read_sepc() + 4u);
-    return trap_frame;
+    test_finish(1);
   }
 
   test_finish(1);
@@ -291,6 +272,18 @@ static void page_allocator_self_test(void) {
 
 static void zero_page(uint32_t *page) {
   for (uint32_t i = 0; i < PAGE_SIZE / sizeof(*page); ++i) page[i] = 0;
+}
+
+static void copy_page(uint32_t *dst, const uint32_t *src) {
+  for (uint32_t i = 0; i < PAGE_SIZE / sizeof(*dst); ++i) dst[i] = src[i];
+}
+
+static void task_release(struct task *task) {
+  page_free(task->page_root);
+  page_free(task->user_pt);
+  page_free(task->user_stack);
+  page_free(task->kernel_stack);
+  task->state = TASK_UNUSED;
 }
 
 static void scheduler_make_user_task(uint32_t slot) {
@@ -317,6 +310,8 @@ static void scheduler_make_user_task(uint32_t slot) {
   tasks[slot].user_stack = user_stack;
   tasks[slot].kernel_stack = kernel_stack;
   tasks[slot].state = TASK_RUNNABLE;
+  tasks[slot].pid = next_pid++;
+  tasks[slot].parent_pid = 0;
   tasks[slot].sepc = USER_CODE_VA +
       ((uint32_t)(uintptr_t)user_entry - 0x80000000u);
   frame[TRAP_FRAME_A0] = slot;
@@ -325,10 +320,96 @@ static void scheduler_make_user_task(uint32_t slot) {
   tasks[slot].sstatus = SSTATUS_SPIE;
 }
 
+static uint32_t *sys_fork(uint32_t *trap_frame) {
+  if (current_task == TASK_NONE || tasks[current_task].state != TASK_RUNNING)
+    test_finish(1);
+  uint32_t slot = TASK_NONE;
+  for (uint32_t i = 0; i < TASK_SLOTS; ++i)
+    if (tasks[i].state == TASK_UNUSED) { slot = i; break; }
+  if (slot == TASK_NONE) test_finish(1);
+
+  struct task *const parent = &tasks[current_task];
+  struct task *const child = &tasks[slot];
+  uint32_t *const page_root = page_alloc();
+  uint32_t *const user_pt = page_alloc();
+  uint32_t *const user_stack = page_alloc();
+  uint32_t *const kernel_stack = page_alloc();
+  if (page_root == 0 || user_pt == 0 || user_stack == 0 || kernel_stack == 0)
+    test_finish(1);
+  copy_page(page_root, parent->page_root);
+  copy_page(user_pt, parent->user_pt);
+  copy_page(user_stack, parent->user_stack);
+  user_pt[1] = pte_leaf((uint32_t)(uintptr_t)user_stack,
+                        PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D);
+  page_root[USER_CODE_VA >> 22] = pte_pointer((uint32_t)(uintptr_t)user_pt);
+  uint32_t *const frame =
+      (uint32_t *)((uintptr_t)kernel_stack + PAGE_SIZE - TRAP_FRAME_BYTES);
+  for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i)
+    frame[i] = trap_frame[i];
+  if (user_stack[0] != 0x51a00001u) test_finish(1);
+  child->trap_frame = frame;
+  child->sepc = csr_read_sepc() + 4u;
+  child->sstatus = csr_read_sstatus();
+  child->satp = SATP_MODE_SV32 | ((uint32_t)(uintptr_t)page_root >> 12);
+  child->page_root = page_root;
+  child->user_pt = user_pt;
+  child->user_stack = user_stack;
+  child->kernel_stack = kernel_stack;
+  child->state = TASK_RUNNABLE;
+  child->pid = next_pid++;
+  child->parent_pid = parent->pid;
+  frame[TRAP_FRAME_A0] = 0;
+  trap_frame[TRAP_FRAME_A0] = child->pid;
+  csr_write_sepc(child->sepc);
+  return trap_frame;
+}
+
+static uint32_t *sys_wait(uint32_t *trap_frame) {
+  if (current_task == TASK_NONE) test_finish(1);
+  struct task *const parent = &tasks[current_task];
+  for (uint32_t i = 0; i < TASK_SLOTS; ++i) {
+    struct task *const child = &tasks[i];
+    if (child->parent_pid != parent->pid) continue;
+    if (child->state == TASK_ZOMBIE) {
+      trap_frame[TRAP_FRAME_A0] = child->pid;
+      task_release(child);
+      csr_write_sepc(csr_read_sepc() + 4u);
+      return trap_frame;
+    }
+    parent->trap_frame = trap_frame;
+    parent->sepc = csr_read_sepc() + 4u;
+    parent->sstatus = csr_read_sstatus();
+    parent->state = TASK_BLOCKED;
+    return schedule(trap_frame);
+  }
+  test_finish(1);
+}
+
+static uint32_t *sys_exit(uint32_t *trap_frame) {
+  if (current_task == TASK_NONE || trap_frame[TRAP_FRAME_A0] != 0u)
+    test_finish(1);
+  struct task *const task = &tasks[current_task];
+  task->state = TASK_ZOMBIE;
+  for (uint32_t i = 0; i < TASK_SLOTS; ++i) {
+    struct task *const parent = &tasks[i];
+    if (parent->state == TASK_BLOCKED && parent->pid == task->parent_pid) {
+      parent->trap_frame[TRAP_FRAME_A0] = task->pid;
+      parent->state = TASK_RUNNABLE;
+      task_release(task);
+      return schedule(trap_frame);
+    }
+  }
+  if (task->parent_pid != 0) return schedule(trap_frame);
+  csr_write_satp(SATP_MODE_SV32 | ((uint32_t)(uintptr_t)root_pt >> 12));
+  __asm__ volatile("sfence.vma zero, zero");
+  task_release(task);
+  if (console_mask != 7u || page_free_count() != scheduler_free_pages) test_finish(1);
+  test_finish(0);
+}
+
 static void scheduler_start(void) {
   scheduler_free_pages = page_free_count();
   scheduler_make_user_task(0);
-  scheduler_make_user_task(1);
   scheduler_running = 1;
   clint_arm_timer(2000);
 }
@@ -336,7 +417,7 @@ static void scheduler_start(void) {
 void kmain(void) {
   page_init();
   page_allocator_self_test();
-  uart_puts("aXos: Sv32 isolated U-mode scheduler online\n");
+  uart_puts("aXos: Sv32 fork/wait online\n");
   scheduler_start();
   for (;;) __asm__ volatile("wfi");
 }

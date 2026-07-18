@@ -24,25 +24,20 @@ Exit criterion (phase 5): interactive shell on the RTL simulation console.
 `make check-boot` builds the first aXos image. M-mode constructs an Sv32
 identity map for kernel RAM plus UART, CLINT, and the test finisher; it then
 enters S-mode with `mret`. The S-mode kernel prints
-`aXos: Sv32 isolated U-mode scheduler online` and exits through the usual
+`aXos: Sv32 fork/wait online` and exits through the usual
 finisher. The
 machine timer is acknowledged in a tiny M-mode shim and turned into a
 delegated supervisor software interrupt; the S-mode trap entry saves every
 GPR, acknowledges it, and resumes. The kernel then exercises every available
 4 KiB physical RAM page through its free-list allocator, while reserving one
-page for the live bootstrap/trap stack. Finally, two U-mode workloads enter
-through an `ecall`, each has a private Sv32 root, user stack, and supervisor
-trap stack. Every CLINT tick saves the interrupted trap frame, switches SATP,
-and round-robins to the other workload. Both write distinct markers at the
-same user virtual address; the kernel verifies those markers through its
-supervisor mapping. They then invoke the first useful syscall,
-`SYS_CONSOLE_PUTC`, producing one `A` and one `B` on UART from U-mode. The
-order depends on the first timer boundary, which the regression accepts. This
-Each then invokes `SYS_EXIT`; the kernel marks it zombie, schedules the
-survivor, and returns its root, page table, user stack, and trap stack to the
-physical-page allocator. The regression requires the allocator's free-page
-count to return to its pre-process value. This is the foundation for richer
-process and syscall work.
+page for the live bootstrap/trap stack. The first U-mode process writes a
+marker to its private stack and invokes `SYS_FORK`. The child receives a cloned
+Sv32 root, page table, user stack, trap frame, and a zero return value; the
+parent receives the child PID. Both invoke `SYS_CONSOLE_PUTC`; the parent then
+blocks in `SYS_WAIT`, is woken by the child's `SYS_EXIT`, prints again, and
+exits. The regression accepts `PCW` or `CPW`, and checks that reaping returns
+every process page to the allocator. This is the foundation for richer process
+and syscall work.
 
 Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
 pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.

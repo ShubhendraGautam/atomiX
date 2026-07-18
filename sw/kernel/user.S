@@ -7,18 +7,31 @@
 user_entry:
   lui t0, 0x40001                 /* private user stack: 0x40001000 */
   li t1, 0x51a00000
-  or t1, t1, a0                   /* per-workload marker */
+  ori t1, t1, 1                   /* marker copied into the child stack */
   sw t1, 0(t0)
-  li a7, 1                       /* SYS_USER_ONLINE */
+  li a7, 1                       /* SYS_FORK */
   ecall
-  addi a0, a0, 'A'               /* process 0 prints A, process 1 prints B */
+  bnez a0, 1f
+  li a0, 'C'
   li a7, 2                       /* SYS_CONSOLE_PUTC */
   ecall
   li a0, 0
   li a7, 3                       /* SYS_EXIT */
   ecall
+0:
+  nop
+  j 0b
 1:
-  nop
-  nop
-  j 1b
+  li a0, 'P'
+  li a7, 2                       /* SYS_CONSOLE_PUTC */
+  ecall
+  li a7, 4                       /* SYS_WAIT */
+  ecall
+  li a0, 'W'
+  li a7, 2                       /* SYS_CONSOLE_PUTC */
+  ecall
+  li a0, 0
+  li a7, 3                       /* SYS_EXIT */
+  ecall
+  j 0b
   .size user_entry, . - user_entry

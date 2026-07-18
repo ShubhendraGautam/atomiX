@@ -82,7 +82,9 @@ int main(int argc, char** argv) {
   Vaxcore* top = new Vaxcore;
   int icnt = 0, dcnt = 0;  // wait-state counters, advanced once per cycle
 
-  top->rst = 1; top->clk = 0; top->eval();
+  top->rst = 1; top->clk = 0;
+  top->irq_software = 0; top->irq_timer = 0; top->irq_external = 0;
+  top->eval();
   top->clk = 1; top->eval();
   top->clk = 0; top->rst = 0; top->eval();
 

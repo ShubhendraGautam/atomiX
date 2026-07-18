@@ -166,9 +166,11 @@ runs end-to-end under Verilator before any hardware exists.
 ### 4.1 ISA subset by phase
 
 - **Phase 1:** RV32I + Zicsr + `ecall`/`ebreak`/`mret`, machine mode only,
-  full trap support (illegal instruction, misaligned, ecall, external/timer/
-  software interrupts).
+  with precise synchronous traps (illegal instruction, misaligned, ecall).
 - **Phase 2:** M extension (multiply/divide; multi-cycle unit that stalls EX).
+- **Phase 3:** Machine software/timer/external interrupt lines, CLINT, and the
+  QEMU-`virt`-aligned SoC shell; a pending enabled interrupt is taken after
+  the current instruction retires.
 - **Phase 4:** S and U modes, `sret`, Sv32 page tables, `sfence.vma`, TLB,
   `mstatus` interposition (SUM/MXR), delegation via `medeleg`/`mideleg`.
 - **Deliberately skipped:** C extension (complicates fetch alignment for little

@@ -41,6 +41,12 @@ module axcore #(
   input  logic [31:0] dbus_rdata,
   input  logic        dbus_err,
 
+  // Machine-level interrupt lines. They are sampled precisely at the MEM
+  // commit point, after the current instruction has retired.
+  input  logic        irq_software,
+  input  logic        irq_timer,
+  input  logic        irq_external,
+
   // Commit trace for lock-step cosimulation.  `trace_valid` marks exactly
   // one architectural event: either a retirement or a precise trap.
   output logic        trace_valid,
@@ -481,13 +487,25 @@ module axcore #(
     end
   end
 
-  wire mret_now = mem_commit && !trap_now && exmem_sys_q == SYS_MRET;
-  wire ser_done = mem_commit && !trap_now &&
+  // The architectural interrupt priority is MEI, MSI, then MTI.  An
+  // interrupt is taken only after a committing instruction, so that
+  // instruction's side effects are visible and mepc names its successor.
+  wire irq_pending = csr_mstatus[3] && |(csr_mie & csr_mip);
+  logic [3:0] irq_cause;
+  always_comb begin
+    if (csr_mie[11] && csr_mip[11]) irq_cause = 4'd11;
+    else if (csr_mie[3] && csr_mip[3]) irq_cause = 4'd3;
+    else irq_cause = 4'd7;
+  end
+  wire irq_now = mem_commit && !trap_now && irq_pending;
+
+  wire mret_now = mem_commit && !trap_now && !irq_now && exmem_sys_q == SYS_MRET;
+  wire ser_done = mem_commit && !trap_now && !irq_now &&
                   (exmem_csr_q != CSR_NONE || exmem_sys_q == SYS_WFI ||
                    exmem_sys_q == SYS_FENCE_I || exmem_muldiv_q);
 
-  assign redirect_mem    = trap_now || mret_now || ser_done;
-  assign redirect_mem_pc = trap_now ? trap_vector
+  assign redirect_mem    = trap_now || irq_now || mret_now || ser_done;
+  assign redirect_mem_pc = (trap_now || irq_now) ? trap_vector
                          : mret_now ? mepc_out
                                     : exmem_pc_q + 32'd4;
 
@@ -499,10 +517,13 @@ module axcore #(
     .acc_op(exmem_csr_q), .acc_wdata(exmem_data_q),
     .acc_rs1x0(exmem_csr_rs1x0_q), .acc_commit(mem_commit),
     .acc_rdata(csr_rdata), .acc_illegal(csr_illegal),
-    .trap_en(trap_now), .trap_pc(exmem_pc_q), .trap_cause(trap_cause),
+    .trap_en(trap_now || irq_now), .trap_interrupt(irq_now),
+    .trap_pc(irq_now ? exmem_npc_q : exmem_pc_q),
+    .trap_cause(irq_now ? irq_cause : trap_cause),
     .trap_tval(trap_tval), .trap_vector(trap_vector),
     .mret_en(mret_now), .mepc_out(mepc_out),
-    .retire(retire),
+    .retire(retire), .irq_software(irq_software), .irq_timer(irq_timer),
+    .irq_external(irq_external),
     .state_mstatus(csr_mstatus), .state_mtvec(csr_mtvec),
     .state_mepc(csr_mepc), .state_mcause(csr_mcause),
     .state_mtval(csr_mtval), .state_mscratch(csr_mscratch),
@@ -575,7 +596,7 @@ module axcore #(
     rvfi_insn      = exmem_insn_q;
     rvfi_trap      = trap_now;
     rvfi_halt      = 1'b0;
-    rvfi_intr      = 1'b0;
+    rvfi_intr      = irq_now;
     rvfi_mode      = 2'b11;               // M-mode only
     rvfi_ixl       = 2'b01;               // RV32
     rvfi_rs1_addr  = exmem_rs1_q;
@@ -585,7 +606,7 @@ module axcore #(
     rvfi_rd_addr   = retire && exmem_rd_we_q ? exmem_rd_q : 5'b0;
     rvfi_rd_wdata  = rvfi_rd_addr == 5'd0 ? 32'b0 : wb_mux;
     rvfi_pc_rdata  = exmem_pc_q;
-    rvfi_pc_wdata  = trap_now ? trap_vector
+    rvfi_pc_wdata  = (trap_now || irq_now) ? trap_vector
                    : mret_now ? mepc_out
                               : exmem_npc_q;
     rvfi_mem_addr  = dbus_addr;

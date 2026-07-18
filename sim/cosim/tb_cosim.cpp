@@ -182,6 +182,7 @@ int main(int argc, char** argv) {
   int icnt = 0, dcnt = 0;
   top->rst = 1; top->clk = 0; top->ibus_ready = 0; top->dbus_ready = 0;
   top->ibus_rdata = 0; top->dbus_rdata = 0; top->ibus_err = 0; top->dbus_err = 0;
+  top->irq_software = 0; top->irq_timer = 0; top->irq_external = 0;
   top->eval(); top->clk = 1; top->eval(); top->clk = 0; top->rst = 0; top->eval();
 
   uint64_t cycles = 0, events = 0;

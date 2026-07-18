@@ -19,6 +19,7 @@ module csr_file (
   // Trap entry (mutually exclusive with acc/mret by construction: one
   // instruction commits per cycle).
   input  logic        trap_en,
+  input  logic        trap_interrupt,
   input  logic [31:0] trap_pc,
   input  logic [3:0]  trap_cause,
   input  logic [31:0] trap_tval,
@@ -28,6 +29,12 @@ module csr_file (
   output logic [31:0] mepc_out,
 
   input  logic        retire,     // minstret increment
+
+  // Machine-level interrupt lines. These are hardware-driven and are
+  // reflected in mip; software cannot write the corresponding pending bits.
+  input  logic        irq_software,
+  input  logic        irq_timer,
+  input  logic        irq_external,
 
   // Architectural-state observation port for the lock-step checker.  These
   // are outputs only; they do not participate in core control.
@@ -48,6 +55,8 @@ module csr_file (
   logic [63:0] cycle_q, instret_q;
 
   wire [31:0] mstatus = {19'b0, 2'b11, 3'b0, mpie_q, 3'b0, mie_q, 3'b0};
+  wire [31:0] mip = {20'b0, irq_external, 3'b0, irq_timer, 3'b0,
+                     irq_software, 3'b0};
 
   assign trap_vector = {mtvec_q[31:2], 2'b00};
   assign mepc_out    = mepc_q;
@@ -58,7 +67,7 @@ module csr_file (
   assign state_mtval = mtval_q;
   assign state_mscratch = mscratch_q;
   assign state_mie = mie_reg_q;
-  assign state_mip = 32'b0;
+  assign state_mip = mip;
 
   // Read + legality (combinational).
   logic known;
@@ -74,7 +83,7 @@ module csr_file (
       12'h341: acc_rdata = mepc_q;
       12'h342: acc_rdata = mcause_q;
       12'h343: acc_rdata = mtval_q;
-      12'h344: acc_rdata = 32'b0;          // mip: no sources until CLINT
+      12'h344: acc_rdata = mip;
       12'hF11, 12'hF12, 12'hF13, 12'hF14: acc_rdata = 32'b0;
       12'hB00, 12'hC00: acc_rdata = cycle_q[31:0];
       12'hB80, 12'hC80: acc_rdata = cycle_q[63:32];
@@ -110,7 +119,7 @@ module csr_file (
 
       if (trap_en) begin
         mepc_q   <= trap_pc;
-        mcause_q <= {28'b0, trap_cause};
+        mcause_q <= {trap_interrupt, 27'b0, trap_cause};
         mtval_q  <= trap_tval;
         mpie_q   <= mie_q;
         mie_q    <= 1'b0;

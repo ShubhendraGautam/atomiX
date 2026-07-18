@@ -27,6 +27,7 @@ git clone --recurse-submodules <repo-url> && cd atomiX
 sudo apt update && sudo apt install build-essential gcc-riscv64-unknown-elf \
   picolibc-riscv64-unknown-elf verilator qemu-system-misc
 make -C sim/axsim test                # build the ISS + run directed tests
+make -C sim/unit run-soc-timer        # RTL SoC + CLINT interrupt integration
 make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
 tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
 ```

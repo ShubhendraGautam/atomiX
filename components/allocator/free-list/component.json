@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "allocator.free-list",
+  "kind": "allocator",
+  "title": "aXos in-page free-list physical page allocator",
+  "sources": ["sw/kernel/page.c"],
+  "capabilities": ["page-size-4096", "physical-pages", "freelist"]
+}

@@ -41,13 +41,15 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S user.S kernel.c page.c shell.c fs.c sd.c \
+SOURCES := boot.S trap.S user.S kernel.c \
+           $(COMPONENT_ALLOCATOR_SOURCES) $(COMPONENT_SHELL_SOURCES) \
+           $(COMPONENT_FILESYSTEM_SOURCES) $(COMPONENT_BLOCK_SOURCES) \
            $(COMPONENT_SCHEDULER_SOURCES) $(COMPONENT_VM_SOURCES)
 
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)
@@ -101,8 +103,16 @@ check-sdboot: boot-disk
 kernel-config: $(KERNEL_COMPONENT_MK)
 	@test -n "$(COMPONENT_SCHEDULER_ID)" || { echo "$(KERNEL_CONFIG): select a scheduler component"; exit 2; }
 	@test -n "$(COMPONENT_VM_ID)" || { echo "$(KERNEL_CONFIG): select a vm component"; exit 2; }
+	@test -n "$(COMPONENT_ALLOCATOR_ID)" || { echo "$(KERNEL_CONFIG): select an allocator component"; exit 2; }
+	@test -n "$(COMPONENT_SHELL_ID)" || { echo "$(KERNEL_CONFIG): select a shell component"; exit 2; }
+	@test -n "$(COMPONENT_FILESYSTEM_ID)" || { echo "$(KERNEL_CONFIG): select a filesystem component"; exit 2; }
+	@test -n "$(COMPONENT_BLOCK_ID)" || { echo "$(KERNEL_CONFIG): select a block component"; exit 2; }
 	@echo "[kernel] scheduler: $(COMPONENT_SCHEDULER_ID)"
 	@echo "[kernel] vm:        $(COMPONENT_VM_ID)"
+	@echo "[kernel] allocator: $(COMPONENT_ALLOCATOR_ID)"
+	@echo "[kernel] shell:     $(COMPONENT_SHELL_ID)"
+	@echo "[kernel] filesystem: $(COMPONENT_FILESYSTEM_ID)"
+	@echo "[kernel] block:     $(COMPONENT_BLOCK_ID)"
 
 kernel-config-check:
 	$(PYTHON) ../../tools/configure.py resolve --config "$(KERNEL_CONFIG)"

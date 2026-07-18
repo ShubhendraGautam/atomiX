@@ -26,7 +26,8 @@ make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.j
 ```
 
 See [components/README.md](components/README.md) for out-of-tree component
-selection and [docs/components.md](docs/components.md) for the architecture.
+selection, [docs/components.md](docs/components.md) for the architecture, and
+[docs/component-map.md](docs/component-map.md) for the repository-wide map.
 
 ## Principles
 

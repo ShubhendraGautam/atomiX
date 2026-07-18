@@ -14,8 +14,10 @@ Yosys (synthesis) — that dual gate is what keeps us FPGA-portable.
 
 The reference design is also available through the component catalog in
 [`components/`](../components/README.md). A custom source can replace a CPU,
-memory backend, stock peripheral, SoC shell, or board target at the build
-boundary without requiring a rewrite of unrelated RTL.
+memory backend, stock peripheral, interconnect, cache policy, boot ROM,
+simulation finisher, SoC shell, or board target at the build boundary without
+requiring a rewrite of unrelated RTL. The intentional private boundaries are
+listed in [docs/component-map.md](../docs/component-map.md).
 
 Conventions:
 

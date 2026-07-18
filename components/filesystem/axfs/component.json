@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "filesystem.axfs",
+  "kind": "filesystem",
+  "title": "aXos AXFS v1 filesystem implementation",
+  "sources": ["sw/kernel/fs.c"],
+  "capabilities": ["axfs-v1", "read", "single-sector-write"]
+}

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "harness.verilator-sdram",
+  "kind": "harness",
+  "title": "Verilator physical-SDRAM and ROM-boot harness",
+  "sources": [
+    "sim/soc/ax_sdram_sim.sv",
+    "sim/soc/soc_sdram_test_top.sv",
+    "sim/soc/tb_soc_sdram.cpp"
+  ],
+  "make": {"SIM_TOP": "soc_sdram_test_top"},
+  "capabilities": ["verilator", "physical-sdram-model", "rom-sd-boot", "virtual-sd"]
+}

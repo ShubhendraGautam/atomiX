@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "cache.direct-mapped",
+  "kind": "cache",
+  "title": "Reference direct-mapped write-through aXbus cache",
+  "sources": ["rtl/soc/axcache.sv"],
+  "stock_soc_module": "axcache",
+  "capabilities": ["direct-mapped", "write-through", "fence-i-flush"]
+}

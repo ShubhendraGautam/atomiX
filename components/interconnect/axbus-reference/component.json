@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "interconnect.axbus-reference",
+  "kind": "interconnect",
+  "title": "Reference aXbus decode and response mux",
+  "sources": ["rtl/soc/axbus_mux.sv"],
+  "stock_soc_module": "axbus_mux",
+  "capabilities": ["dual-master", "valid-ready", "qemu-virt-map"]
+}

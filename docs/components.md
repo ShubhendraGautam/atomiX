@@ -15,20 +15,21 @@ python3 tools/configure.py resolve --config configs/sim-sdram.json
 
 ## What a configuration controls
 
-A configuration selects `core`, `soc`, `memory`, `uart`, `clint`, `spi`,
-`board`, and optionally `software` components. The supplied profiles select
-the reference versions, but every one can name a built-in ID or an external
-manifest file. aXos has an independent `KERNEL_CONFIG` profile for its
-`scheduler` and `vm` components. Custom component kinds such as `gpio` are
-also preserved for a custom SoC or harness. A profile may carry arbitrary
-`settings`; known settings set RAM size, cache enable, and reset PC, while
-unknown settings are exported rather than rejected.
+A configuration selects CPU, SoC, fabric, memory, peripheral, board, and
+simulation-harness components, with an optional `software` payload. The
+supplied profiles select the reference versions, but every one can name a
+built-in ID or an external manifest file. aXos has an independent
+`KERNEL_CONFIG` profile for its scheduler, VM, allocator, shell, filesystem,
+and block components. Custom component kinds such as `gpio` are also preserved
+for a custom SoC or harness. A profile may carry arbitrary `settings`; known
+settings set RAM size, cache enable, and reset PC, while unknown settings are
+exported rather than rejected.
 
 ```text
 configuration JSON → configure.py → generated component-config.mk
                                       ├─ sim/soc Makefile
                                       ├─ rtl/fpga Makefile
-                                      └─ sw/kernel Makefile (scheduler + VM)
+                                      └─ sw/kernel Makefile (kernel services)
 ```
 
 `make sim CONFIG=configs/sim-delayed.json ...` composes a Verilated SoC;
@@ -37,7 +38,7 @@ directory-level build commands continue to work with their reference defaults.
 `make software CONFIG=configs/sim-axos.json` delegates to the selected
 software component's own build target and then boots its resulting images.
 `make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-default.json`
-shows the selected kernel policy pair.
+shows the selected kernel services and policies.
 
 ## Reference adapters
 
@@ -62,6 +63,13 @@ creation/cloning/destruction through `vm.h`; kernel stacks remain kernel-owned.
 `scheduler.cooperative` is an executable alternate policy, while `vm.sv32` is
 the reference mapping implementation. A custom kernel is free to select none
 of these and provide its own software build altogether.
+
+The same source-selection model now covers the remaining SoC infrastructure
+(`interconnect`, `cache`, `rom`, and `finisher`), the simulator `harness`, and
+aXos service layers (`allocator`, `shell`, `filesystem`, and `block`). The
+reference cache and `cache.passthrough` are both buildable selections. See the
+[component map](component-map.md) for the complete inventory and the rule for
+keeping implementation-private helpers out of the catalog.
 
 ## Verification posture
 

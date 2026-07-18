@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "rom.axrom",
+  "kind": "rom",
+  "title": "Reference read-only aXbus boot ROM",
+  "sources": ["rtl/soc/axrom.sv"],
+  "stock_soc_module": "axrom",
+  "capabilities": ["readmemh", "aXbus", "bootrom"]
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "shell.axsh",
+  "kind": "shell",
+  "title": "aXos UART shell and command loop",
+  "sources": ["sw/kernel/shell.c"],
+  "capabilities": ["uart", "ramdisk", "fork-demo", "axfs"]
+}

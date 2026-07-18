@@ -3,6 +3,10 @@
   "name": "kernel-cooperative",
   "components": {
     "scheduler": "scheduler.cooperative",
-    "vm": "vm.sv32"
+    "vm": "vm.sv32",
+    "allocator": "allocator.free-list",
+    "shell": "shell.axsh",
+    "filesystem": "filesystem.axfs",
+    "block": "block.spi-sd"
   }
 }

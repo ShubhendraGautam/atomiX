@@ -26,11 +26,13 @@ order, `PCW` or `CPW`.
 
 ## Replaceable kernel policies
 
-The trap/syscall kernel is stable, but scheduler and virtual-memory policy are
-selected at build time. The default profile is
+The trap/syscall kernel is stable, but scheduler, virtual-memory, allocator,
+shell, filesystem, and block-driver implementations are selected at build
+time. The default profile is
 `../../configs/kernel-default.json`, which selects `scheduler.round-robin` and
-`vm.sv32`. A working alternative retains the current task across timer ticks
-until it blocks or exits:
+`vm.sv32` plus the reference allocator, shell, filesystem, and SD block
+driver. A working alternative retains the current task across timer ticks until
+it blocks or exits:
 
 ```bash
 make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
@@ -41,7 +43,8 @@ make -C sw/kernel check-boot \
 
 `include/scheduler.h` defines the narrow task-selection contract and
 `include/vm.h` defines bootstrap and user-address-space lifecycle. An external
-manifest can supply either source file without copying it into aXos. These
+manifest can also supply the `page_*`, `shell_run`, `fs_*`, or `sd_*` source
+implementation without copying it into aXos. These
 interfaces do not constrain a custom kernel: it can instead supply a separate
 software component and its own build rules.
 

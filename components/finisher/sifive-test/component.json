@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "finisher.sifive-test",
+  "kind": "finisher",
+  "title": "SiFive-test compatible simulation finisher",
+  "sources": ["rtl/soc/test_finisher.sv"],
+  "stock_soc_module": "test_finisher",
+  "capabilities": ["pass-fail", "simulation"]
+}

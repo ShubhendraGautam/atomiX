@@ -1,20 +1,19 @@
 {
   "schema": 1,
-  "name": "sim-axos",
+  "name": "sim-delayed-passthrough-cache",
   "components": {
     "core": "core.pipeline5",
     "soc": "soc.reference",
-    "memory": "memory.sdram",
+    "memory": "memory.delayed",
     "uart": "uart.mmio16550",
     "clint": "clint.qemu-virt",
     "spi": "spi.polling-mode0",
     "board": "board.sim",
     "interconnect": "interconnect.axbus-reference",
-    "cache": "cache.direct-mapped",
+    "cache": "cache.passthrough",
     "rom": "rom.axrom",
     "finisher": "finisher.sifive-test",
-    "harness": "harness.verilator-sdram",
-    "software": "software.axos-sdboot"
+    "harness": "harness.verilator-soc"
   },
-  "settings": {"ram_bytes": 33554432, "caches": true, "reset_pc": "0x00001000"}
+  "settings": {"ram_bytes": 33554432, "caches": true, "reset_pc": "0x80000000"}
 }

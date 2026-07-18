@@ -31,12 +31,12 @@ SYNTH_SV := $(BUILD)/atomiX_synth.sv
 RTL_CORE := ../core
 RTL_SOC := ../soc
 SOURCES := $(COMPONENT_CORE_SOURCES) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv \
+  $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) $(RTL_SOC)/axram.sv \
   $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv \
   $(RTL_SOC)/axmem_reference.sv $(COMPONENT_MEMORY_SOURCES) \
-  $(RTL_SOC)/axrom.sv $(COMPONENT_CLINT_SOURCES) \
+  $(COMPONENT_ROM_SOURCES) $(COMPONENT_CLINT_SOURCES) \
   $(COMPONENT_UART_SOURCES) $(COMPONENT_SPI_SOURCES) \
-  $(RTL_SOC)/test_finisher.sv $(COMPONENT_SOC_SOURCES) \
+  $(COMPONENT_FINISHER_SOURCES) $(COMPONENT_SOC_SOURCES) \
   $(COMPONENT_BOARD_SOURCES)
 
 all: check-tools $(BIT)
@@ -46,6 +46,9 @@ config: $(COMPONENT_MK)
 	@echo "  core:   $(COMPONENT_CORE_ID)"
 	@echo "  soc:    $(COMPONENT_SOC_ID)"
 	@echo "  memory: $(COMPONENT_MEMORY_ID)"
+	@echo "  interconnect: $(COMPONENT_INTERCONNECT_ID)"
+	@echo "  cache:  $(COMPONENT_CACHE_ID)"
+	@echo "  rom:    $(COMPONENT_ROM_ID)"
 	@echo "  board:  $(COMPONENT_BOARD_ID)"
 
 check-tools:

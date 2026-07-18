@@ -23,12 +23,15 @@ $(COMPONENT_MK): $(COMPONENT_SELECTED_MANIFESTS)
 RTL_CORE := ../../rtl/core
 RTL_SOC  := ../../rtl/soc
 SOC_SVS  := $(COMPONENT_CORE_SOURCES) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv \
+  $(COMPONENT_INTERCONNECT_SOURCES) $(COMPONENT_CACHE_SOURCES) $(RTL_SOC)/axram.sv \
   $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv \
   $(RTL_SOC)/axmem_reference.sv $(COMPONENT_MEMORY_SOURCES) \
-  $(RTL_SOC)/axrom.sv $(COMPONENT_CLINT_SOURCES) \
+  $(COMPONENT_ROM_SOURCES) $(COMPONENT_CLINT_SOURCES) \
   $(COMPONENT_UART_SOURCES) $(COMPONENT_SPI_SOURCES) \
-  $(RTL_SOC)/test_finisher.sv $(COMPONENT_SOC_SOURCES)
+  $(COMPONENT_FINISHER_SOURCES) $(COMPONENT_SOC_SOURCES)
+HARNESS_SVS := $(filter %.sv,$(COMPONENT_HARNESS_SOURCES))
+HARNESS_CPP := $(filter %.cpp,$(COMPONENT_HARNESS_SOURCES))
+SIM_TOP ?= $(COMPONENT_SIM_TOP)
 
 # Caller supplies a word-per-line $readmemh image and may choose its entry.
 RAM_INIT_FILE ?=
@@ -54,6 +57,10 @@ config: $(COMPONENT_MK)
 	@echo "  core:   $(COMPONENT_CORE_ID)"
 	@echo "  soc:    $(COMPONENT_SOC_ID)"
 	@echo "  memory: $(COMPONENT_MEMORY_ID)"
+	@echo "  interconnect: $(COMPONENT_INTERCONNECT_ID)"
+	@echo "  cache:  $(COMPONENT_CACHE_ID)"
+	@echo "  rom:    $(COMPONENT_ROM_ID)"
+	@echo "  harness: $(COMPONENT_HARNESS_ID)"
 	@echo "  board:  $(COMPONENT_BOARD_ID)"
 
 # Run the harness selected by the memory component.  `run` and `run-sdram`
@@ -63,22 +70,23 @@ run-config: $(COMPONENT_MK)
 	  echo "unsupported simulation runner: $(COMPONENT_SIM_RUNNER)"; exit 2;; esac
 	$(MAKE) $(COMPONENT_SIM_RUNNER)
 
-run: $(SOC_SVS) tb_soc.cpp
+run: $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)
 	@test -n "$(RAM_INIT_FILE)" || (echo "RAM_INIT_FILE is required"; exit 2)
-	$(VERILATOR) $(VFLAGS) --top-module soc_top --Mdir $(MDIR) --exe --build \
+	@test -n "$(SIM_TOP)" || (echo "simulation profile must select a harness"; exit 2)
+	$(VERILATOR) $(VFLAGS) --top-module $(SIM_TOP) --Mdir $(MDIR) --exe --build \
 	  -GRESET_PC=$(RESET_PC) -GRAM_BYTES=$(RAM_BYTES) -GUSE_DRAM_MODEL=$(EXTERNAL_MEMORY) -GUSE_CACHES=$(CACHES) \
 	  -GRAM_INIT_FILE=\"$(RAM_INIT_FILE)\" -GROM_INIT_FILE=\"$(ROM_INIT_FILE)\" \
-	  -o axsoc $(SOC_SVS) $(CURDIR)/tb_soc.cpp >/dev/null
+	  -o axsoc $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP) >/dev/null
 	./$(MDIR)/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)
 
 # Full Phase-6 controller integration: the SoC uses axsdram rather than the
 # delayed array model, and a CAS-2 x16 SDRAM model sits at the physical pins.
-run-sdram: $(SOC_SVS) ax_sdram_sim.sv soc_sdram_test_top.sv tb_soc_sdram.cpp
+run-sdram: $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)
 	@test -n "$(ROM_INIT_FILE)" || (echo "ROM_INIT_FILE is required"; exit 2)
-	$(VERILATOR) $(VFLAGS) --top-module soc_sdram_test_top --Mdir $(MDIR)-sdram --exe --build \
+	@test -n "$(SIM_TOP)" || (echo "simulation profile must select a harness"; exit 2)
+	$(VERILATOR) $(VFLAGS) --top-module $(SIM_TOP) --Mdir $(MDIR)-sdram --exe --build \
 	  -GROM_INIT_FILE=\"$(ROM_INIT_FILE)\" -o axsoc \
-	  $(SOC_SVS) $(CURDIR)/ax_sdram_sim.sv $(CURDIR)/soc_sdram_test_top.sv \
-	  $(CURDIR)/tb_soc_sdram.cpp >/dev/null
+	  $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP) >/dev/null
 	./$(MDIR)-sdram/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)
 
 clean:

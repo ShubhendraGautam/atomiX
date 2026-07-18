@@ -8,7 +8,8 @@ manifest, not a particular folder layout, is the build boundary.
 
 The built-in selections are deliberately modest: the verified five-stage CPU,
 reference SoC shell, three reference memory modes, standard peripherals,
-simulation/ULX3S boards, and aXos scheduler/virtual-memory policies.
+simulation/ULX3S boards and harnesses, SoC infrastructure, and aXos service
+policies.
 `core.finisher-smoke` is a deliberately tiny,
 non-RISC-V composition example: it proves an alternate CPU source can replace
 the reference core, but is explicitly not a software-compatible CPU.
@@ -23,6 +24,7 @@ make sim CONFIG=configs/sim-bram.json \
   RAM_INIT_FILE="$PWD/sw/baremetal/build/hello.hex"
 make fpga CONFIG=configs/ulx3s-85f.json
 make -C sw/kernel kernel-config KERNEL_CONFIG=../../configs/kernel-cooperative.json
+make component-show COMPONENT=cache.passthrough
 ```
 
 `configs/` contains ready-to-run profiles. `sim-bram`, `sim-delayed`, and
@@ -48,13 +50,22 @@ module is plugged in:
 |---|---|---|
 | `core` | `axcore` | instruction/data aXbus masters, interrupt inputs, and the small commit signal set used for `fence.i` |
 | `memory` | `axmem` | independent instruction/data aXbus RAM ports plus optional SDRAM pins |
+| `interconnect` | `axbus_mux` | one aXbus master decode and response selection |
+| `cache` | `axcache` | optional core-port cache or transparent forwarding policy |
+| `rom` | `axrom` | dual-port boot ROM |
+| `finisher` | `test_finisher` | simulation termination endpoint |
 | `uart` | `uart` | UART0 aXbus device and byte-level RX/TX sideband |
 | `clint` | `clint` | CLINT aXbus device plus software/timer IRQs |
 | `spi` | `axspi` | SPI0 aXbus device and four SPI pins |
 | `soc` | `soc_top` | complete-SoC simulation/board shell |
 | `software` | its own Make target and produced image(s) | payload built independently, then supplied to the selected hardware profile |
+| `harness` | selected simulation top + C++ testbench | simulation environment kept separate from board RTL |
 | `scheduler` | `scheduler_select` | choose a runnable aXos task; context switching and syscalls stay in the kernel |
 | `vm` | `vm_*` | bootstrap mappings and the user part of an aXos task address space |
+| `allocator` | `page_*` | physical-page allocation policy |
+| `shell` | `shell_run` | aXos console command loop |
+| `filesystem` | `fs_*` | mounted filesystem policy |
+| `block` | `sd_*` | block-device transport |
 
 The real SystemVerilog instantiation is the authoritative port list; no second
 hand-maintained IDL can drift from it. A user who wants a different boundary
@@ -69,13 +80,17 @@ through the selected SDRAM/SD profile. An external kernel may use the same
 small manifest fields while keeping all of its sources and build rules outside
 atomiX.
 
-For the supplied aXos kernel, `KERNEL_CONFIG` selects the `scheduler` and `vm`
-components independently of the system profile. The default is
+For the supplied aXos kernel, `KERNEL_CONFIG` selects the scheduler, VM,
+allocator, shell, filesystem, and block components independently of the system
+profile. The default is
 `configs/kernel-default.json`; `configs/kernel-cooperative.json` is a working
 alternative policy that retains a task until it blocks or exits. An external
 component may include `sw/kernel/include/scheduler.h` or `vm.h`, build beside
 its manifest, and be selected through the same `{ "manifest": ... }` form.
 These headers intentionally expose no trap or syscall internals.
+
+The repository-wide selection policy and its intentional private boundaries
+are in [docs/component-map.md](../docs/component-map.md).
 
 ## External component example
 

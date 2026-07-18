@@ -17,9 +17,10 @@ For a direct invocation, provide a RAM image and an entry point:
 make -C sim/soc run RAM_INIT_FILE=/absolute/path/program.hex RESET_PC=0x80000000
 ```
 
-The component-aware entry point selects both the source implementation and
-the appropriate runner. The supplied profiles make BRAM, delayed memory, and
-the physical SDRAM behavioral path reproducible:
+The component-aware entry point selects the SoC shell, CPU, fabric, cache,
+memory, ROM, peripherals, finisher, and appropriate simulation harness. The
+supplied profiles make BRAM, delayed memory, and the physical SDRAM behavioral
+path reproducible:
 
 ```bash
 make sim CONFIG=configs/sim-bram.json \

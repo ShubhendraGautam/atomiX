@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "cache.passthrough",
+  "kind": "cache",
+  "title": "Transparent aXbus cache seam",
+  "sources": ["components/cache/passthrough/axcache.sv"],
+  "stock_soc_module": "axcache",
+  "capabilities": ["no-storage", "aXbus-forwarding", "flush-compatible"]
+}

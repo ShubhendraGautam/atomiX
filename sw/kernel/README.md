@@ -24,18 +24,18 @@ Exit criterion (phase 5): interactive shell on the RTL simulation console.
 `make check-boot` builds the first aXos image. M-mode constructs an Sv32
 identity map for kernel RAM plus UART, CLINT, and the test finisher; it then
 enters S-mode with `mret`. The S-mode kernel prints
-`aXos: Sv32 user-mode scheduler online` and exits through the usual
+`aXos: Sv32 isolated U-mode scheduler online` and exits through the usual
 finisher. The
 machine timer is acknowledged in a tiny M-mode shim and turned into a
 delegated supervisor software interrupt; the S-mode trap entry saves every
 GPR, acknowledges it, and resumes. The kernel then exercises every available
 4 KiB physical RAM page through its free-list allocator, while reserving one
 page for the live bootstrap/trap stack. Finally, two U-mode workloads enter
-through an `ecall`, each has its own supervisor trap stack, and every CLINT
-tick saves the interrupted trap frame and round-robins to the other workload.
-Their tiny shared U-mode address range is intentional for this milestone;
-per-process address spaces follow. This is the foundation for user processes
-and syscalls.
+through an `ecall`, each has a private Sv32 root, user stack, and supervisor
+trap stack. Every CLINT tick saves the interrupted trap frame, switches SATP,
+and round-robins to the other workload. Both write distinct markers at the
+same user virtual address; the kernel verifies those markers through its
+supervisor mapping. This is the foundation for user processes and syscalls.
 
 Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
 pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.

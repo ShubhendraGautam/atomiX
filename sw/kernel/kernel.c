@@ -40,6 +40,8 @@ struct task {
   uint32_t *trap_frame;
   uint32_t sepc;
   uint32_t sstatus;
+  uint32_t satp;
+  uint32_t *user_stack;
 };
 
 static struct task tasks[TASK_COUNT];
@@ -53,7 +55,6 @@ static volatile uint32_t users_online;
  * occupies one 4 KiB L0 mapping because it is not 4 MiB aligned. */
 static volatile uint32_t root_pt[1024] __attribute__((aligned(4096)));
 static volatile uint32_t low_pt[1024] __attribute__((aligned(4096)));
-static volatile uint32_t user_pt[1024] __attribute__((aligned(4096)));
 
 static uint32_t pte_leaf(uint32_t physical, uint32_t flags) {
   return ((physical >> 12) << 10) | flags;
@@ -150,7 +151,6 @@ static void clint_arm_timer(uint32_t delta) {
 void m_setup(void) {
   const uint32_t kernel_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
   const uint32_t device_flags = PTE_V | PTE_R | PTE_W | PTE_A | PTE_D;
-  const uint32_t user_code_flags = PTE_V | PTE_R | PTE_X | PTE_U | PTE_A;
 
   /* Kernel RAM (VPN1 512), UART (64), and CLINT (8) are 4 MiB superpages. */
   root_pt[0x200] = pte_leaf(0x80000000u, kernel_flags);
@@ -159,9 +159,6 @@ void m_setup(void) {
   root_pt[0x000] = pte_pointer((uint32_t)(uintptr_t)low_pt);
   low_pt[(AX_TEST_BASE >> 12) & 0x3ffu] =
       pte_leaf(AX_TEST_BASE, device_flags);
-  root_pt[USER_CODE_VA >> 22] = pte_pointer((uint32_t)(uintptr_t)user_pt);
-  user_pt[0] = pte_leaf(0x80000000u, user_code_flags);
-
   csr_write_mscratch(csr_read_sp());
   csr_write_mtvec((uint32_t)(uintptr_t)machine_timer_trap);
   csr_write_medeleg(1u << SCAUSE_USER_ECALL);
@@ -186,6 +183,8 @@ static uint32_t *schedule(uint32_t *trap_frame) {
     tasks[current_task].sstatus = csr_read_sstatus();
   }
   current_task = current_task == TASK_NONE ? 0u : current_task ^ 1u;
+  csr_write_satp(tasks[current_task].satp);
+  __asm__ volatile("sfence.vma zero, zero");
   csr_write_sepc(tasks[current_task].sepc);
   csr_write_sstatus(tasks[current_task].sstatus);
   return tasks[current_task].trap_frame;
@@ -208,7 +207,9 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
     if (trap_frame[TRAP_FRAME_A7] != SYS_USER_ONLINE ||
         trap_frame[TRAP_FRAME_A0] >= TASK_COUNT)
       test_finish(1);
-    users_online |= 1u << trap_frame[TRAP_FRAME_A0];
+    const uint32_t id = trap_frame[TRAP_FRAME_A0];
+    if (*tasks[id].user_stack != (0x51a00000u | id)) test_finish(1);
+    users_online |= 1u << id;
     csr_write_sepc(csr_read_sepc() + 4u);
     return trap_frame;
   }
@@ -232,29 +233,41 @@ static void page_allocator_self_test(void) {
   while (total != page_free_count()) page_free(pages[page_free_count()]);
 }
 
-static void scheduler_make_user_task(uint32_t slot, uint32_t user_sp) {
+static void zero_page(uint32_t *page) {
+  for (uint32_t i = 0; i < PAGE_SIZE / sizeof(*page); ++i) page[i] = 0;
+}
+
+static void scheduler_make_user_task(uint32_t slot) {
+  uint32_t *const page_root = page_alloc();
+  uint32_t *const user_pt = page_alloc();
+  uint32_t *const user_stack = page_alloc();
   uint32_t *const kernel_stack = page_alloc();
-  if (kernel_stack == 0) test_finish(1);
+  if (page_root == 0 || user_pt == 0 || user_stack == 0 || kernel_stack == 0)
+    test_finish(1);
+  zero_page(page_root);
+  zero_page(user_pt);
+  for (uint32_t i = 0; i < 1024u; ++i) page_root[i] = root_pt[i];
+  page_root[USER_CODE_VA >> 22] = pte_pointer((uint32_t)(uintptr_t)user_pt);
+  user_pt[0] = pte_leaf(0x80000000u, PTE_V | PTE_R | PTE_X | PTE_U | PTE_A);
+  user_pt[1] = pte_leaf((uint32_t)(uintptr_t)user_stack,
+                        PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D);
   uint32_t *const frame =
       (uint32_t *)((uintptr_t)kernel_stack + PAGE_SIZE - TRAP_FRAME_BYTES);
   for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i) frame[i] = 0;
   tasks[slot].trap_frame = frame;
+  tasks[slot].satp = SATP_MODE_SV32 | ((uint32_t)(uintptr_t)page_root >> 12);
+  tasks[slot].user_stack = user_stack;
   tasks[slot].sepc = USER_CODE_VA +
       ((uint32_t)(uintptr_t)user_entry - 0x80000000u);
   frame[TRAP_FRAME_A0] = slot;
-  frame[TRAP_FRAME_SP] = user_sp;
+  frame[TRAP_FRAME_SP] = USER_STACK_VA + PAGE_SIZE;
   /* SRET returns to U mode with supervisor interrupts enabled. */
   tasks[slot].sstatus = SSTATUS_SPIE;
 }
 
 static void scheduler_start(void) {
-  uint32_t *const user_stack = page_alloc();
-  if (user_stack == 0) test_finish(1);
-  user_pt[1] = pte_leaf((uint32_t)(uintptr_t)user_stack,
-                        PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D);
-  __asm__ volatile("sfence.vma zero, zero");
-  scheduler_make_user_task(0, USER_STACK_VA + PAGE_SIZE);
-  scheduler_make_user_task(1, USER_STACK_VA + PAGE_SIZE);
+  scheduler_make_user_task(0);
+  scheduler_make_user_task(1);
   scheduler_running = 1;
   clint_arm_timer(2000);
 }
@@ -262,7 +275,7 @@ static void scheduler_start(void) {
 void kmain(void) {
   page_init();
   page_allocator_self_test();
-  uart_puts("aXos: Sv32 user-mode scheduler online\n");
+  uart_puts("aXos: Sv32 isolated U-mode scheduler online\n");
   scheduler_start();
   for (;;) __asm__ volatile("wfi");
 }

@@ -5,6 +5,10 @@
   .globl user_entry
   .type user_entry, @function
 user_entry:
+  lui t0, 0x40001                 /* private user stack: 0x40001000 */
+  li t1, 0x51a00000
+  or t1, t1, a0                   /* per-workload marker */
+  sw t1, 0(t0)
   li a7, 1                       /* SYS_USER_ONLINE */
   ecall
 1:

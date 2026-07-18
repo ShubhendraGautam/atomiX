@@ -1,0 +1,21 @@
+# smoke_ok: hand-assembled RV32I bring-up test. Loads at 0x80000000.
+# Prints "OK\n" over the UART iff sum(5..1) == 15, then halts via ebreak.
+# Exercises: lui, addi, add, sb, a backward branch, a forward branch.
+10000537    # 80000000  lui   a0, 0x10000     ; a0 = UART base
+04f00593    # 80000004  addi  a1, x0, 'O'
+00b50023    # 80000008  sb    a1, 0(a0)
+04b00593    # 8000000c  addi  a1, x0, 'K'
+00b50023    # 80000010  sb    a1, 0(a0)
+00000613    # 80000014  addi  a2, x0, 0       ; sum = 0
+00500693    # 80000018  addi  a3, x0, 5       ; i = 5
+00d60633    # 8000001c  add   a2, a2, a3      ; loop: sum += i
+fff68693    # 80000020  addi  a3, a3, -1      ; i--
+fe069ce3    # 80000024  bne   a3, x0, loop    ; (-8)
+00f00713    # 80000028  addi  a4, x0, 15
+00e61863    # 8000002c  bne   a2, a4, fail    ; (+16)
+00a00593    # 80000030  addi  a1, x0, '\n'
+00b50023    # 80000034  sb    a1, 0(a0)
+00100073    # 80000038  ebreak                ; PASS halt
+03f00593    # 8000003c  fail: addi a1, x0, '?'
+00b50023    # 80000040  sb    a1, 0(a0)
+00100073    # 80000044  ebreak                ; FAIL halt (no newline printed)

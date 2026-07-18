@@ -1,0 +1,96 @@
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <inttypes.h>
+#include <vector>
+
+#include "bus.h"
+#include "cpu.h"
+
+static void usage(const char* argv0) {
+  fprintf(stderr,
+          "aXsim — atomiX instruction-set simulator (RV32I)\n"
+          "usage: %s [options] --bin FILE\n"
+          "  --bin FILE   flat binary image to load\n"
+          "  --base ADDR  load address        (default 0x80000000)\n"
+          "  --pc ADDR    reset PC            (default = --base)\n"
+          "  --ram MB     RAM size in MiB     (default 32)\n"
+          "  --max N      stop after N instructions (default: unlimited)\n"
+          "  --trace      log every retired instruction to stderr\n",
+          argv0);
+}
+
+static uint32_t parse_u32(const char* s) { return (uint32_t)strtoul(s, nullptr, 0); }
+
+int main(int argc, char** argv) {
+  const char* bin_path = nullptr;
+  uint32_t base = map::RAM_BASE;
+  uint32_t reset_pc = 0;
+  bool have_pc = false;
+  size_t ram_mib = 32;
+  uint64_t max_insns = 0;
+  bool trace = false;
+
+  for (int i = 1; i < argc; i++) {
+    auto arg_val = [&](const char* name) -> const char* {
+      if (strcmp(argv[i], name)) return nullptr;
+      if (++i >= argc) { usage(argv[0]); exit(1); }
+      return argv[i];
+    };
+    if (const char* v = arg_val("--bin")) bin_path = v;
+    else if (const char* v = arg_val("--base")) base = parse_u32(v);
+    else if (const char* v = arg_val("--pc")) { reset_pc = parse_u32(v); have_pc = true; }
+    else if (const char* v = arg_val("--ram")) ram_mib = parse_u32(v);
+    else if (const char* v = arg_val("--max")) max_insns = strtoull(v, nullptr, 0);
+    else if (!strcmp(argv[i], "--trace")) trace = true;
+    else { usage(argv[0]); return 1; }
+  }
+  if (!bin_path) { usage(argv[0]); return 1; }
+  if (!have_pc) reset_pc = base;
+
+  Bus bus(ram_mib << 20);
+
+  FILE* f = fopen(bin_path, "rb");
+  if (!f) { perror(bin_path); return 1; }
+  fseek(f, 0, SEEK_END);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  std::vector<uint8_t> image(len > 0 ? (size_t)len : 0);
+  if (!image.empty() && fread(image.data(), 1, image.size(), f) != image.size()) {
+    fprintf(stderr, "[axsim] short read: %s\n", bin_path);
+    return 1;
+  }
+  fclose(f);
+  if (!bus.load_image(image.data(), image.size(), base)) {
+    fprintf(stderr, "[axsim] image does not fit at 0x%08x (%zu bytes)\n", base,
+            image.size());
+    return 1;
+  }
+
+  Cpu cpu(bus, reset_pc);
+  cpu.trace = trace;
+
+  while (max_insns == 0 || cpu.retired() < max_insns) {
+    const uint32_t at = cpu.pc;
+    const Stop s = cpu.step();
+    switch (s) {
+      case Stop::None:
+        continue;
+      case Stop::Ebreak:
+        // Temporary halt convention until the trap machinery lands.
+        fprintf(stderr, "[axsim] ebreak @ %08x — halt (retired=%" PRIu64 ")\n",
+                at, cpu.retired());
+        return 0;
+      case Stop::Ecall:
+        fprintf(stderr,
+                "[axsim] ecall @ %08x — trap machinery not implemented yet\n",
+                at);
+        return 2;
+      case Stop::Fault:
+        return 1;  // diagnostics already printed by the CPU
+    }
+  }
+  fprintf(stderr, "[axsim] max instruction count reached (%" PRIu64 ")\n",
+          max_insns);
+  return 3;
+}

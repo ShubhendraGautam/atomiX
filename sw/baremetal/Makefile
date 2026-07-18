@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt
+PROGRAMS := hello timer preempt fencei spi sd
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -53,7 +53,17 @@ check-preempt: images
 	$(MAKE) -C ../../sim/axsim axsim
 	python3 check_preempt.py
 
+check-fencei: images
+	$(MAKE) -C ../../sim/axsim axsim
+	python3 check_fencei.py
+
+check-spi: images
+	python3 check_spi.py
+
+check-sd: images
+	python3 check_sd.py
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd clean

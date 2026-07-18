@@ -42,7 +42,7 @@ we build.
 | ISA | RISC-V **RV32I + Zicsr**, privileged spec M/S/U, **Sv32** MMU; add **M** ext. in phase 2 | Free GCC/LLVM/QEMU ecosystem; privileged spec is mandatory for the kernel goal |
 | HDL | **SystemVerilog** (synthesizable subset supported by Yosys) | Verilator for fast sim; portable to any vendor flow |
 | Microarchitecture | **Classic 5-stage pipeline from day one** (IF ID EX MEM WB) | Precise exceptions and hazard handling are designed in from the start, not retrofitted |
-| Memory system | **BRAM first**, SDRAM + I$/D$ caches in a later phase | Early phases have simple 1-cycle memory; CPU↔memory interface must already tolerate wait states so caches slot in without CPU changes |
+| Memory system | **BRAM first**, then a delayed external-memory model + I$/D$ caches; board SDRAM later | CPU↔memory already tolerates wait states, so Phase 6 cache/controller work slots in without core changes |
 | Interconnect | **Custom minimal valid/ready bus**; Wishbone bridge later if we adopt third-party cores | We fully own and understand the "connectors" layer |
 | Peripherals v1 | **UART console + CLINT (timer/software interrupts)**; PLIC, SD card, video later | Minimum viable for a preemptive kernel with a serial shell |
 | FPGA target | **ECP5 / open flow**, but **simulation-only for now** — RTL designed against a virtual ULX3S-like target | No board purchase yet; timing closure risk deferred deliberately |
@@ -101,6 +101,7 @@ bug" from "hardware bug".
 | `0x0200_0000` | 64 KB | CLINT: `msip`, `mtimecmp`, `mtime` |
 | `0x0C00_0000` | 4 MB | PLIC (reserved; implemented when we have >1 interrupt source) |
 | `0x1000_0000` | 4 KB | UART0 (16550-compatible subset) |
+| `0x1001_0000` | 4 KB | SPI0 (polling mode-0 controller for Phase 6 SD card) |
 | `0x8000_0000` | 128 KB → 32 MB | RAM (BRAM in v1; SDRAM later). Kernel loads at `0x8000_0000` |
 
 Misaligned or unmapped accesses raise the appropriate precise exception; the
@@ -214,9 +215,10 @@ Classic 5 stages: **IF → ID → EX → MEM → WB**.
   traded for the elimination of in-flight side-effect hazards; no CSR
   forwarding network exists or needs verifying.
 - **CSR file:** its own module, accessed in EX under the serialization rule.
-- **`FENCE`/`FENCE.I`:** architecturally correct no-ops until caches exist
-  (single hart, uncached); `fence.i` keeps its serializing flush so it is
-  already correct when an I$ appears. **`WFI`:** executes as a nop in v1.
+- **`FENCE`:** no extra hardware action in the single-hart write-through
+  cache design. **`FENCE.I`:** serializes in the core and, with Phase 6
+  caches enabled, retires a registered I-cache invalidation before refetch.
+  **`WFI`:** executes as a nop in v1.
 
 ### 4.3 Correctness definition
 
@@ -281,7 +283,7 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 | **3. SoC v1** ✅ | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL — **met 2026-07-18** (`check-preempt`; interrupt/commit collision regressions added) |
 | **4. Privileged CPU** ✅ | S/U modes, Sv32 MMU + TLB, delegation | `rv32si` and paging-heavy lock-step cosim — **met 2026-07-18** (6 upstream supervisor tests in ISS and RTL; 100,000 randomized Sv32/U-mode events across 10 seeds) |
 | **5. Kernel bring-up** ✅ | `aXos` core: paging, processes, syscalls, shell on RAM-disk | Interactive shell on the RTL simulation console — **met 2026-07-18** (`help`, `ls`, `cat`, `echo`, `fork`, `exit`; shell and fork/wait sessions pass unchanged on ISS, QEMU, and RTL) |
-| **6. Real memory** | SDRAM controller + I$/D$ (board-dependent), SD card (SPI) + on-disk FS | Kernel boots from SD, runs in SDRAM |
+| **6. Real memory** *(in progress)* | Delayed 32 MiB external-memory model + I$/D$ ✅; SPI SDHC controller/model + CMD17 block-read + read-only AXFS kernel mount ✅; SDRAM controller (board-dependent), writable FS, and SD boot remain | Kernel boots from SD, runs in SDRAM |
 | **7. FPGA bring-up** | Board purchase decision, pinout/constraints, timing closure | Same bitstream-driven shell on physical hardware |
 | **8. Host link + role framework** | USB framed protocol, `axhost` host tool, role slot on aXbus (doorbell + descriptor ring), null "loopback" role | Host submits a buffer, loopback role echoes it, completion reaches `axhost` — end-to-end in sim and on hardware |
 | **9. TPU-lite role** | int8 systolic GEMM array + aXos role service + host matmul library | Offloaded matmul matches reference results; measured speedup vs aXcore software matmul |

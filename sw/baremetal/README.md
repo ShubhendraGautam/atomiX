@@ -13,6 +13,9 @@ QEMU-virt-aligned UART, CLINT, and test-finisher addresses.
   full-register M-mode trap entry plus a three-tick machine-timer demo
 - `examples/preempt.c` — two task contexts on distinct stacks, switched by
   timer interrupts. Its expected UART transcript is `preempt: ABABAB`.
+- `include/spi.h`, `examples/spi.c`, and `examples/sd.c` — the Phase 6
+  polling SPI register interface, an idle-MISO smoke image, and SPI-mode SDHC
+  initialization plus a 512-byte CMD17 sector read.
 
 Build and run the current bring-up program:
 
@@ -24,6 +27,8 @@ make -C sw/baremetal run-rtl
 make -C sw/baremetal check-hello # asserts identical UART output on all three
 make -C sw/baremetal check-timer # CLINT timer interrupts on all three
 make -C sw/baremetal check-preempt # timer-preempted task switching on all three
+make -C sw/baremetal check-spi   # polling SPI controller on RTL
+make -C sw/baremetal check-sd    # virtual SDHC init + block read on RTL
 ```
 
 `RISCV_PREFIX` defaults to `riscv64-unknown-elf-`. GCC 10 accepts

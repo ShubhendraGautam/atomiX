@@ -9,6 +9,8 @@ module axbus_mux #(
   parameter logic [31:0] CLINT_SIZE = 32'h0001_0000,
   parameter logic [31:0] UART_BASE  = 32'h1000_0000,
   parameter logic [31:0] UART_SIZE  = 32'h0000_1000,
+  parameter logic [31:0] SPI_BASE   = 32'h1001_0000,
+  parameter logic [31:0] SPI_SIZE   = 32'h0000_1000,
   parameter logic [31:0] RAM_BASE   = 32'h8000_0000,
   parameter logic [31:0] RAM_SIZE   = 32'h0002_0000
 ) (
@@ -37,13 +39,18 @@ module axbus_mux #(
   output logic        uart_valid,
   input  logic        uart_ready,
   input  logic [31:0] uart_rdata,
-  input  logic        uart_err
+  input  logic        uart_err,
+  output logic        spi_valid,
+  input  logic        spi_ready,
+  input  logic [31:0] spi_rdata,
+  input  logic        spi_err
 );
   wire hit_rom   = m_addr >= ROM_BASE   && m_addr - ROM_BASE   < ROM_SIZE;
   wire hit_ram   = m_addr >= RAM_BASE   && m_addr - RAM_BASE   < RAM_SIZE;
   wire hit_test  = m_addr >= TEST_BASE  && m_addr - TEST_BASE  < TEST_SIZE;
   wire hit_clint = m_addr >= CLINT_BASE && m_addr - CLINT_BASE < CLINT_SIZE;
   wire hit_uart  = m_addr >= UART_BASE  && m_addr - UART_BASE  < UART_SIZE;
+  wire hit_spi   = m_addr >= SPI_BASE   && m_addr - SPI_BASE   < SPI_SIZE;
 
   always_comb begin
     rom_valid   = m_valid && hit_rom;
@@ -51,6 +58,7 @@ module axbus_mux #(
     test_valid  = m_valid && hit_test;
     clint_valid = m_valid && hit_clint;
     uart_valid  = m_valid && hit_uart;
+    spi_valid   = m_valid && hit_spi;
     m_ready     = 1'b0;
     m_rdata     = 32'b0;
     m_err       = 1'b0;
@@ -65,6 +73,8 @@ module axbus_mux #(
         m_ready = clint_ready; m_rdata = clint_rdata; m_err = clint_err;
       end else if (hit_uart) begin
         m_ready = uart_ready; m_rdata = uart_rdata; m_err = uart_err;
+      end else if (hit_spi) begin
+        m_ready = spi_ready; m_rdata = spi_rdata; m_err = spi_err;
       end else begin
         // Decode misses complete with an error; masters must never hang.
         m_ready = 1'b1; m_err = 1'b1;

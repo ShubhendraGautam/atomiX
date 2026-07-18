@@ -13,8 +13,10 @@ process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 
 The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
 It supports `help`, `ls`, `cat motd`, `cat readme`, `echo`, `fork`, and `exit`.
-The initial immutable RAM disk is a named-file table; this keeps the shell
-contract independent of its future inode/SD-backed implementation.
+The initial immutable RAM disk is a named-file table. Phase 6 adds an optional
+read-only AXFS v1 SD image path: on cached external-memory RTL, `check-storage`
+mounts `motd` and `readme` through the kernel SPI block driver. The RAM disk
+remains the ISS/QEMU fallback until the bootloader and full filesystem land.
 
 `fork` launches the U-mode parent/child demonstration. The child gets return
 value zero; the parent receives a child PID, blocks in `wait`, wakes when the
@@ -29,6 +31,14 @@ Run the complete shell and fork/wait regression on the ISS, QEMU, and RTL:
 make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
 ```
 
+Phase 6's board-independent memory regression retains the same kernel image,
+but runs it on 32 MiB of delayed RAM through optional I/D caches:
+
+```bash
+make -C sw/kernel check-memory
+make -C sw/kernel check-storage
+```
+
 To run the RTL console with a reproducible command script:
 
 ```bash
@@ -36,8 +46,13 @@ make -C sw/kernel run-rtl \
   UART_INPUT_FILE="$PWD/sw/kernel/shell_input.txt"
 ```
 
+For the delayed external-memory model and caches, add
+`RAM_BYTES=33554432 EXTERNAL_MEMORY=1 CACHES=1`. The fork/wait script needs a
+larger runner budget: add `MAX_CYCLES=500000`.
+
 The file supplies newline-terminated bytes to the synthesizable UART RX
 holding register. Replace it with any command script; `exit` sends the normal
 test-finisher success value. QEMU 7 or newer is required with
 `-cpu rv32,pmp=false` because aXcore does not implement PMP; setup is in
 [docs/toolchain.md](../../docs/toolchain.md).
+Memory-model and cache design details are in [docs/memory.md](../../docs/memory.md).

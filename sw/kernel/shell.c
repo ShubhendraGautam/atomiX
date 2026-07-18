@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "platform.h"
+#include "fs.h"
 
 extern void kernel_fork_demo(void);
 
@@ -16,6 +17,7 @@ static const struct ram_file ramdisk[] = {
     {"motd", "Welcome to aXos.\n"},
     {"readme", "aXos RAM disk: help, ls, cat, echo, exit.\n"},
 };
+static int disk_mounted;
 
 static int streq(const char *a, const char *b) {
   while (*a && *a == *b) { ++a; ++b; }
@@ -49,6 +51,7 @@ static void readline(char *line, uint32_t capacity) {
 }
 
 static void shell_ls(void) {
+  if (disk_mounted) { fs_list(); return; }
   for (uint32_t i = 0; i < sizeof(ramdisk) / sizeof(ramdisk[0]); ++i) {
     uart_puts(ramdisk[i].name);
     uart_puts("\n");
@@ -56,6 +59,10 @@ static void shell_ls(void) {
 }
 
 static void shell_cat(const char *name) {
+  if (disk_mounted) {
+    if (fs_cat(name)) uart_puts("cat: no such file\n");
+    return;
+  }
   for (uint32_t i = 0; i < sizeof(ramdisk) / sizeof(ramdisk[0]); ++i) {
     if (streq(name, ramdisk[i].name)) {
       uart_puts(ramdisk[i].data);
@@ -67,6 +74,7 @@ static void shell_cat(const char *name) {
 
 void shell_run(void) {
   char line[80];
+  disk_mounted = fs_mount() == 0;
   uart_puts("aXos: shell online\n");
   for (;;) {
     uart_puts("aXos> ");

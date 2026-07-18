@@ -10,11 +10,11 @@ MODULES := regfile alu immdec decoder branch_cmp muldiv
 
 CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axrom.sv \
-  $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/test_finisher.sv \
+  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axrom.sv \
+  $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axspi run-soc run-soc-timer
 
 run-%: $(RTL_CORE)/%.sv tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -96,6 +96,24 @@ run-sv32: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_axcore.cpp ../../tests/directed/sv32
 	./obj_dir_sv32/tb_axcore build/sv32.bin --ws 2
 	@echo "tb_sv32: PASS"
 
+# Phase 6 memory contract: both ports incur a fixed delayed response, honor
+# byte lanes, and report bad requests only at completion.
+run-axdram-model: $(RTL_SOC)/axdram_model.sv tb_axdram_model.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axdram_model --Mdir obj_dir_axdram_model \
+	  -GBYTES=64 -GLATENCY=3 --exe --build -o tb_axdram_model \
+	  $< $(CURDIR)/tb_axdram_model.cpp >/dev/null
+	./obj_dir_axdram_model/tb_axdram_model
+
+run-axcache: $(RTL_SOC)/axcache.sv $(RTL_SOC)/axdram_model.sv axcache_test_top.sv tb_axcache.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axcache_test_top --Mdir obj_dir_axcache \
+	  --exe --build -o tb_axcache $^ >/dev/null
+	./obj_dir_axcache/tb_axcache
+
+run-axspi: $(RTL_SOC)/axspi.sv tb_axspi.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axspi --Mdir obj_dir_axspi \
+	  --exe --build -o tb_axspi $^ >/dev/null
+	./obj_dir_axspi/tb_axspi
+
 run-soc: $(SOC_SVS) tb_soc.cpp data/soc_smoke.hex
 	$(VERILATOR) $(VFLAGS) --top-module soc_top --Mdir obj_dir_soc \
 	  -GROM_INIT_FILE=\"$(CURDIR)/data/soc_smoke.hex\" --exe --build -o tb_soc \
@@ -111,4 +129,4 @@ run-soc-timer: $(SOC_SVS) tb_soc_timer.cpp data/soc_timer.hex
 clean:
 	rm -rf obj_dir_* build
 
-.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-soc run-soc-timer
+.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axspi run-soc run-soc-timer

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run aXos shell and fork/wait sessions on ISS, QEMU, and RTL."""
+"""Run aXos shell/fork sessions on all Phase 5 platforms or Phase 6 RTL."""
 import os
 import subprocess
 import sys
@@ -22,6 +22,9 @@ SHELL_OUTPUT = (
     "atomiX\n"
     "aXos> exit\n"
 )
+SHELL_OUTPUT_SD = SHELL_OUTPUT.replace(
+    "aXos RAM disk: help, ls, cat, echo, exit.\n",
+    "aXos SD disk: help, ls, cat, echo, exit.\n")
 FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
 
 
@@ -62,24 +65,43 @@ def main() -> None:
     elf = ROOT / "sw/kernel/build/axos_boot.elf"
     image = ROOT / "sw/kernel/build/axos_boot.hex"
     qemu = os.environ.get("QEMU", "qemu-system-riscv32")
-    platforms = [
+    sd_image = os.environ.get("SD_IMAGE", "")
+    if sys.argv[1:] == ["--external-memory"]:
+        platforms = [
+            ("RTL external memory + caches", [
+                "make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
+                "run", f"RAM_INIT_FILE={image}", "RESET_PC=0x80000000",
+                "RAM_BYTES=33554432", "EXTERNAL_MEMORY=1", "CACHES=1",
+                "MAX_CYCLES=500000",
+            ]),
+        ]
+        if sd_image:
+            platforms[0][1].append(f"SD_IMAGE={sd_image}")
+    elif sys.argv[1:]:
+        raise SystemExit("usage: check_boot.py [--external-memory]")
+    else:
+        platforms = [
         ("ISS", [str(ROOT / "sim/axsim/axsim"), "--bin", str(elf)]),
         ("QEMU", [qemu, "-machine", "virt", "-bios", "none",
                   "-cpu", "rv32,pmp=false", "-nographic", "-kernel", str(elf)]),
         ("RTL", ["make", "-s", "--no-print-directory", "-C",
                  str(ROOT / "sim/soc"), "run", f"RAM_INIT_FILE={image}",
                  "RESET_PC=0x80000000"]),
-    ]
+        ]
     for label, command in platforms:
-        shell_command = command + ([f"UART_INPUT_FILE={SHELL_INPUT}"] if label == "RTL"
+        shell_command = command + ([f"UART_INPUT_FILE={SHELL_INPUT}"] if label.startswith("RTL")
                                    else ["--uart-input-file", str(SHELL_INPUT)] if label == "ISS"
                                    else [])
-        run(f"{label} shell", shell_command, SHELL_INPUT, SHELL_OUTPUT)
-        fork_command = command + ([f"UART_INPUT_FILE={FORK_INPUT}"] if label == "RTL"
+        run(f"{label} shell", shell_command, SHELL_INPUT,
+            SHELL_OUTPUT_SD if sd_image else SHELL_OUTPUT)
+        fork_command = command + ([f"UART_INPUT_FILE={FORK_INPUT}"] if label.startswith("RTL")
                                   else ["--uart-input-file", str(FORK_INPUT)] if label == "ISS"
                                   else [])
         run(f"{label} fork", fork_command, FORK_INPUT, None)
-    print("[kernel] shell + fork/wait: PASS on ISS, QEMU, and RTL")
+    if sys.argv[1:] == ["--external-memory"]:
+        print("[kernel] shell + fork/wait: PASS on 32 MiB cached external-memory RTL")
+    else:
+        print("[kernel] shell + fork/wait: PASS on ISS, QEMU, and RTL")
 
 
 if __name__ == "__main__":

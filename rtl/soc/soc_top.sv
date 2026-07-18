@@ -3,6 +3,8 @@
 module soc_top #(
   parameter logic [31:0] RESET_PC = 32'h0000_1000,
   parameter int unsigned RAM_BYTES = 128 * 1024,
+  parameter int unsigned USE_DRAM_MODEL = 0,
+  parameter int unsigned USE_CACHES = 0,
   parameter string ROM_INIT_FILE = "",
   parameter string RAM_INIT_FILE = ""
 ) (
@@ -14,6 +16,10 @@ module soc_top #(
   input  logic       uart_rx_valid,
   input  logic [7:0] uart_rx_data,
   output logic       uart_rx_ready,
+  output logic       spi_sclk,
+  output logic       spi_mosi,
+  output logic       spi_cs_n,
+  input  logic       spi_miso,
   output logic       finished,
   output logic [15:0] exit_code
 );
@@ -24,15 +30,31 @@ module soc_top #(
   logic [31:0] dbus_addr, dbus_wdata, dbus_rdata;
   logic [3:0] dbus_wstrb;
 
-  logic i_rom_valid, i_ram_valid, i_test_valid, i_clint_valid, i_uart_valid;
-  logic d_rom_valid, d_ram_valid, d_test_valid, d_clint_valid, d_uart_valid;
+  // Cache-facing aXbus signals keep the core interface unchanged.  With
+  // caches disabled these are straight wires; with them enabled the caches
+  // forward misses and all MMIO requests to the existing muxes below.
+  logic i_bus_valid, i_bus_ready, i_bus_err;
+  logic [31:0] i_bus_addr, i_bus_rdata, i_bus_wdata;
+  logic [3:0] i_bus_wstrb;
+  logic d_bus_valid, d_bus_ready, d_bus_err;
+  logic [31:0] d_bus_addr, d_bus_rdata, d_bus_wdata;
+  logic [3:0] d_bus_wstrb;
+
+  logic i_rom_valid, i_ram_valid, i_test_valid, i_clint_valid, i_uart_valid, i_spi_valid;
+  logic d_rom_valid, d_ram_valid, d_test_valid, d_clint_valid, d_uart_valid, d_spi_valid;
   logic i_rom_ready, i_rom_err, i_ram_ready, i_ram_err, i_test_ready, i_test_err;
   logic i_clint_ready, i_clint_err, i_uart_ready, i_uart_err;
+  logic i_spi_ready, i_spi_err;
   logic d_rom_ready, d_rom_err, d_ram_ready, d_ram_err, d_test_ready, d_test_err;
   logic d_clint_ready, d_clint_err, d_uart_ready, d_uart_err;
+  logic d_spi_ready, d_spi_err;
   logic [31:0] i_rom_rdata, i_ram_rdata, i_test_rdata, i_clint_rdata, i_uart_rdata;
+  logic [31:0] i_spi_rdata;
   logic [31:0] d_rom_rdata, d_ram_rdata, d_test_rdata, d_clint_rdata, d_uart_rdata;
+  logic [31:0] d_spi_rdata;
   logic irq_software, irq_timer;
+  logic core_trace_valid, core_trace_trap;
+  logic [31:0] core_trace_insn;
 
   // The standalone SoC does not consume debug/RVFI observability signals.
   // verilator lint_off PINCONNECTEMPTY
@@ -46,7 +68,7 @@ module soc_top #(
     .dbus_err(dbus_err),
     .irq_software(irq_software), .irq_timer(irq_timer),
     .irq_external(irq_external),
-    .trace_valid(), .trace_trap(), .trace_pc(), .trace_insn(),
+    .trace_valid(core_trace_valid), .trace_trap(core_trace_trap), .trace_pc(), .trace_insn(core_trace_insn),
     .trace_cause(), .trace_tval(), .trace_rd_we(), .trace_rd(),
     .trace_rd_val(), .trace_mstatus(), .trace_mtvec(), .trace_mepc(),
     .trace_mcause(), .trace_mtval(), .trace_mscratch(), .trace_mie(),
@@ -59,63 +81,138 @@ module soc_top #(
   );
   // verilator lint_on PINCONNECTEMPTY
 
+  // A fetch-side page-table walk can write a PTE that the data side cached,
+  // so it invalidates the D$ after completing.  The I$ is deliberately not
+  // invalidated on every ordinary data store: RISC-V makes FENCE.I the
+  // explicit synchronization point for self-modifying code.  These are
+  // registered pulses, avoiding a cross-port combinational ready loop.
+  // verilator lint_off UNUSED
+  logic i_write_complete, fence_i_complete;
+  // verilator lint_on UNUSED
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      i_write_complete <= 1'b0;
+      fence_i_complete <= 1'b0;
+    end else begin
+      i_write_complete <= ibus_valid && ibus_ready && |ibus_wstrb;
+      fence_i_complete <= core_trace_valid && !core_trace_trap &&
+                          (core_trace_insn & 32'h0000_707f) == 32'h0000_100f;
+    end
+  end
+
+  generate
+    if (USE_CACHES != 0) begin : g_caches
+      axcache #(.CACHE_BYTES(RAM_BYTES)) u_icache (
+        .clk(clk), .rst(rst), .flush(fence_i_complete),
+        .c_valid(ibus_valid), .c_addr(ibus_addr), .c_wdata(ibus_wdata), .c_wstrb(ibus_wstrb),
+        .c_ready(ibus_ready), .c_rdata(ibus_rdata), .c_err(ibus_err),
+        .m_valid(i_bus_valid), .m_addr(i_bus_addr), .m_wdata(i_bus_wdata), .m_wstrb(i_bus_wstrb),
+        .m_ready(i_bus_ready), .m_rdata(i_bus_rdata), .m_err(i_bus_err)
+      );
+      axcache #(.CACHE_BYTES(RAM_BYTES)) u_dcache (
+        .clk(clk), .rst(rst), .flush(i_write_complete),
+        .c_valid(dbus_valid), .c_addr(dbus_addr), .c_wdata(dbus_wdata), .c_wstrb(dbus_wstrb),
+        .c_ready(dbus_ready), .c_rdata(dbus_rdata), .c_err(dbus_err),
+        .m_valid(d_bus_valid), .m_addr(d_bus_addr), .m_wdata(d_bus_wdata), .m_wstrb(d_bus_wstrb),
+        .m_ready(d_bus_ready), .m_rdata(d_bus_rdata), .m_err(d_bus_err)
+      );
+    end else begin : g_no_caches
+      assign i_bus_valid = ibus_valid;
+      assign i_bus_addr = ibus_addr;
+      assign i_bus_wdata = ibus_wdata;
+      assign i_bus_wstrb = ibus_wstrb;
+      assign ibus_ready = i_bus_ready;
+      assign ibus_rdata = i_bus_rdata;
+      assign ibus_err = i_bus_err;
+      assign d_bus_valid = dbus_valid;
+      assign d_bus_addr = dbus_addr;
+      assign d_bus_wdata = dbus_wdata;
+      assign d_bus_wstrb = dbus_wstrb;
+      assign dbus_ready = d_bus_ready;
+      assign dbus_rdata = d_bus_rdata;
+      assign dbus_err = d_bus_err;
+    end
+  endgenerate
+
   axbus_mux #(.RAM_SIZE(RAM_BYTES)) u_ibus_mux (
-    .m_valid(ibus_valid), .m_addr(ibus_addr), .m_ready(ibus_ready),
-    .m_rdata(ibus_rdata), .m_err(ibus_err),
+    .m_valid(i_bus_valid), .m_addr(i_bus_addr), .m_ready(i_bus_ready),
+    .m_rdata(i_bus_rdata), .m_err(i_bus_err),
     .rom_valid(i_rom_valid), .rom_ready(i_rom_ready), .rom_rdata(i_rom_rdata), .rom_err(i_rom_err),
     .ram_valid(i_ram_valid), .ram_ready(i_ram_ready), .ram_rdata(i_ram_rdata), .ram_err(i_ram_err),
     .test_valid(i_test_valid), .test_ready(i_test_ready), .test_rdata(i_test_rdata), .test_err(i_test_err),
     .clint_valid(i_clint_valid), .clint_ready(i_clint_ready), .clint_rdata(i_clint_rdata), .clint_err(i_clint_err),
-    .uart_valid(i_uart_valid), .uart_ready(i_uart_ready), .uart_rdata(i_uart_rdata), .uart_err(i_uart_err)
+    .uart_valid(i_uart_valid), .uart_ready(i_uart_ready), .uart_rdata(i_uart_rdata), .uart_err(i_uart_err),
+    .spi_valid(i_spi_valid), .spi_ready(i_spi_ready), .spi_rdata(i_spi_rdata), .spi_err(i_spi_err)
   );
 
   axbus_mux #(.RAM_SIZE(RAM_BYTES)) u_dbus_mux (
-    .m_valid(dbus_valid), .m_addr(dbus_addr), .m_ready(dbus_ready),
-    .m_rdata(dbus_rdata), .m_err(dbus_err),
+    .m_valid(d_bus_valid), .m_addr(d_bus_addr), .m_ready(d_bus_ready),
+    .m_rdata(d_bus_rdata), .m_err(d_bus_err),
     .rom_valid(d_rom_valid), .rom_ready(d_rom_ready), .rom_rdata(d_rom_rdata), .rom_err(d_rom_err),
     .ram_valid(d_ram_valid), .ram_ready(d_ram_ready), .ram_rdata(d_ram_rdata), .ram_err(d_ram_err),
     .test_valid(d_test_valid), .test_ready(d_test_ready), .test_rdata(d_test_rdata), .test_err(d_test_err),
     .clint_valid(d_clint_valid), .clint_ready(d_clint_ready), .clint_rdata(d_clint_rdata), .clint_err(d_clint_err),
-    .uart_valid(d_uart_valid), .uart_ready(d_uart_ready), .uart_rdata(d_uart_rdata), .uart_err(d_uart_err)
+    .uart_valid(d_uart_valid), .uart_ready(d_uart_ready), .uart_rdata(d_uart_rdata), .uart_err(d_uart_err),
+    .spi_valid(d_spi_valid), .spi_ready(d_spi_ready), .spi_rdata(d_spi_rdata), .spi_err(d_spi_err)
   );
 
   axrom #(.INIT_FILE(ROM_INIT_FILE)) u_rom (
-    .clk(clk), .i_valid(i_rom_valid), .i_addr(ibus_addr), .i_wdata(32'b0),
-    .i_wstrb(4'b0), .i_ready(i_rom_ready), .i_rdata(i_rom_rdata), .i_err(i_rom_err),
-    .d_valid(d_rom_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata),
-    .d_wstrb(dbus_wstrb), .d_ready(d_rom_ready), .d_rdata(d_rom_rdata), .d_err(d_rom_err)
+    .clk(clk), .i_valid(i_rom_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+    .i_wstrb(i_bus_wstrb), .i_ready(i_rom_ready), .i_rdata(i_rom_rdata), .i_err(i_rom_err),
+    .d_valid(d_rom_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
+    .d_wstrb(d_bus_wstrb), .d_ready(d_rom_ready), .d_rdata(d_rom_rdata), .d_err(d_rom_err)
   );
 
   // The fetch-side page-table walker writes PTE A-bits through the I port.
-  axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
-    .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(ibus_addr), .i_wdata(ibus_wdata),
-    .i_wstrb(ibus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
-    .d_valid(d_ram_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata),
-    .d_wstrb(dbus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
-  );
+  // Phase 6 selects the same external-memory interface with realistic stalls.
+  generate
+    if (USE_DRAM_MODEL != 0) begin : g_dram
+      axdram_model #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
+        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
+        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
+        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
+      );
+    end else begin : g_bram
+      axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
+        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
+        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
+        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
+      );
+    end
+  endgenerate
 
   test_finisher u_test (
-    .clk(clk), .rst(rst), .i_valid(i_test_valid), .i_wdata(32'b0), .i_wstrb(4'b0),
+    .clk(clk), .rst(rst), .i_valid(i_test_valid), .i_wdata(i_bus_wdata), .i_wstrb(i_bus_wstrb),
     .i_ready(i_test_ready), .i_rdata(i_test_rdata), .i_err(i_test_err),
-    .d_valid(d_test_valid), .d_wdata(dbus_wdata), .d_wstrb(dbus_wstrb),
+    .d_valid(d_test_valid), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
     .d_ready(d_test_ready), .d_rdata(d_test_rdata), .d_err(d_test_err),
     .finished(finished), .exit_code(exit_code)
   );
 
   clint u_clint (
-    .clk(clk), .rst(rst), .i_valid(i_clint_valid), .i_addr(ibus_addr), .i_wdata(32'b0),
-    .i_wstrb(4'b0), .i_ready(i_clint_ready), .i_rdata(i_clint_rdata), .i_err(i_clint_err),
-    .d_valid(d_clint_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata), .d_wstrb(dbus_wstrb),
+    .clk(clk), .rst(rst), .i_valid(i_clint_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+    .i_wstrb(i_bus_wstrb), .i_ready(i_clint_ready), .i_rdata(i_clint_rdata), .i_err(i_clint_err),
+    .d_valid(d_clint_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
     .d_ready(d_clint_ready), .d_rdata(d_clint_rdata), .d_err(d_clint_err),
     .irq_software(irq_software), .irq_timer(irq_timer)
   );
 
   uart u_uart (
-    .clk(clk), .rst(rst), .i_valid(i_uart_valid), .i_addr(ibus_addr), .i_wdata(32'b0),
-    .i_wstrb(4'b0), .i_ready(i_uart_ready), .i_rdata(i_uart_rdata), .i_err(i_uart_err),
-    .d_valid(d_uart_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata), .d_wstrb(dbus_wstrb),
+    .clk(clk), .rst(rst), .i_valid(i_uart_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+    .i_wstrb(i_bus_wstrb), .i_ready(i_uart_ready), .i_rdata(i_uart_rdata), .i_err(i_uart_err),
+    .d_valid(d_uart_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
     .d_ready(d_uart_ready), .d_rdata(d_uart_rdata), .d_err(d_uart_err),
     .tx_valid(uart_tx_valid), .tx_data(uart_tx_data),
     .rx_valid(uart_rx_valid), .rx_data(uart_rx_data), .rx_ready(uart_rx_ready)
+  );
+
+  axspi u_spi (
+    .clk(clk), .rst(rst), .i_valid(i_spi_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+    .i_wstrb(i_bus_wstrb), .i_ready(i_spi_ready), .i_rdata(i_spi_rdata), .i_err(i_spi_err),
+    .d_valid(d_spi_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
+    .d_ready(d_spi_ready), .d_rdata(d_spi_rdata), .d_err(d_spi_err),
+    .spi_sclk(spi_sclk), .spi_mosi(spi_mosi), .spi_cs_n(spi_cs_n), .spi_miso(spi_miso)
   );
 endmodule

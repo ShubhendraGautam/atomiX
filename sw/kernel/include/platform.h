@@ -6,6 +6,7 @@
 #define AX_TEST_BASE  0x00100000u
 #define AX_CLINT_BASE 0x02000000u
 #define AX_UART_BASE  0x10000000u
+#define AX_SPI_BASE   0x10010000u
 
 static inline void mmio_write8(uint32_t addr, uint8_t value) {
   *(volatile uint8_t *)(uintptr_t)addr = value;
@@ -13,6 +14,10 @@ static inline void mmio_write8(uint32_t addr, uint8_t value) {
 
 static inline uint8_t mmio_read8(uint32_t addr) {
   return *(volatile const uint8_t *)(uintptr_t)addr;
+}
+
+static inline uint32_t mmio_read32(uint32_t addr) {
+  return *(volatile const uint32_t *)(uintptr_t)addr;
 }
 
 static inline void mmio_write32(uint32_t addr, uint32_t value) {

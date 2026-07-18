@@ -10,6 +10,8 @@ constexpr uint32_t ROM_BASE   = 0x00001000;
 constexpr uint32_t ROM_SIZE   = 0x1000;
 constexpr uint32_t TEST_BASE  = 0x00100000;  // QEMU sifive_test finisher
 constexpr uint32_t TEST_SIZE  = 0x1000;
+constexpr uint32_t CLINT_BASE = 0x02000000;
+constexpr uint32_t CLINT_SIZE = 0x10000;
 constexpr uint32_t UART_BASE  = 0x10000000;
 constexpr uint32_t UART_SIZE  = 0x1000;
 constexpr uint32_t RAM_BASE   = 0x80000000;
@@ -33,6 +35,8 @@ class Bus {
       val = uart_read(addr - map::UART_BASE);
       return true;
     }
+    if (addr >= map::CLINT_BASE && addr - map::CLINT_BASE < map::CLINT_SIZE)
+      return clint_read(addr - map::CLINT_BASE, size, val);
     return false;
   }
 
@@ -54,6 +58,8 @@ class Bus {
       uart_write(addr - map::UART_BASE, (uint8_t)val);
       return true;
     }
+    if (addr >= map::CLINT_BASE && addr - map::CLINT_BASE < map::CLINT_SIZE)
+      return clint_write(addr - map::CLINT_BASE, size, val);
     if (addr >= map::TEST_BASE && addr < map::TEST_BASE + map::TEST_SIZE) {
       // QEMU sifive_test protocol: 0x5555 = pass, 0x3333 | code<<16 = fail,
       // 0x7777 = reset (treated as a clean exit). Same binary exits
@@ -77,6 +83,13 @@ class Bus {
   bool tohost_en = false;  // watch tohost_addr for HTIF writes
   uint32_t tohost_addr = 0;
   bool uart_echo = true;   // false lets cosim print the RTL side only
+
+  // One ISS time step per retired instruction. The precise delivery point is
+  // defined in Cpu::step(); this exposes the same MSIP/MTIP sources as RTL.
+  void tick() { ++mtime; }
+  uint32_t mip() const {
+    return (msip ? (1u << 3) : 0) | (mtime >= mtimecmp ? (1u << 7) : 0);
+  }
 
   const std::vector<uint8_t>& ram_image() const { return ram; }
 
@@ -114,6 +127,55 @@ class Bus {
     return 0;
   }
 
+  // QEMU-virt CLINT subset (hart 0): MSIP, MTIMECMP, and MTIME. The CPU
+  // presents native byte addresses and sizes, unlike the aligned RTL bus
+  // view, so byte extraction/merging belongs here.
+  bool clint_read(uint32_t off, unsigned size, uint32_t& val) const {
+    uint64_t value;
+    uint32_t base;
+    unsigned width;
+    if (off < 0x0004) {
+      value = msip; base = 0x0000; width = 4;
+    } else if (off >= 0x4000 && off < 0x4008) {
+      value = mtimecmp; base = 0x4000; width = 8;
+    } else if (off >= 0xbff8 && off < 0xc000) {
+      value = mtime; base = 0xbff8; width = 8;
+    } else {
+      return false;
+    }
+    if (size == 0 || size > 4 || off - base + size > width) return false;
+    val = (uint32_t)(value >> (8 * (off - base)));
+    if (size < 4) val &= (1u << (8 * size)) - 1;
+    return true;
+  }
+
+  bool clint_write(uint32_t off, unsigned size, uint32_t val) {
+    uint64_t* target;
+    uint32_t base;
+    unsigned width;
+    uint64_t msip_value = msip;
+    bool is_msip = false;
+    if (off < 0x0004) {
+      target = &msip_value; base = 0x0000; width = 4; is_msip = true;
+    } else if (off >= 0x4000 && off < 0x4008) {
+      target = &mtimecmp; base = 0x4000; width = 8;
+    } else if (off >= 0xbff8 && off < 0xc000) {
+      target = &mtime; base = 0xbff8; width = 8;
+    } else {
+      return false;
+    }
+    if (size == 0 || size > 4 || off - base + size > width) return false;
+    const unsigned shift = 8 * (off - base);
+    const uint64_t mask = (size == 4 ? 0xffffffffull :
+                           (1ull << (8 * size)) - 1) << shift;
+    *target = (*target & ~mask) | ((uint64_t)val << shift & mask);
+    if (is_msip) msip = *target & 1;
+    return true;
+  }
+
   std::vector<uint8_t> ram;
   uint8_t rom[map::ROM_SIZE] = {};
+  bool msip = false;
+  uint64_t mtime = 0;
+  uint64_t mtimecmp = ~0ull;
 };

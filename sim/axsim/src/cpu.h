@@ -43,7 +43,9 @@ class Cpu {
  public:
   Cpu(Bus& bus, uint32_t reset_pc) : pc(reset_pc), bus(bus) {}
 
-  Stop step();  // fetch/decode/execute one instruction (or take its trap)
+  // Fetch/decode/execute one instruction. An enabled interrupt is entered
+  // after that instruction retires, mirroring aXcore's MEM commit point.
+  Stop step();
 
   uint32_t pc;
   uint32_t x[32] = {};       // x0 held at zero by the writeback path
@@ -54,6 +56,9 @@ class Cpu {
 
  private:
   Stop trap(uint32_t cause, uint32_t tval);
+  Stop interrupt(uint32_t cause, uint32_t resume_pc);
+  Stop enter_trap(uint32_t cause, uint32_t tval, uint32_t trap_pc,
+                  bool is_interrupt);
   bool csr_read(uint32_t addr, uint32_t& val);
   bool csr_write(uint32_t addr, uint32_t val);
 

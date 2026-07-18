@@ -9,6 +9,8 @@ QEMU-virt-aligned UART, CLINT, and test-finisher addresses.
 - `include/platform.h` — volatile MMIO helpers, a polling 16550 TX console,
   and the `sifive_test` exit protocol
 - `examples/hello.c` — first platform customer; prints then passes
+- `traps.S`, `include/csr.h`, `include/clint.h`, and `examples/timer.c` — a
+  full-register M-mode trap entry plus a three-tick machine-timer demo
 
 Build and run the current bring-up program:
 
@@ -18,10 +20,12 @@ make -C sw/baremetal run-iss
 make -C sw/baremetal run-qemu
 make -C sw/baremetal run-rtl
 make -C sw/baremetal check-hello # asserts identical UART output on all three
+make -C sw/baremetal check-timer # CLINT timer interrupts on all three
 ```
 
 `RISCV_PREFIX` defaults to `riscv64-unknown-elf-`. GCC 10 accepts
 `RISCV_ARCH=rv32im` (its Zicsr support is included in that spelling); newer
 toolchains may be invoked with `RISCV_ARCH=rv32im_zicsr`.
 
-The timer interrupt and preemptive-demo runtime are the next Phase 3 slice.
+The timer interrupt path is now covered; the timer-preempted multitasking demo
+is the next Phase 3 slice.

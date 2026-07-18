@@ -110,6 +110,7 @@ make -C sim/axsim test
 # build the first freestanding C image and compare its UART output on ISS,
 # QEMU virt, and the complete Verilated SoC
 make -C sw/baremetal check-hello
+make -C sw/baremetal check-timer
 
 # confirm the formal toolchain and reference checkout
 sby --version

@@ -32,19 +32,15 @@ enum : uint32_t {
   EXC_ECALL_M = 11,
 };
 
-// Take an M-mode trap at the current (faulting) pc. The caller returns
-// immediately after, so the trapping instruction writes no register and does
-// not retire; the next step() fetches from the handler.
-Stop Cpu::trap(uint32_t cause, uint32_t tval) {
-  last.trap = true;
-  last.cause = cause;
-  last.tval = tval;
-  const uint32_t trap_pc = pc;
+// Common M-mode trap entry. Synchronous traps name the faulting instruction;
+// interrupts name the already-retired instruction's successor in mepc.
+Stop Cpu::enter_trap(uint32_t cause, uint32_t tval, uint32_t trap_pc,
+                     bool is_interrupt) {
   if (trace)
-    fprintf(stderr, "          TRAP cause=%u tval=%08x pc=%08x\n", cause, tval,
-            pc);
-  csr.mepc = pc;
-  csr.mcause = cause;
+    fprintf(stderr, "          %s cause=%u tval=%08x pc=%08x\n",
+            is_interrupt ? "INTERRUPT" : "TRAP", cause, tval, trap_pc);
+  csr.mepc = trap_pc;
+  csr.mcause = (is_interrupt ? 0x80000000u : 0) | cause;
   csr.mtval = tval;
   const uint32_t mie = (csr.mstatus >> 3) & 1;   // MPIE <= MIE, MIE <= 0
   csr.mstatus = (csr.mstatus & ~0x88u) | (mie << 7) | 0x1800;  // MPP <= M
@@ -57,6 +53,20 @@ Stop Cpu::trap(uint32_t cause, uint32_t tval) {
     return Stop::Fault;
   }
   return Stop::None;
+}
+
+// Take an M-mode synchronous trap at the current (faulting) pc. The caller
+// returns immediately, so the instruction writes no register and does not
+// retire; the next step() fetches from the handler.
+Stop Cpu::trap(uint32_t cause, uint32_t tval) {
+  last.trap = true;
+  last.cause = cause;
+  last.tval = tval;
+  return enter_trap(cause, tval, pc, false);
+}
+
+Stop Cpu::interrupt(uint32_t cause, uint32_t resume_pc) {
+  return enter_trap(cause, 0, resume_pc, true);
 }
 
 bool Cpu::csr_read(uint32_t addr, uint32_t& val) {
@@ -106,6 +116,14 @@ Stop Cpu::step() {
   last = {};
   last.valid = true;
   last.pc = pc;
+  // Match aXcore's commit-point sampling: this instruction sees the
+  // interrupt enables and pending lines from before its own architectural
+  // side effects. A CSR write that enables MIE therefore takes effect for the
+  // following instruction, not retroactively for itself.
+  csr.mip = bus.mip();
+  const uint32_t irq_mstatus = csr.mstatus;
+  const uint32_t irq_mie = csr.mie;
+  const uint32_t irq_mip = csr.mip;
   if (pc & 3) return trap(EXC_IADDR_MISALIGNED, pc);
   uint32_t insn;
   if (!bus.read(pc, 4, insn)) return trap(EXC_IACCESS_FAULT, pc);
@@ -291,5 +309,13 @@ Stop Cpu::step() {
   last.retired = true;
   ninsn++;
   pc = next_pc;
+  bus.tick();
+  csr.mip = bus.mip();
+  if ((irq_mstatus & (1u << 3)) && (irq_mie & irq_mip)) {
+    const uint32_t pending = irq_mie & irq_mip;
+    const uint32_t cause = pending & (1u << 11) ? 11 :
+                           pending & (1u << 3) ? 3 : 7;
+    return interrupt(cause, next_pc);
+  }
   return Stop::None;
 }

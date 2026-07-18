@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello
+PROGRAMS := hello timer
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -19,8 +19,8 @@ HEXS     := $(ELFS:.elf=.hex)
 all: $(ELFS)
 images: $(BINS) $(HEXS)
 
-build/%.elf: crt0.S examples/%.c link.ld include/platform.h | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ crt0.S examples/$*.c
+build/%.elf: crt0.S traps.S runtime.c examples/%.c link.ld include/platform.h include/csr.h include/clint.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ crt0.S traps.S runtime.c examples/$*.c
 
 build/%.bin: build/%.elf
 	$(OBJCOPY) -O binary $< $@
@@ -45,7 +45,11 @@ check-hello: images
 	$(MAKE) -C ../../sim/axsim axsim
 	python3 check_hello.py
 
+check-timer: images
+	$(MAKE) -C ../../sim/axsim axsim
+	python3 check_timer.py
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer clean

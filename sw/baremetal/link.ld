@@ -1,10 +1,12 @@
-/* atomiX bare-metal link script: everything in RAM at 0x80000000
- * (DESIGN.md §3.2). vaddr == paddr; no ELF headers mapped into memory. */
+/* atomiX bare-metal link script: everything in the v1 128 KiB BRAM at
+ * 0x80000000 (DESIGN.md §3.2). Phase 6's SDRAM platform will raise this
+ * limit; keeping it exact today prevents trap stacks from escaping RTL RAM.
+ * vaddr == paddr; no ELF headers mapped into memory. */
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
 MEMORY {
-  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 32M
+  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 128K
 }
 
 PHDRS {

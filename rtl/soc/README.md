@@ -7,8 +7,8 @@ of the shell + role platform, DESIGN.md §3.3):
   decode, arbiter slot for future DMA/debug masters. Deliberately a
   near-subset of Wishbone classic so a bridge to third-party cores is thin.
 - Boot ROM + RAM (BRAM by default, dual-port to serve ibus and dbus). Phase 6
-  adds a delayed external-memory model and optional split I/D caches; the
-  board SDRAM controller remains to be implemented.
+  adds a delayed external-memory model, optional split I/D caches, and
+  `axsdram.sv`, the ULX3S x16 SDR SDRAM controller.
 - `uart.sv` — 16550-compatible subset (industry standard; matches QEMU-`virt`
   so software runs unchanged on ISS/QEMU/RTL).
 - `clint.sv` — timer + software interrupts (`mtime`, `mtimecmp`, `msip`),
@@ -20,8 +20,9 @@ of the shell + role platform, DESIGN.md §3.3):
   unmapped accesses complete with an error rather than hanging.
 - `axrom.sv`, `axram.sv` — dual-port BRAM-shaped memory blocks. ROM is
   `$readmemh` initialized through `soc_top`'s `ROM_INIT_FILE` parameter.
-- `axdram_model.sv` — fixed-latency, 32 MiB-capable simulation backing store
-  with the same dual-port aXbus contract expected of the later controller.
+- `axdram_model.sv` — fixed-latency, 32 MiB-capable simulation backing store.
+- `axsdram.sv` — dual-aXbus to x16 SDRAM controller: init, refresh, CAS-2
+  reads, byte-masked writes, and explicit DQ I/O direction for a board top.
 - `axcache.sv` — optional direct-mapped write-through cache. It caches only
   the RAM range; all MMIO bypasses it. A committed `fence.i` flushes the I$.
 - `axspi.sv` — polling mode-0 SPI controller at `0x1001_0000`, with explicit
@@ -45,5 +46,6 @@ make -C sim/unit run-soc        # ROM, RAM, UART, and finisher
 make -C sim/unit run-soc-timer  # CLINT -> precise timer interrupt -> handler
 make -C sim/unit run-axdram-model
 make -C sim/unit run-axcache
+make -C sim/unit run-axsdram
 make -C sim/unit run-axspi
 ```

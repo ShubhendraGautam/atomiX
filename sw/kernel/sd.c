@@ -72,9 +72,26 @@ int sd_read_block(uint32_t block, uint8_t *data) {
   deselect_card();
   return 0;
 }
+
+int sd_write_block(uint32_t block, const uint8_t *data) {
+  if (command(24, block, 1) != 0) { deselect_card(); return -1; }
+  (void)transfer(0xfe);  // single-block data token
+  for (uint32_t i = 0; i < 512; ++i) (void)transfer(data[i]);
+  (void)transfer(0xff); (void)transfer(0xff);  // CRC disabled
+  if ((transfer(0xff) & 0x1f) != 0x05) { deselect_card(); return -2; }
+  for (uint32_t i = 0; i < 64; ++i) {
+    if (transfer(0xff) == 0xff) { deselect_card(); return 0; }
+  }
+  deselect_card();
+  return -3;
+}
 #else
 int sd_init(void) { return -1; }
 int sd_read_block(uint32_t block, uint8_t *data) {
+  (void)block; (void)data;
+  return -1;
+}
+int sd_write_block(uint32_t block, const uint8_t *data) {
   (void)block; (void)data;
   return -1;
 }

@@ -2,7 +2,7 @@
 module axrom #(
   parameter logic [31:0] BASE = 32'h0000_1000,
   parameter int unsigned BYTES = 4096,
-  parameter string INIT_FILE = ""
+  parameter INIT_FILE = ""
 ) (
   input  logic        clk,
   input  logic        i_valid,
@@ -30,7 +30,9 @@ module axrom #(
   wire [INDEX_BITS-1:0] i_index = i_offset[INDEX_BITS+1:2];
   wire [INDEX_BITS-1:0] d_index = d_offset[INDEX_BITS+1:2];
 
-  initial if (INIT_FILE != "") $readmemh(INIT_FILE, mem);
+  // verilator lint_off WIDTH
+  initial if (INIT_FILE) $readmemh(INIT_FILE, mem);
+  // verilator lint_on WIDTH
 
   always_comb begin
     i_ready = i_valid;

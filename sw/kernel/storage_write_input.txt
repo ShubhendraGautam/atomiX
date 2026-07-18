@@ -1,0 +1,4 @@
+write note phase6-persistent
+cat note
+ls
+exit

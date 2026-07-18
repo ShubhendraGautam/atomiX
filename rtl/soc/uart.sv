@@ -21,6 +21,7 @@ module uart #(
   output logic        d_err,
   output logic        tx_valid,
   output logic [7:0]  tx_data,
+  input  logic        tx_ready,
   input  logic        rx_valid,
   input  logic [7:0]  rx_data,
   output logic        rx_ready
@@ -42,24 +43,25 @@ module uart #(
   endfunction
 
   always_comb begin
-    i_ready = i_valid; i_err = i_valid && !i_in_range; i_rdata = read_offset(i_off);
-    d_ready = d_valid; d_err = d_valid && !d_in_range; d_rdata = read_offset(d_off);
+    // A transmitter write is an aXbus handshake with the physical UART
+    // backend.  Simulation ties tx_ready high; a board serialises bytes and
+    // stalls THR stores while the previous frame is on the wire.
+    i_ready = i_valid && (!i_wstrb[0] || i_off != 3'd0 || tx_ready);
+    d_ready = d_valid && (!d_wstrb[0] || d_off != 3'd0 || tx_ready);
+    i_err = i_valid && !i_in_range;
+    d_err = d_valid && !d_in_range;
+    i_rdata = read_offset(i_off);
+    d_rdata = read_offset(d_off);
+    tx_valid = (i_valid && i_off == 3'd0 && i_wstrb[0]) ||
+               (d_valid && d_off == 3'd0 && d_wstrb[0]);
+    tx_data = (d_valid && d_off == 3'd0 && d_wstrb[0]) ? d_wdata[7:0] : i_wdata[7:0];
     rx_ready = !rx_full;
   end
   always_ff @(posedge clk) begin
     if (rst) begin
-      tx_valid <= 1'b0;
-      tx_data  <= 8'b0;
       rx_full  <= 1'b0;
       rx_byte  <= 8'b0;
     end else begin
-      tx_valid <= 1'b0;
-      if (i_valid && i_off == 3'd0 && i_wstrb[0]) begin
-        tx_valid <= 1'b1; tx_data <= i_wdata[7:0];
-      end
-      if (d_valid && d_off == 3'd0 && d_wstrb[0]) begin
-        tx_valid <= 1'b1; tx_data <= d_wdata[7:0];
-      end
       if (d_valid && d_off == 3'd0 && d_wstrb == 4'b0) rx_full <= 1'b0;
       if (rx_valid && rx_ready) begin
         rx_full <= 1'b1;

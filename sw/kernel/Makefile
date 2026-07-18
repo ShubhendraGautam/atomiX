@@ -67,13 +67,20 @@ check-storage: images
 	python3 make_fs_image.py build/axfs.img
 	SD_IMAGE=$(abspath build/axfs.img) python3 check_boot.py --external-memory
 
-check-sdboot: images
+check-storage-write: images
+	$(MAKE) -B images STORAGE=1
+	python3 make_fs_image.py build/axfs.img
+	SD_IMAGE=$(abspath build/axfs.img) python3 check_boot.py --storage-write
+
+boot-disk: images
 	$(MAKE) -B images STORAGE=1 FS_BLOCK=64
 	$(MAKE) -C ../bootrom images
 	python3 make_boot_disk.py build/axos_boot.bin build/axos_boot.img
+
+check-sdboot: boot-disk
 	SD_IMAGE=$(abspath build/axos_boot.img) BOOT_ROM=$(abspath ../bootrom/build/bootrom.hex) python3 check_boot.py --sd-boot
 
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-sdboot clean
+.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-storage-write boot-disk check-sdboot clean

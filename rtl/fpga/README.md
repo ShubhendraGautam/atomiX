@@ -1,13 +1,43 @@
 # rtl/fpga/ — board targets
 
-Board-specific top-levels, pin constraints (LPF), and clocking (PLL setup).
-This is the **only** place vendor/board-specific code is allowed; everything
-under `core/`, `soc/`, `roles/` stays board-agnostic.
+Board-specific top-levels, pin constraints, clocking, and bitstream build
+rules. This is the **only** place vendor/board-specific code is allowed;
+everything under `core/`, `soc/`, and `roles/` remains board-agnostic.
 
-Flow: **Yosys → nextpnr-ecp5 → ecppack** (fully open toolchain), targeting
-Lattice ECP5. Standing board favorite: ULX3S (85F); purchase deferred to
-phase 6/7 — until then this directory holds a *virtual* target's constraints
-used to keep synthesis honest (utilization and timing reports in CI).
+## ULX3S 85F target
 
-Contents per board: `<board>_top.sv`, `<board>.lpf`, build Makefile,
-bitstream-flash notes.
+`ulx3s_85f_top.sv` targets an ULX3S v2/v3 with LFE5U-85F-6BG381C:
+
+- 25 MHz system clock; `ODDRX1F` launches the SDRAM clock half a cycle later.
+- FT231X USB-serial console at 115200 8-N-1 (`axuart_phy.sv`).
+- microSD in SPI mode (CMD/MOSI, DAT0/MISO, DAT3/CS_n).
+- 32 MiB x16 SDR SDRAM via `axsdram` and explicit ECP5 `BB` DQ pads.
+- boot ROM preloaded from `sw/bootrom/build/bootrom.hex`; it loads aXos from
+  the SD card, so no kernel image is compiled into FPGA BRAM.
+
+`ulx3s_85f.lpf` is reduced from the ULX3S project's published v2/v3 pin map.
+It constrains only pins used by the shell. The Makefile targets `--85k`,
+`CABGA381`, ECP5 speed grade 6, and a 25 MHz timing goal.
+
+Build after the ECP5 tools in [docs/toolchain.md](../../docs/toolchain.md) are
+on `PATH`:
+
+```bash
+make -C rtl/fpga              # boot ROM, Yosys, nextpnr, .bit
+make -C rtl/fpga toolchain-report
+make -C rtl/fpga program      # reversible SRAM configuration
+```
+
+`make flash` writes persistent configuration flash and is intentionally
+separate. Do it only after the physical bring-up checks in
+[docs/ulx3s-bringup.md](../../docs/ulx3s-bringup.md) pass.
+
+The authored RTL uses standard SystemVerilog package types. Current Yosys
+rejects those `import` statements in this design, so `prepare_synth.py`
+creates a disposable flattened file in `rtl/fpga/build/`; it never rewrites
+source RTL. This is a tool-frontend adapter, not a second hardware design.
+
+Until the ECP5 P&R tools are installed, `make -C rtl/fpga` fails immediately
+at its tool preflight rather than spending time on synthesis. The checked-in
+target has passed Yosys synthesis; the P&R timing report and physical-board
+transcript are still Phase 7 evidence to record.

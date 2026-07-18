@@ -4,15 +4,17 @@ module soc_top #(
   parameter logic [31:0] RESET_PC = 32'h0000_1000,
   parameter int unsigned RAM_BYTES = 128 * 1024,
   parameter int unsigned USE_DRAM_MODEL = 0,
+  parameter int unsigned USE_SDRAM = 0,
   parameter int unsigned USE_CACHES = 0,
-  parameter string ROM_INIT_FILE = "",
-  parameter string RAM_INIT_FILE = ""
+  parameter ROM_INIT_FILE = "",
+  parameter RAM_INIT_FILE = ""
 ) (
   input  logic       clk,
   input  logic       rst,
   input  logic       irq_external,
   output logic       uart_tx_valid,
   output logic [7:0] uart_tx_data,
+  input  logic       uart_tx_ready,
   input  logic       uart_rx_valid,
   input  logic [7:0] uart_rx_data,
   output logic       uart_rx_ready,
@@ -20,6 +22,20 @@ module soc_top #(
   output logic       spi_mosi,
   output logic       spi_cs_n,
   input  logic       spi_miso,
+  output logic       sdram_cke,
+  output logic       sdram_cs_n,
+  output logic       sdram_ras_n,
+  output logic       sdram_cas_n,
+  output logic       sdram_we_n,
+  output logic [1:0] sdram_ba,
+  output logic [12:0] sdram_a,
+  output logic [1:0] sdram_dqm,
+  // verilator lint_off UNUSED
+  input  logic [15:0] sdram_dq_i,
+  // verilator lint_on UNUSED
+  output logic [15:0] sdram_dq_o,
+  output logic       sdram_dq_oe,
+  output logic       sdram_init_done,
   output logic       finished,
   output logic [15:0] exit_code
 );
@@ -165,8 +181,22 @@ module soc_top #(
 
   // The fetch-side page-table walker writes PTE A-bits through the I port.
   // Phase 6 selects the same external-memory interface with realistic stalls.
+  // The physical SDRAM controller keeps precisely the same dual-port aXbus
+  // boundary; the board top selects it explicitly.
   generate
-    if (USE_DRAM_MODEL != 0) begin : g_dram
+    if (USE_SDRAM != 0) begin : g_sdram
+      axsdram #(.BYTES(RAM_BYTES)) u_ram (
+        .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+        .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
+        .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
+        .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err),
+        .sdram_cke(sdram_cke), .sdram_cs_n(sdram_cs_n), .sdram_ras_n(sdram_ras_n),
+        .sdram_cas_n(sdram_cas_n), .sdram_we_n(sdram_we_n), .sdram_ba(sdram_ba),
+        .sdram_a(sdram_a), .sdram_dqm(sdram_dqm), .sdram_dq_i(sdram_dq_i),
+        .sdram_dq_o(sdram_dq_o), .sdram_dq_oe(sdram_dq_oe),
+        .init_done(sdram_init_done)
+      );
+    end else if (USE_DRAM_MODEL != 0) begin : g_dram
       axdram_model #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
         .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
         .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready), .i_rdata(i_ram_rdata), .i_err(i_ram_err),
@@ -180,6 +210,20 @@ module soc_top #(
         .d_valid(d_ram_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata),
         .d_wstrb(d_bus_wstrb), .d_ready(d_ram_ready), .d_rdata(d_ram_rdata), .d_err(d_ram_err)
       );
+    end
+
+    if (USE_SDRAM == 0) begin : g_no_sdram_pins
+      assign sdram_cke = 1'b0;
+      assign sdram_cs_n = 1'b1;
+      assign sdram_ras_n = 1'b1;
+      assign sdram_cas_n = 1'b1;
+      assign sdram_we_n = 1'b1;
+      assign sdram_ba = 2'b00;
+      assign sdram_a = 13'b0;
+      assign sdram_dqm = 2'b00;
+      assign sdram_dq_o = 16'b0;
+      assign sdram_dq_oe = 1'b0;
+      assign sdram_init_done = 1'b0;
     end
   endgenerate
 
@@ -204,7 +248,7 @@ module soc_top #(
     .i_wstrb(i_bus_wstrb), .i_ready(i_uart_ready), .i_rdata(i_uart_rdata), .i_err(i_uart_err),
     .d_valid(d_uart_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
     .d_ready(d_uart_ready), .d_rdata(d_uart_rdata), .d_err(d_uart_err),
-    .tx_valid(uart_tx_valid), .tx_data(uart_tx_data),
+    .tx_valid(uart_tx_valid), .tx_data(uart_tx_data), .tx_ready(uart_tx_ready),
     .rx_valid(uart_rx_valid), .rx_data(uart_rx_data), .rx_ready(uart_rx_ready)
   );
 

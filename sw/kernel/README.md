@@ -12,11 +12,12 @@ process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 ## Shell and RAM disk
 
 The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
-It supports `help`, `ls`, `cat motd`, `cat readme`, `echo`, `fork`, and `exit`.
-The initial immutable RAM disk is a named-file table. Phase 6 adds an optional
-read-only AXFS v1 SD image path: on cached external-memory RTL, `check-storage`
-mounts `motd` and `readme` through the kernel SPI block driver. The RAM disk
-remains the ISS/QEMU fallback until the bootloader and full filesystem land.
+It supports `help`, `ls`, `cat NAME`, `write NAME TEXT`, `echo`, `fork`, and
+`exit`. The initial immutable RAM disk is a named-file table. Phase 6 adds an
+optional AXFS v1 SD image path: on cached external-memory RTL, `check-storage`
+mounts `motd` and `readme` through the kernel SPI block driver. `write` creates
+or replaces one sector-sized AXFS file through SD CMD24; it is deliberately not
+a crash-safe general filesystem. The RAM disk remains the ISS/QEMU fallback.
 
 `fork` launches the U-mode parent/child demonstration. The child gets return
 value zero; the parent receives a child PID, blocks in `wait`, wakes when the
@@ -37,7 +38,15 @@ but runs it on 32 MiB of delayed RAM through optional I/D caches:
 ```bash
 make -C sw/kernel check-memory
 make -C sw/kernel check-storage
+make -C sw/kernel check-storage-write
+make -C sw/kernel check-sdboot
 ```
+
+`check-sdboot` builds `build/axos_boot.img`, a bootable SD-card image with the
+kernel at its ROM-loader location and AXFS at sector 64. It then proves the
+ROM loader, the real `axsdram` pin-level controller model, and the mounted
+shell in one RTL run. See [docs/ulx3s-bringup.md](../../docs/ulx3s-bringup.md)
+to use the same image on an ULX3S.
 
 To run the RTL console with a reproducible command script:
 

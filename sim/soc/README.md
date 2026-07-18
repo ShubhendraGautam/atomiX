@@ -22,3 +22,15 @@ For a scripted aXos shell session:
 ```bash
 make -C sw/kernel run-rtl UART_INPUT_FILE="$PWD/sw/kernel/shell_input.txt"
 ```
+
+`run` normally uses BRAM or the delayed-memory model selected by its
+parameters. `run-sdram` instead instantiates the physical x16 SDRAM pins of
+`axsdram` against the CAS-2 behavioral SDRAM device:
+
+```bash
+make -C sw/kernel check-sdboot
+```
+
+That complete ROM → SD → SDRAM boot regression is the simulation gate for the
+ULX3S target; it is not a substitute for board-level timing and electrical
+validation.

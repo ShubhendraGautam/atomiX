@@ -15,7 +15,9 @@ def main():
     count = (len(kernel) + 511) // 512
     if count == 0 or count >= FS_BLOCK:
         raise SystemExit("kernel does not fit boot image")
-    sectors = [bytearray(512) for _ in range(FS_BLOCK + 3)]
+    # AXFS reserves sixteen sectors: directory, two initial files, and space
+    # for runtime writes before the physical SD card's general free space.
+    sectors = [bytearray(512) for _ in range(FS_BLOCK + 16)]
     sectors[0][:8] = b"AXBT" + struct.pack("<I", count)
     for block in range(count):
         sectors[block + 1][:] = kernel[block * 512:(block + 1) * 512].ljust(512, b"\0")

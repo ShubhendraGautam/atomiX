@@ -10,11 +10,11 @@ MODULES := regfile alu immdec decoder branch_cmp muldiv
 
 CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
 SOC_SVS := $(CORE_SVS:%=$(RTL_CORE)/%.sv) \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axrom.sv \
+  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv $(RTL_SOC)/axrom.sv \
   $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv $(RTL_SOC)/test_finisher.sv \
   $(RTL_SOC)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axspi run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
 
 run-%: $(RTL_CORE)/%.sv tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -104,6 +104,19 @@ run-axdram-model: $(RTL_SOC)/axdram_model.sv tb_axdram_model.cpp
 	  $< $(CURDIR)/tb_axdram_model.cpp >/dev/null
 	./obj_dir_axdram_model/tb_axdram_model
 
+# Physical-SDRAM controller contract against a CAS-2 x16 SDRAM behavioural
+# model, including init, bank/row/column sequencing, byte masks, and faults.
+run-axsdram: $(RTL_SOC)/axsdram.sv ../soc/ax_sdram_sim.sv axsdram_test_top.sv tb_axsdram.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axsdram_test_top --Mdir obj_dir_axsdram \
+	  --exe --build -o tb_axsdram $(RTL_SOC)/axsdram.sv ../soc/ax_sdram_sim.sv $(CURDIR)/axsdram_test_top.sv \
+	  $(CURDIR)/tb_axsdram.cpp >/dev/null
+	./obj_dir_axsdram/tb_axsdram
+
+run-axuart-phy: ../../rtl/fpga/axuart_phy.sv axuart_phy_loopback_top.sv tb_axuart_phy.cpp
+	$(VERILATOR) $(VFLAGS) --top-module axuart_phy_loopback_top --Mdir obj_dir_axuart_phy \
+	  --exe --build -o tb_axuart_phy $^ >/dev/null
+	./obj_dir_axuart_phy/tb_axuart_phy
+
 run-axcache: $(RTL_SOC)/axcache.sv $(RTL_SOC)/axdram_model.sv axcache_test_top.sv tb_axcache.cpp
 	$(VERILATOR) $(VFLAGS) --top-module axcache_test_top --Mdir obj_dir_axcache \
 	  --exe --build -o tb_axcache $^ >/dev/null
@@ -129,4 +142,4 @@ run-soc-timer: $(SOC_SVS) tb_soc_timer.cpp data/soc_timer.hex
 clean:
 	rm -rf obj_dir_* build
 
-.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axspi run-soc run-soc-timer
+.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer

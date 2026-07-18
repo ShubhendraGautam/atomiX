@@ -7,7 +7,7 @@ module axdram_model #(
   parameter logic [31:0] BASE = 32'h8000_0000,
   parameter int unsigned BYTES = 32 * 1024 * 1024,
   parameter int unsigned LATENCY = 3,
-  parameter string INIT_FILE = ""
+  parameter INIT_FILE = ""
 ) (
   input  logic clk,
   input  logic rst,
@@ -50,7 +50,11 @@ module axdram_model #(
   wire [INDEX_BITS-1:0] i_index = i_offset_q[INDEX_BITS+1:2];
   wire [INDEX_BITS-1:0] d_index = d_offset_q[INDEX_BITS+1:2];
 
-  initial if (INIT_FILE != "") $readmemh(INIT_FILE, mem);
+  // The untyped path parameter is a packed vector; the synthesis frontend
+  // accepts this form while it rejects `parameter string`.
+  // verilator lint_off WIDTH
+  initial if (INIT_FILE) $readmemh(INIT_FILE, mem);
+  // verilator lint_on WIDTH
 
   always_comb begin
     i_ready = i_busy && i_count == 0;

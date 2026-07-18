@@ -76,10 +76,60 @@ distro version on a normal Ubuntu `PATH`. `/opt/sby` similarly places `sby` in
 `/usr/local/bin`. `/opt/riscv-formal` remains an external reference checkout;
 the atomiX repository never modifies it.
 
-Later phases add:
+## ECP5 FPGA tools (Phase 7)
 
-- **Phase 7:** `yosys`, `nextpnr-ecp5`, `ecppack` (Trellis) for the FPGA flow
-  (or a suitable FPGA-toolchain bundle).
+The ULX3S target needs the ECP5-specific tools `nextpnr-ecp5` and `ecppack`
+from Project Trellis in addition to Yosys. Ubuntu 22.04 packages generic and
+iCE40 nextpnr variants, but not `nextpnr-ecp5`; installing the `yosys` package
+alone cannot build this board. The maintained and fast route is the prebuilt
+[OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases), not
+an hour-long local build of the whole FPGA stack.
+
+1. Download the current Linux x86_64 OSS CAD Suite archive from that official
+   release page and verify its published checksum.
+2. Extract it locally and enable it for the current shell (substitute the
+   archive's actual release name):
+
+```bash
+mkdir -p "$HOME/opt"
+tar -C "$HOME/opt" -xf "$HOME/Downloads/oss-cad-suite-linux-x64-<release>.tgz"
+source "$HOME/opt/oss-cad-suite/environment"
+```
+
+The environment script supplies a matched `yosys`, `nextpnr-ecp5`, and
+`ecppack`; do not mix arbitrary distro and suite binaries inside one FPGA
+build. Add the `source` line to your shell profile only after confirming the
+commands below resolve to the extracted suite:
+
+```bash
+command -v yosys nextpnr-ecp5 ecppack
+yosys -V
+nextpnr-ecp5 --version
+ecppack --version
+make -C rtl/fpga
+```
+
+`openFPGALoader` is separate from synthesis/P&R and is needed only to send the
+finished bitstream to a board. Its Linux installation choices are maintained
+on the [official release page](https://github.com/trabucayre/openFPGALoader/releases).
+Ubuntu 22.04's configured package repositories do not provide it, so prefer a
+verified upstream release artifact or the project's documented source build.
+Install the serial-console helper with the regular package manager:
+
+```bash
+sudo apt install picocom
+```
+
+Keep the programmer executable on `PATH`, then verify it without programming
+anything:
+
+```bash
+openFPGALoader --version
+```
+
+The reproducible target is `make -C rtl/fpga`; `program` is a reversible SRAM
+configuration and `flash` is explicitly persistent. The complete hardware
+sequence and SD-card safety check are in [ulx3s-bringup.md](ulx3s-bringup.md).
 
 ## Known quirks (learned the hard way)
 
@@ -103,6 +153,11 @@ Later phases add:
   project's formal flow: it rejects `axcore_pkg.sv` with a `TOK_TYPEDEF`
   parser error. Confirm `command -v yosys` resolves to `/usr/local/bin/yosys`
   after the upstream installation.
+- **FPGA SystemVerilog frontend:** the checked-in FPGA Makefile invokes
+  `prepare_synth.py` before Yosys because the frontend still rejects the
+  project's `import axcore_pkg::*` form. The script generates a disposable
+  width-equivalent file under `rtl/fpga/build/`; it never modifies authored
+  RTL. This is expected, not a reason to edit the source package away.
 
 ## Verify the setup
 
@@ -141,6 +196,12 @@ SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si
 
 # Phase-5 aXos shell plus U-mode fork/wait on ISS, QEMU, and RTL
 make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
+
+# Phase-6 storage/SDRAM regressions and the Phase-7 synthesis preflight
+make -C sim/unit run-axsdram run-axuart-phy
+make -C sw/kernel check-storage-write check-sdboot
+source "$HOME/opt/oss-cad-suite/environment"  # if using the suite above
+make -C rtl/fpga
 ```
 
 ## QEMU required for Phase 5

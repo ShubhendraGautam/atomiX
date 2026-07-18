@@ -9,10 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SHELL_INPUT = ROOT / "sw/kernel/shell_input.txt"
 FORK_INPUT = ROOT / "sw/kernel/fork_input.txt"
+STORAGE_WRITE_INPUT = ROOT / "sw/kernel/storage_write_input.txt"
 SHELL_OUTPUT = (
     "aXos: shell online\n"
     "aXos> help\n"
-    "commands: help ls cat echo fork exit\n"
+    "commands: help ls cat write echo fork exit\n"
     "aXos> ls\n"
     "motd\n"
     "readme\n"
@@ -27,6 +28,16 @@ SHELL_OUTPUT_SD = SHELL_OUTPUT.replace(
     "aXos SD disk: help, ls, cat, echo, exit.\n")
 BOOT_PREFIX = "aXboot\n"
 FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
+STORAGE_WRITE_OUTPUT = (
+    "aXos: shell online\n"
+    "aXos> write note phase6-persistent\n"
+    "aXos> cat note\n"
+    "phase6-persistentaXos> ls\n"
+    "motd\n"
+    "readme\n"
+    "note\n"
+    "aXos> exit\n"
+)
 
 
 def run(label: str, command: list[str], input_file: Path, expected: str | None) -> None:
@@ -68,6 +79,20 @@ def main() -> None:
     image = ROOT / "sw/kernel/build/axos_boot.hex"
     qemu = os.environ.get("QEMU", "qemu-system-riscv32")
     sd_image = os.environ.get("SD_IMAGE", "")
+    if sys.argv[1:] == ["--storage-write"]:
+        if not sd_image:
+            raise SystemExit("--storage-write requires SD_IMAGE")
+        command = [
+            "make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
+            "run", f"RAM_INIT_FILE={image}", "RESET_PC=0x80000000",
+            "RAM_BYTES=33554432", "EXTERNAL_MEMORY=1", "CACHES=1",
+            "MAX_CYCLES=800000", f"SD_IMAGE={sd_image}",
+            "BUILD_ID=storage-write",
+        ]
+        run("RTL AXFS write/readback", command + [f"UART_INPUT_FILE={STORAGE_WRITE_INPUT}"],
+            STORAGE_WRITE_INPUT, STORAGE_WRITE_OUTPUT)
+        print("[kernel] AXFS write/readback: PASS on cached external-memory RTL")
+        return
     if sys.argv[1:] == ["--external-memory"]:
         platforms = [
             ("RTL external memory + caches", [
@@ -85,13 +110,11 @@ def main() -> None:
             raise SystemExit("--sd-boot requires SD_IMAGE and BOOT_ROM")
         platforms = [("RTL SD boot", [
             "make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
-            "run", f"RAM_INIT_FILE={ROOT / 'sw/bootrom/blank.hex'}",
-            f"ROM_INIT_FILE={boot_rom}", "RESET_PC=0x00001000",
-            "RAM_BYTES=33554432", "EXTERNAL_MEMORY=1", "CACHES=1",
-            "MAX_CYCLES=2000000", "BUILD_ID=sdboot", f"SD_IMAGE={sd_image}",
+            "run-sdram", f"ROM_INIT_FILE={boot_rom}",
+            "MAX_CYCLES=3000000", "BUILD_ID=sdboot-physical", f"SD_IMAGE={sd_image}",
         ])]
     elif sys.argv[1:]:
-        raise SystemExit("usage: check_boot.py [--external-memory|--sd-boot]")
+        raise SystemExit("usage: check_boot.py [--external-memory|--storage-write|--sd-boot]")
     else:
         platforms = [
         ("ISS", [str(ROOT / "sim/axsim/axsim"), "--bin", str(elf)]),
@@ -115,7 +138,7 @@ def main() -> None:
     if sys.argv[1:] == ["--external-memory"]:
         print("[kernel] shell + fork/wait: PASS on 32 MiB cached external-memory RTL")
     elif sys.argv[1:] == ["--sd-boot"]:
-        print("[kernel] SD boot + AXFS shell: PASS on cached external-memory RTL")
+        print("[kernel] SD boot + AXFS shell: PASS through the physical-SDRAM RTL path")
     else:
         print("[kernel] shell + fork/wait: PASS on ISS, QEMU, and RTL")
 

@@ -7,7 +7,7 @@ SOC_SVS  := $(RTL_CORE)/axcore_pkg.sv $(RTL_CORE)/regfile.sv \
   $(RTL_CORE)/alu.sv $(RTL_CORE)/immdec.sv $(RTL_CORE)/decoder.sv \
   $(RTL_CORE)/branch_cmp.sv $(RTL_CORE)/muldiv.sv $(RTL_CORE)/csr_file.sv \
   $(RTL_CORE)/sv32_mmu.sv $(RTL_CORE)/axcore.sv \
-  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv \
+  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axcache.sv $(RTL_SOC)/axram.sv $(RTL_SOC)/axdram_model.sv $(RTL_SOC)/axsdram.sv \
   $(RTL_SOC)/axrom.sv $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv $(RTL_SOC)/axspi.sv \
   $(RTL_SOC)/test_finisher.sv $(RTL_SOC)/soc_top.sv
 
@@ -38,7 +38,17 @@ run: $(SOC_SVS) tb_soc.cpp
 	  -o axsoc $(SOC_SVS) $(CURDIR)/tb_soc.cpp >/dev/null
 	./$(MDIR)/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)
 
+# Full Phase-6 controller integration: the SoC uses axsdram rather than the
+# delayed array model, and a CAS-2 x16 SDRAM model sits at the physical pins.
+run-sdram: $(SOC_SVS) ax_sdram_sim.sv soc_sdram_test_top.sv tb_soc_sdram.cpp
+	@test -n "$(ROM_INIT_FILE)" || (echo "ROM_INIT_FILE is required"; exit 2)
+	$(VERILATOR) $(VFLAGS) --top-module soc_sdram_test_top --Mdir $(MDIR)-sdram --exe --build \
+	  -GROM_INIT_FILE=\"$(ROM_INIT_FILE)\" -o axsoc \
+	  $(SOC_SVS) $(CURDIR)/ax_sdram_sim.sv $(CURDIR)/soc_sdram_test_top.sv \
+	  $(CURDIR)/tb_soc_sdram.cpp >/dev/null
+	./$(MDIR)-sdram/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)
+
 clean:
 	rm -rf obj_dir
 
-.PHONY: run clean
+.PHONY: run run-sdram clean

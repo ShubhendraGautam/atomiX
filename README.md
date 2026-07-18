@@ -35,6 +35,8 @@ make -C sim/unit run-privilege        # M/S/U transitions, delegation, sret
 make -C sim/unit run-sv32             # Sv32 walks, A/D updates, page fault
 make -C sim/unit run-axdram-model     # Phase-6 delayed-memory contract
 make -C sim/unit run-axcache          # Phase-6 cache fill/hit/flush/bypass
+make -C sim/unit run-axsdram           # ULX3S x16 SDRAM controller contract
+make -C sim/unit run-axuart-phy        # physical 115200 UART transmitter/receiver
 make -C sim/testgen paging             # 100k randomized Sv32/U-mode cosim events
 make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
 tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
@@ -46,8 +48,13 @@ make -C sw/baremetal check-fencei QEMU="$HOME/.local/bin/qemu-system-riscv32"
 make -C sw/kernel check-memory         # 32 MiB delayed RAM + I/D-cache RTL
 make -C sw/baremetal check-sd           # SPI SDHC init + sector read on RTL
 make -C sw/kernel check-storage         # aXos mounts AXFS files from SD RTL
-make -C sw/kernel check-sdboot          # ROM loads aXos from SD into RAM RTL
+make -C sw/kernel check-storage-write   # CMD24 write, directory update, readback
+make -C sw/kernel check-sdboot           # ROM SD boot through physical SDRAM RTL
 ```
+
+The ULX3S-85F hardware target, constraints, and reversible SRAM programming
+procedure are in [rtl/fpga/README.md](rtl/fpga/README.md); use the explicit
+[bring-up checklist](docs/ulx3s-bringup.md) before writing board flash.
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).
 
@@ -64,6 +71,8 @@ these exact patch releases.
 | Verilator | 4.038 | RTL simulation |
 | QEMU | 8.2.10 (local `~/.local` install) | Three-platform checks; invoke with `-cpu rv32,pmp=false` for the PMP-less aXcore model. Ubuntu 22.04's packaged 6.2.0 is insufficient for Phase 5 S/U mode. |
 | Yosys | 0.67+ (upstream, `45ea2b8d6`) | Formal flow; Ubuntu's bundled 0.9 is insufficient |
+| nextpnr-ecp5 / Trellis `ecppack` | Not installed on the recorded host | Required only for ULX3S place-and-route; use the matched OSS CAD Suite documented below |
+| openFPGALoader | Not installed on the recorded host | Required only to program a physical ULX3S; `program` is SRAM-only and reversible |
 | SymbiYosys | upstream install | Formal-job launcher; see the exact setup in `docs/toolchain.md` |
 | Boolector | 1.5.118 | SMT solver |
 | Z3 | 4.8.12 | Alternate SMT solver |

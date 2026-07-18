@@ -1,11 +1,10 @@
 # Phase 6 memory architecture
 
-Status: the first, board-independent real-memory milestone is implemented and
-regressed. It provides a delayed 32 MiB backing store and split I/D caches in
-RTL simulation. The polling SPI controller, SDHC command model, and a
-deterministic one-sector block-read regression are also implemented. It is
-deliberately **not** an SDRAM PHY/controller, a writable filesystem, or an SD
-bootloader; those remain required for the Phase 6 exit criterion.
+Status: Phase 6's RTL path is complete and regressed. It provides the delayed
+32 MiB model plus split I/D caches, a ULX3S-targeted MT48LC16M16 SDRAM
+controller boundary, SPI SDHC CMD17/CMD24, writable AXFS v1, and ROM SD boot.
+The physical-board proof remains Phase 7 work; no simulation result is
+presented as electrical SDRAM validation.
 
 ## Boundary and configuration
 
@@ -44,9 +43,22 @@ The backing array is `$readmemh` initialized, so the normal RAM image loader
 continues to work.
 
 This is a timing and protocol model, not a claim that an FPGA has 32 MiB of
-BRAM. A board-specific replacement must add SDRAM initialization, refresh,
-command timing, pin-level PHY work, and arbitration for the physical SDRAM
-channel while preserving the aXbus completion and fault contract.
+BRAM. The board path replaces it with `rtl/soc/axsdram.sv`, preserving the
+same two aXbus RAM ports while arbitrating them onto one x16 SDR channel.
+
+## ULX3S SDRAM controller
+
+`axsdram` targets the ULX3S's 32 MiB MT48LC16M16-compatible SDR SDRAM at
+25 MHz. It performs the power-up delay, precharge-all, two refreshes, CAS-2
+mode set, periodic refresh, activate/read-or-write/precharge sequence, and
+DQM byte masking. Each 32-bit aXbus access becomes two 16-bit transfers. It
+intentionally uses no bursts or open-row policy; the small I/D caches absorb
+most traffic and keep the first hardware design auditable.
+
+The controller emits separate DQ input/output/enable signals. The board top
+owns the ECP5 `BB` bidirectional pads, avoiding an internal tri-state loop.
+`run-axsdram` checks CAS-2 timing; `check-sdboot` boots the full shell through
+the same physical-controller path.
 
 ## Cache contract
 
@@ -76,8 +88,10 @@ Verilator setup.
 ```bash
 make -C sim/unit run-axdram-model  # delayed-memory timing/data/error contract
 make -C sim/unit run-axcache       # fills, hits, write-through, flush, bypass
+make -C sim/unit run-axsdram       # init, refresh, x16 DQ, masks, bank mapping
 make -C sw/baremetal check-fencei QEMU="$HOME/.local/bin/qemu-system-riscv32"
-make -C sw/kernel check-memory     # cached 32 MiB RTL shell + fork/wait
+make -C sw/kernel check-memory     # cached delayed-memory shell + fork/wait
+make -C sw/kernel check-sdboot     # SD boot through physical-SDRAM RTL path
 ```
 
 The `check-fencei` image fetches an instruction, patches it through the data
@@ -95,9 +109,9 @@ pin-level signals (`spi_sclk`, `spi_mosi`, `spi_cs_n`) and `spi_miso` are on
 
 The SoC runner has an SPI-mode SDHC simulation card; pass `SD_IMAGE=path` to
 load a binary sector image. It implements CMD0, CMD8, CMD55/ACMD41, CMD16,
-CMD17, and CMD58, with 512-byte SDHC block addressing. It is intentionally
-read-only and exists only in the C++ simulation harness. The hardware
-controller itself is synthesizable and can drive a physical card.
+CMD17, CMD24, and CMD58, with 512-byte SDHC block addressing. It is a
+simulation device; the synthesizable SPI controller drives the same physical
+card protocol.
 
 ```bash
 make -C sim/unit run-axspi        # controller register/waveform contract
@@ -105,8 +119,7 @@ make -C sw/baremetal check-spi    # SoC decode plus idle-MISO smoke image
 make -C sw/baremetal check-sd     # SDHC init + CMD17 sector read on RTL
 ```
 
-The next storage milestone is a disk-image format and kernel block driver;
-the AXFS v1 read-only format and kernel block driver now provide that path:
+AXFS v1 and the kernel block driver provide a mounted SD filesystem path:
 
 ```bash
 make -C sw/kernel check-storage
@@ -114,11 +127,22 @@ make -C sw/kernel check-storage
 
 This builds a deterministic SD image containing `motd` and `readme`, mounts it
 through the kernel SPI driver, and runs the normal shell plus fork/wait script
-on cached delayed RTL. The regression requires the SD-specific `readme`
-transcript, so it cannot pass through the RAM-disk fallback. It preserves the
-Phase 5 RAM-disk fallback for ISS and
-QEMU; replacing that fallback and loading the kernel itself from SD remain the
-boot-path work.
+on cached delayed RTL. It preserves the Phase 5 RAM-disk fallback for ISS and
+QEMU.
+
+## Writable AXFS v1
+
+AXFS deliberately remains small: up to eight named files, one 512-byte sector
+per file. `write NAME TEXT` creates or replaces a file by issuing CMD24 for
+the data sector and then CMD24 for the directory sector. It has no multi-sector
+files, reclamation, checksums, or crash-safe journalling; those are explicit
+future filesystem work.
+
+```bash
+make -C sw/kernel check-storage-write
+```
+
+This proves write → directory update → readback in a cached RTL session.
 
 ## SD boot path
 
@@ -131,8 +155,7 @@ places AXFS at sector 64 so the loaded kernel mounts the same SD image.
 make -C sw/kernel check-sdboot
 ```
 
-This is a true SD-to-RAM boot in cached delayed RTL; the test requires the
-`aXboot` banner, SD-specific `readme`, and fork/wait transcript. It currently
-takes roughly 1.6 million simulation cycles because the intentionally simple
-controller transfers one SPI byte at a time. The remaining memory work is a
-physical SDRAM controller/PHY for a selected board and a writable filesystem.
+This is a true SD-to-SDRAM boot through `axsdram`; the test requires the
+`aXboot` banner, shell, and fork/wait transcript. It currently takes roughly
+2.5 million simulation cycles because the deliberately simple SPI controller
+transfers one byte at a time and SDRAM accesses are conservative.

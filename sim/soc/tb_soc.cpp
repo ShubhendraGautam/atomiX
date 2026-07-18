@@ -8,7 +8,13 @@
 #include <string>
 #include <vector>
 
+#ifdef AX_SOC_SDRAM
+#include "Vsoc_sdram_test_top.h"
+using ax_soc_top_t = Vsoc_sdram_test_top;
+#else
 #include "Vsoc_top.h"
+using ax_soc_top_t = Vsoc_top;
+#endif
 #include "verilated.h"
 
 // Small SPI-mode SDHC card model for Phase 6 software development.  It is a
@@ -33,6 +39,10 @@ class SpiSdCard {
       command_.clear();
       response_.clear();
       out_active_ = false;
+      write_active_ = false;
+      write_started_ = false;
+      write_data_.clear();
+      write_crc_bytes_ = 0;
       rx_bits_ = 0;
       rx_byte_ = 0;
     }
@@ -69,6 +79,10 @@ class SpiSdCard {
   }
 
   void receive_byte(uint8_t byte) {
+    if (write_active_) {
+      receive_write_byte(byte);
+      return;
+    }
     if (command_.empty()) {
       if ((byte & 0xc0) == 0x40) command_.push_back(byte);
       return;
@@ -111,6 +125,18 @@ class SpiSdCard {
         queue(0xff); queue(0xff);  // CRC is disabled after initialization.
         break;
       }
+      case 24: // WRITE_SINGLE_BLOCK, SDHC block index
+        if (!initialized_ || uint64_t(arg + 1) * 512 > image_.size()) {
+          queue(0x04);
+          break;
+        }
+        queue(0x00);
+        write_active_ = true;
+        write_started_ = false;
+        write_block_ = arg;
+        write_data_.clear();
+        write_crc_bytes_ = 0;
+        break;
       case 58: // READ_OCR, advertise SDHC/CCS
         queue(initialized_ ? 0x00 : 0x01);
         queue(0x40); queue(0x00); queue(0x00); queue(0x00);
@@ -121,12 +147,31 @@ class SpiSdCard {
     }
   }
 
+  void receive_write_byte(uint8_t byte) {
+    if (!write_started_) {
+      if (byte == 0xfe) write_started_ = true;
+      return;
+    }
+    if (write_data_.size() < 512) {
+      write_data_.push_back(byte);
+      return;
+    }
+    if (++write_crc_bytes_ != 2) return;
+    const size_t offset = size_t(write_block_) * 512;
+    for (size_t i = 0; i < 512; ++i) image_[offset + i] = write_data_[i];
+    queue(0x05);  // data accepted; no artificial busy delay is needed here.
+    write_active_ = false;
+  }
+
   std::vector<uint8_t> image_;
   std::deque<uint8_t> response_;
   std::vector<uint8_t> command_;
   bool selected_ = false, initialized_ = false, out_active_ = false;
+  bool write_active_ = false, write_started_ = false;
   uint8_t out_byte_ = 0xff, rx_byte_ = 0;
-  int out_bit_ = 7, rx_bits_ = 0;
+  int out_bit_ = 7, rx_bits_ = 0, write_crc_bytes_ = 0;
+  uint32_t write_block_ = 0;
+  std::vector<uint8_t> write_data_;
 };
 
 int main(int argc, char** argv) {
@@ -146,13 +191,17 @@ int main(int argc, char** argv) {
       sd_image = argv[++i];
   }
   SpiSdCard sd_card(sd_image);
-  Vsoc_top* top = new Vsoc_top;
+  ax_soc_top_t* top = new ax_soc_top_t;
   top->rst = 1;
   top->clk = 0;
   top->irq_external = 0;
+  top->uart_tx_ready = 1;
   top->uart_rx_valid = 0;
   top->uart_rx_data = 0;
   top->spi_miso = sd_card.miso();
+#ifndef AX_SOC_SDRAM
+  top->sdram_dq_i = 0;
+#endif
   top->eval();
   top->clk = 1;
   top->eval();

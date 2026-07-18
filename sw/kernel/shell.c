@@ -81,11 +81,23 @@ void shell_run(void) {
     readline(line, sizeof(line));
     if (streq(line, "")) continue;
     if (streq(line, "help")) {
-      uart_puts("commands: help ls cat echo fork exit\n");
+      uart_puts("commands: help ls cat write echo fork exit\n");
     } else if (streq(line, "ls")) {
       shell_ls();
     } else if (starts_with(line, "cat ")) {
       shell_cat(line + 4);
+    } else if (starts_with(line, "write ")) {
+      char *name = line + 6;
+      char *data = name;
+      while (*data && *data != ' ') ++data;
+      if (!*data) {
+        uart_puts("write: usage write NAME TEXT\n");
+      } else if (!disk_mounted) {
+        uart_puts("write: no writable disk\n");
+      } else {
+        *data++ = 0;
+        if (fs_write(name, data)) uart_puts("write: failed\n");
+      }
     } else if (starts_with(line, "echo ")) {
       uart_puts(line + 5);
       uart_puts("\n");

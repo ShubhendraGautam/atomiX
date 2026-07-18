@@ -6,7 +6,8 @@ RTL_SOC  := ../../rtl/soc
 SOC_SVS  := $(RTL_CORE)/axcore_pkg.sv $(RTL_CORE)/regfile.sv \
   $(RTL_CORE)/alu.sv $(RTL_CORE)/immdec.sv $(RTL_CORE)/decoder.sv \
   $(RTL_CORE)/branch_cmp.sv $(RTL_CORE)/muldiv.sv $(RTL_CORE)/csr_file.sv \
-  $(RTL_CORE)/axcore.sv $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axram.sv \
+  $(RTL_CORE)/sv32_mmu.sv $(RTL_CORE)/axcore.sv \
+  $(RTL_SOC)/axbus_mux.sv $(RTL_SOC)/axram.sv \
   $(RTL_SOC)/axrom.sv $(RTL_SOC)/clint.sv $(RTL_SOC)/uart.sv \
   $(RTL_SOC)/test_finisher.sv $(RTL_SOC)/soc_top.sv
 

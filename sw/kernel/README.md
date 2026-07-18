@@ -38,7 +38,11 @@ same user virtual address; the kernel verifies those markers through its
 supervisor mapping. They then invoke the first useful syscall,
 `SYS_CONSOLE_PUTC`, producing one `A` and one `B` on UART from U-mode. The
 order depends on the first timer boundary, which the regression accepts. This
-is the foundation for user processes and richer syscalls.
+Each then invokes `SYS_EXIT`; the kernel marks it zombie, schedules the
+survivor, and returns its root, page table, user stack, and trap stack to the
+physical-page allocator. The regression requires the allocator's free-page
+count to return to its pre-process value. This is the foundation for richer
+process and syscall work.
 
 Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
 pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.

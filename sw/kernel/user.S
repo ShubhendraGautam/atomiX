@@ -14,6 +14,9 @@ user_entry:
   addi a0, a0, 'A'               /* process 0 prints A, process 1 prints B */
   li a7, 2                       /* SYS_CONSOLE_PUTC */
   ecall
+  li a0, 0
+  li a7, 3                       /* SYS_EXIT */
+  ecall
 1:
   nop
   nop

@@ -19,6 +19,9 @@ enum {
   SATP_MODE_SV32 = 1u << 31,
   TASK_COUNT = 2,
   TASK_NONE = TASK_COUNT,
+  TASK_RUNNABLE = 0,
+  TASK_RUNNING = 1,
+  TASK_ZOMBIE = 2,
   TRAP_FRAME_BYTES = 128,
   TRAP_FRAME_A0 = 8,
   TRAP_FRAME_A7 = 15,
@@ -27,6 +30,7 @@ enum {
   SCAUSE_SUPERVISOR_SOFTWARE = 0x80000001u,
   SYS_USER_ONLINE = 1,
   SYS_CONSOLE_PUTC = 2,
+  SYS_EXIT = 3,
   USER_CODE_VA = 0x40000000u,
   USER_STACK_VA = USER_CODE_VA + PAGE_SIZE,
 };
@@ -42,7 +46,11 @@ struct task {
   uint32_t sepc;
   uint32_t sstatus;
   uint32_t satp;
+  uint32_t *page_root;
+  uint32_t *user_pt;
   uint32_t *user_stack;
+  uint32_t *kernel_stack;
+  uint32_t state;
 };
 
 static struct task tasks[TASK_COUNT];
@@ -51,6 +59,8 @@ static volatile uint32_t scheduler_running;
 static volatile uint32_t scheduled_ticks;
 static volatile uint32_t users_online;
 static volatile uint32_t users_printed;
+static volatile uint32_t exited_tasks;
+static uint32_t scheduler_free_pages;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
@@ -179,12 +189,24 @@ void m_setup(void) {
 static uint32_t *schedule(uint32_t *trap_frame) {
   if (!scheduler_running) return trap_frame;
 
-  if (current_task != TASK_NONE) {
+  if (current_task != TASK_NONE && tasks[current_task].state == TASK_RUNNING) {
     tasks[current_task].trap_frame = trap_frame;
     tasks[current_task].sepc = csr_read_sepc();
     tasks[current_task].sstatus = csr_read_sstatus();
+    tasks[current_task].state = TASK_RUNNABLE;
   }
-  current_task = current_task == TASK_NONE ? 0u : current_task ^ 1u;
+  const uint32_t start = current_task == TASK_NONE ? 0u : current_task ^ 1u;
+  uint32_t next = TASK_NONE;
+  for (uint32_t i = 0; i < TASK_COUNT; ++i) {
+    const uint32_t candidate = (start + i) % TASK_COUNT;
+    if (tasks[candidate].state == TASK_RUNNABLE) {
+      next = candidate;
+      break;
+    }
+  }
+  if (next == TASK_NONE) test_finish(1);
+  current_task = next;
+  tasks[current_task].state = TASK_RUNNING;
   csr_write_satp(tasks[current_task].satp);
   __asm__ volatile("sfence.vma zero, zero");
   csr_write_sepc(tasks[current_task].sepc);
@@ -201,8 +223,6 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
     supervisor_ticks++;
     if (!scheduler_running) return trap_frame;
     scheduled_ticks++;
-    if (users_online == 3u && users_printed == 3u && scheduled_ticks >= 4u)
-      test_finish(0);
     return schedule(trap_frame);
   }
 
@@ -220,6 +240,29 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
         test_finish(1);
       uart_putchar((char)trap_frame[TRAP_FRAME_A0]);
       users_printed |= 1u << current_task;
+    } else if (syscall == SYS_EXIT) {
+      if (current_task == TASK_NONE || trap_frame[TRAP_FRAME_A0] != 0u ||
+          tasks[current_task].state != TASK_RUNNING ||
+          (users_online & users_printed & (1u << current_task)) == 0u)
+        test_finish(1);
+      struct task *const task = &tasks[current_task];
+      task->state = TASK_ZOMBIE;
+      exited_tasks |= 1u << current_task;
+      if (exited_tasks == 3u) {
+        /* Do not invalidate the active root before the kernel has moved off
+         * it; the bootstrap root retains the test-finisher mapping. */
+        csr_write_satp(SATP_MODE_SV32 | ((uint32_t)(uintptr_t)root_pt >> 12));
+        __asm__ volatile("sfence.vma zero, zero");
+      }
+      page_free(task->page_root);
+      page_free(task->user_pt);
+      page_free(task->user_stack);
+      page_free(task->kernel_stack);
+      if (exited_tasks == 3u) {
+        if (page_free_count() != scheduler_free_pages) test_finish(1);
+        test_finish(0);
+      }
+      return schedule(trap_frame);
     } else {
       test_finish(1);
     }
@@ -269,7 +312,11 @@ static void scheduler_make_user_task(uint32_t slot) {
   for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i) frame[i] = 0;
   tasks[slot].trap_frame = frame;
   tasks[slot].satp = SATP_MODE_SV32 | ((uint32_t)(uintptr_t)page_root >> 12);
+  tasks[slot].page_root = page_root;
+  tasks[slot].user_pt = user_pt;
   tasks[slot].user_stack = user_stack;
+  tasks[slot].kernel_stack = kernel_stack;
+  tasks[slot].state = TASK_RUNNABLE;
   tasks[slot].sepc = USER_CODE_VA +
       ((uint32_t)(uintptr_t)user_entry - 0x80000000u);
   frame[TRAP_FRAME_A0] = slot;
@@ -279,6 +326,7 @@ static void scheduler_make_user_task(uint32_t slot) {
 }
 
 static void scheduler_start(void) {
+  scheduler_free_pages = page_free_count();
   scheduler_make_user_task(0);
   scheduler_make_user_task(1);
   scheduler_running = 1;

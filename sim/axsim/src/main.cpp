@@ -10,7 +10,7 @@
 
 static void usage(const char* argv0) {
   fprintf(stderr,
-          "aXsim — atomiX instruction-set simulator (RV32I)\n"
+          "aXsim — atomiX instruction-set simulator (RV32IM)\n"
           "usage: %s [options] --bin FILE\n"
           "  --bin FILE   program image: ELF (auto-detected; entry point and\n"
           "               riscv-tests tohost honored) or flat binary\n"

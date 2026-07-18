@@ -1,7 +1,7 @@
 # sim/axsim/ — the aXsim instruction-set simulator
 
 **The first thing built in the project** (phase 0): an instruction-accurate
-RV32 ISS in C++ (chosen for direct linkage into the Verilator cosim
+RV32IM ISS in C++ (chosen for direct linkage into the Verilator cosim
 testbench). It is the golden model the RTL is judged against, and doubles as
 the fast kernel-development platform (~10⁸ inst/s vs ~10⁶ cycles/s Verilated).
 
@@ -13,7 +13,7 @@ Scope grows with the CPU phases:
    `mtval`, ecall/mret, illegal instruction (phase 0)
 3. ELF loading + riscv-tests `tohost`/`fromhost` harness (phase 0)
 4. CLINT + UART device models, interrupt injection (phase 3)
-5. M extension, S/U modes, Sv32 page-table walks (phases 2/4)
+5. M extension (phase 2); S/U modes and Sv32 page-table walks (phase 4)
 
 Interfaces it must expose:
 

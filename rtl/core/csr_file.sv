@@ -67,7 +67,7 @@ module csr_file (
     acc_rdata = 32'b0;
     unique case (acc_addr)
       12'h300: acc_rdata = mstatus;
-      12'h301: acc_rdata = 32'h4000_0100;  // misa: RV32I
+      12'h301: acc_rdata = 32'h4000_1100;  // misa: RV32IM
       12'h304: acc_rdata = mie_reg_q;
       12'h305: acc_rdata = mtvec_q;
       12'h340: acc_rdata = mscratch_q;

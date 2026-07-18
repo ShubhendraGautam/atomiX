@@ -17,7 +17,7 @@ enum { IMM_I, IMM_S, IMM_B, IMM_U, IMM_J };
 struct Exp {  // defaults mirror the decoder's legal-instruction defaults
   int illegal = 0, rd_we = 0, opa = OPA_RS1, opb = OPB_RS2, imm = IMM_I;
   int alu = 0, wb = WB_ALU, mem = MEM_NONE, br = BR_NONE, csr = CSR_NONE;
-  int csr_imm = 0, sys = SYS_NONE, rs1 = 0, rs2 = 0;
+  int csr_imm = 0, muldiv = 0, sys = SYS_NONE, rs1 = 0, rs2 = 0;
 };
 
 static Vdecoder* dut;
@@ -44,6 +44,7 @@ static void chk(const char* name, uint32_t insn, const Exp& e) {
   f("br_sel", dut->br_sel, e.br);
   f("csr_op", dut->csr_op, e.csr);
   f("csr_imm", dut->csr_imm, e.csr_imm);
+  f("muldiv", dut->muldiv, e.muldiv);
   f("sys", dut->sys, e.sys);
   f("uses_rs1", dut->uses_rs1, e.rs1);
   f("uses_rs2", dut->uses_rs2, e.rs2);
@@ -68,6 +69,10 @@ int main(int argc, char** argv) {
 
   e = Exp{}; e.rd_we = 1; e.opb = OPB_IMM; e.rs1 = 1; e.alu = 0xD;
   chk("srai", 0x4010D093, e);
+
+  e = Exp{}; e.rd_we = 1; e.muldiv = 1; e.rs1 = 1; e.rs2 = 1;
+  chk("mul", 0x02208033, e);
+  chk("remu", 0x0220F0B3, e);
 
   e = Exp{}; e.rd_we = 1; e.wb = WB_MEM; e.mem = MEM_LOAD; e.opb = OPB_IMM;
   e.rs1 = 1;
@@ -109,7 +114,7 @@ int main(int argc, char** argv) {
   chk("all-zeros", 0x00000000, e);
   chk("all-ones", 0xFFFFFFFF, e);
   chk("slli bad f7", 0x40109093, e);
-  chk("mul (phase 2)", 0x02208033, e);
+  chk("OP bad funct7", 0x04208033, e);
   chk("fence f3=2", 0x0000200F, e);
   chk("sret (no S-mode)", 0x10200073, e);
   chk("branch f3=2", 0x00062063, e);

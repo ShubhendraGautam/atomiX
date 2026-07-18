@@ -6,7 +6,7 @@ VFLAGS    := -Wall --cc -O2
 
 RTL_CORE  := ../../rtl/core
 AXSIM     := ../axsim/src
-CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp csr_file axcore
+CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file axcore
 
 axcosim: $(CORE_SVS:%=$(RTL_CORE)/%.sv) tb_cosim.cpp $(AXSIM)/bus.h \
          $(AXSIM)/cpu.h $(AXSIM)/cpu.cpp $(AXSIM)/elf.h $(AXSIM)/elf.cpp
@@ -28,7 +28,14 @@ test: axcosim
 riscv-tests: axcosim
 	SIM=$(CURDIR)/obj_dir/axcosim ../../tests/run-riscv-tests.sh
 
+M_TESTS := rv32um-p-div rv32um-p-divu rv32um-p-mul rv32um-p-mulh \
+           rv32um-p-mulhsu rv32um-p-mulhu rv32um-p-rem rv32um-p-remu
+
+rv32um: axcosim
+	$(MAKE) -C ../../tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- $(M_TESTS)
+	SIM=$(CURDIR)/obj_dir/axcosim ../../tests/run-riscv-tests.sh rv32um
+
 clean:
 	rm -rf obj_dir build
 
-.PHONY: test riscv-tests clean
+.PHONY: test riscv-tests rv32um clean

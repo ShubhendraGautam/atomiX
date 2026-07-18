@@ -1,4 +1,4 @@
-// aXcore — RV32I + Zicsr, classic 5-stage pipeline (DESIGN.md §4).
+// aXcore — RV32IM + Zicsr, classic 5-stage pipeline (DESIGN.md §4).
 //
 //   IF: fetch via ibus; wait-state tolerant (holds valid/addr stable; a
 //       redirect during an in-flight fetch drains it and discards).
@@ -11,12 +11,16 @@
 //       have had architectural effect.
 //   WB: register writeback only.
 //
-// Serialized instructions (CSR ops, mret, fence.i, wfi, ecall, ebreak):
+// Serialized instructions (CSR ops, mret, fence.i, wfi, ecall, ebreak, and
+// RV32M multiply/divide):
 // fetch halts while they drain, the effect happens at commit, and fetch
 // resumes at the redirect target (pc+4 / mepc / mtvec). No CSR forwarding
 // network exists — by design.
 module axcore #(
-  parameter logic [31:0] RESET_PC = 32'h8000_0000
+  parameter logic [31:0] RESET_PC = 32'h8000_0000,
+  // Set to zero for the RV32I formal configuration. Product builds leave
+  // this enabled and implement the complete RV32IM ISA.
+  parameter bit ENABLE_M = 1'b1
 ) (
   input  logic        clk,
   input  logic        rst,       // synchronous, active high
@@ -55,7 +59,31 @@ module axcore #(
   output logic [31:0] trace_mtval,
   output logic [31:0] trace_mscratch,
   output logic [31:0] trace_mie,
-  output logic [31:0] trace_mip
+  output logic [31:0] trace_mip,
+
+  // One-retire RVFI trace for riscv-formal.  Like trace_*, these are sampled
+  // at the MEM commit point immediately before the active clock edge.
+  output logic        rvfi_valid,
+  output logic [63:0] rvfi_order,
+  output logic [31:0] rvfi_insn,
+  output logic        rvfi_trap,
+  output logic        rvfi_halt,
+  output logic        rvfi_intr,
+  output logic [1:0]  rvfi_mode,
+  output logic [1:0]  rvfi_ixl,
+  output logic [4:0]  rvfi_rs1_addr,
+  output logic [4:0]  rvfi_rs2_addr,
+  output logic [31:0] rvfi_rs1_rdata,
+  output logic [31:0] rvfi_rs2_rdata,
+  output logic [4:0]  rvfi_rd_addr,
+  output logic [31:0] rvfi_rd_wdata,
+  output logic [31:0] rvfi_pc_rdata,
+  output logic [31:0] rvfi_pc_wdata,
+  output logic [31:0] rvfi_mem_addr,
+  output logic [3:0]  rvfi_mem_rmask,
+  output logic [3:0]  rvfi_mem_wmask,
+  output logic [31:0] rvfi_mem_rdata,
+  output logic [31:0] rvfi_mem_wdata
 );
 
   import axcore_pkg::*;
@@ -158,7 +186,7 @@ module axcore #(
   end
 
   // ---------------------------------------------------------------- ID
-  logic     dec_illegal, dec_rd_we, dec_csr_imm, dec_rs1, dec_rs2;
+  logic     dec_illegal, dec_rd_we, dec_csr_imm, dec_muldiv, dec_rs1, dec_rs2;
   opa_sel_e dec_opa;
   opb_sel_e dec_opb;
   imm_sel_e dec_imm_sel;
@@ -169,11 +197,11 @@ module axcore #(
   csr_op_e  dec_csr;
   sys_e     dec_sys;
 
-  decoder u_dec (
+  decoder #(.ENABLE_M(ENABLE_M)) u_dec (
     .insn(ifid_insn_q), .illegal(dec_illegal), .rd_we(dec_rd_we),
     .opa_sel(dec_opa), .opb_sel(dec_opb), .imm_sel(dec_imm_sel),
     .alu_op(dec_alu_op), .wb_sel(dec_wb), .mem_op(dec_mem), .br_sel(dec_br),
-    .csr_op(dec_csr), .csr_imm(dec_csr_imm), .sys(dec_sys),
+    .csr_op(dec_csr), .csr_imm(dec_csr_imm), .muldiv(dec_muldiv), .sys(dec_sys),
     .uses_rs1(dec_rs1), .uses_rs2(dec_rs2)
   );
 
@@ -194,10 +222,12 @@ module axcore #(
   );
 
   assign ser_in_id =
-      ifid_v_q && !ifid_exc_q && (dec_csr != CSR_NONE || dec_sys != SYS_NONE);
+      ifid_v_q && !ifid_exc_q &&
+      (dec_csr != CSR_NONE || dec_muldiv || dec_sys != SYS_NONE);
 
   // ---------------------------------------------------------------- ID/EX
-  logic        idex_v_q, idex_exc_q, idex_rd_we_q, idex_csr_imm_q;
+  logic        idex_v_q, idex_exc_q, idex_rd_we_q, idex_csr_imm_q,
+               idex_muldiv_q;
   logic        idex_rs1_use_q, idex_rs2_use_q;
   logic [3:0]  idex_cause_q;
   logic [31:0] idex_tval_q, idex_pc_q, idex_insn_q;
@@ -212,6 +242,12 @@ module axcore #(
   csr_op_e     idex_csr_q;
   sys_e        idex_sys_q;
 
+  // The M unit holds its instruction in ID/EX while older MEM/WB work drains.
+  // At done, the result advances exactly once into EX/MEM like an ALU result.
+  logic md_busy, md_done, md_start;
+  logic [31:0] md_result;
+  wire md_wait = idex_v_q && idex_muldiv_q && !md_done;
+
   // Load-use hazard: consumer in ID, load in EX.
   assign stall_ld =
       idex_v_q && idex_mem_q == MEM_LOAD && idex_rd_q != 5'd0 &&
@@ -219,9 +255,9 @@ module axcore #(
       ((dec_rs1 && id_rs1 == idex_rd_q) || (dec_rs2 && id_rs2 == idex_rd_q));
 
   always_ff @(posedge clk) begin
-    if (rst || redirect || (!mem_busy && (stall_ld || !ifid_v_q))) begin
+    if (rst || redirect || (!mem_busy && !md_wait && (stall_ld || !ifid_v_q))) begin
       idex_v_q <= 1'b0;
-    end else if (!mem_busy) begin
+    end else if (!mem_busy && !md_wait) begin
       idex_v_q       <= 1'b1;
       idex_pc_q      <= ifid_pc_q;
       idex_insn_q    <= ifid_insn_q;
@@ -246,6 +282,7 @@ module axcore #(
       idex_csr_q     <= dec_csr;
       idex_sys_q     <= dec_sys;
       idex_csr_imm_q <= dec_csr_imm;
+      idex_muldiv_q  <= dec_muldiv;
     end
   end
 
@@ -253,7 +290,9 @@ module axcore #(
   // Forwarding: EX/MEM (ALU/link results) and MEM/WB (any result) -> EX.
   logic        exmem_v_q, exmem_rd_we_q;
   logic [4:0]  exmem_rd_q;
-  logic [31:0] exmem_y_q, exmem_pc_q;
+  logic [31:0] exmem_y_q, exmem_pc_q, exmem_npc_q;
+  logic [31:0] exmem_rs1_rdata_q, exmem_rs2_rdata_q;
+  logic [4:0]  exmem_rs1_q, exmem_rs2_q;
   wb_sel_e     exmem_wb_q;
 
   logic        memwb_v_q, memwb_rd_we_q;
@@ -281,6 +320,21 @@ module axcore #(
         idex_rs2_q != 5'd0)
       rs2_fwd = exmem_fwd;
   end
+
+  assign md_start = idex_v_q && idex_muldiv_q && !md_busy && !rst;
+  generate
+    if (ENABLE_M) begin : g_muldiv
+      muldiv u_muldiv (
+        .clk(clk), .rst(rst), .start(md_start), .op(idex_insn_q[14:12]),
+        .a(rs1_fwd), .b(rs2_fwd), .busy(md_busy), .done(md_done),
+        .result(md_result)
+      );
+    end else begin : g_no_muldiv
+      assign md_busy = 1'b0;
+      assign md_done = 1'b0;
+      assign md_result = 32'b0;
+    end
+  endgenerate
 
   logic [31:0] alu_a, alu_b, alu_y;
   always_comb begin
@@ -323,7 +377,7 @@ module axcore #(
   wire csr_rs1x0 = idex_rs1_q == 5'd0;
 
   // ---------------------------------------------------------------- EX/MEM
-  logic        exmem_exc_q, exmem_csr_rs1x0_q;
+  logic        exmem_exc_q, exmem_csr_rs1x0_q, exmem_muldiv_q;
   logic [3:0]  exmem_cause_q;
   logic [31:0] exmem_tval_q, exmem_insn_q, exmem_data_q;
   mem_op_e     exmem_mem_q;
@@ -333,20 +387,26 @@ module axcore #(
   always_ff @(posedge clk) begin
     // A taken branch is NOT flushed here — it advances and commits; only
     // younger stages (IF/ID, ID/EX) are flushed by redirect_ex.
-    if (rst || redirect_mem || (!mem_busy && !idex_v_q)) begin
+    if (rst || redirect_mem || (!mem_busy && (!idex_v_q || md_wait))) begin
       exmem_v_q <= 1'b0;
-    end else if (!mem_busy) begin
+    end else if (!mem_busy && !md_wait) begin
       exmem_v_q         <= 1'b1;
       exmem_pc_q        <= idex_pc_q;
+      exmem_npc_q       <= ex_take ? br_target : idex_pc_q + 32'd4;
       exmem_insn_q      <= idex_insn_q;
-      exmem_y_q         <= alu_y;
+      exmem_y_q         <= idex_muldiv_q ? md_result : alu_y;
       exmem_data_q      <= (idex_csr_q != CSR_NONE) ? csr_wdata : rs2_fwd;
+      exmem_rs1_q       <= idex_rs1_q;
+      exmem_rs2_q       <= idex_rs2_q;
+      exmem_rs1_rdata_q <= idex_rs1_q == 5'd0 ? 32'b0 : rs1_fwd;
+      exmem_rs2_rdata_q <= idex_rs2_q == 5'd0 ? 32'b0 : rs2_fwd;
       exmem_rd_q        <= idex_rd_q;
       exmem_rd_we_q     <= idex_rd_we_q;
       exmem_wb_q        <= idex_wb_q;
       exmem_mem_q       <= idex_mem_q;
       exmem_csr_q       <= idex_csr_q;
       exmem_sys_q       <= idex_sys_q;
+      exmem_muldiv_q    <= idex_muldiv_q;
       exmem_csr_rs1x0_q <= csr_rs1x0;
       exmem_exc_q       <= idex_exc_q || ex_mem_exc;
       exmem_cause_q     <= idex_exc_q ? idex_cause_q
@@ -424,7 +484,7 @@ module axcore #(
   wire mret_now = mem_commit && !trap_now && exmem_sys_q == SYS_MRET;
   wire ser_done = mem_commit && !trap_now &&
                   (exmem_csr_q != CSR_NONE || exmem_sys_q == SYS_WFI ||
-                   exmem_sys_q == SYS_FENCE_I);
+                   exmem_sys_q == SYS_FENCE_I || exmem_muldiv_q);
 
   assign redirect_mem    = trap_now || mret_now || ser_done;
   assign redirect_mem_pc = trap_now ? trap_vector
@@ -499,6 +559,45 @@ module axcore #(
   assign trace_mscratch = csr_mscratch;
   assign trace_mie = csr_mie;
   assign trace_mip = csr_mip;
+
+  // ---------------------------------------------------------------- RVFI
+  // rvfi_order is the index of this commit; it advances for both retirement
+  // and traps, exactly once per mem_commit event.
+  logic [63:0] rvfi_order_q;
+  always_ff @(posedge clk) begin
+    if (rst) rvfi_order_q <= 64'b0;
+    else if (mem_commit) rvfi_order_q <= rvfi_order_q + 64'd1;
+  end
+
+  always_comb begin
+    rvfi_valid     = mem_commit;
+    rvfi_order     = rvfi_order_q;
+    rvfi_insn      = exmem_insn_q;
+    rvfi_trap      = trap_now;
+    rvfi_halt      = 1'b0;
+    rvfi_intr      = 1'b0;
+    rvfi_mode      = 2'b11;               // M-mode only
+    rvfi_ixl       = 2'b01;               // RV32
+    rvfi_rs1_addr  = exmem_rs1_q;
+    rvfi_rs2_addr  = exmem_rs2_q;
+    rvfi_rs1_rdata = exmem_rs1_rdata_q;
+    rvfi_rs2_rdata = exmem_rs2_rdata_q;
+    rvfi_rd_addr   = retire && exmem_rd_we_q ? exmem_rd_q : 5'b0;
+    rvfi_rd_wdata  = rvfi_rd_addr == 5'd0 ? 32'b0 : wb_mux;
+    rvfi_pc_rdata  = exmem_pc_q;
+    rvfi_pc_wdata  = trap_now ? trap_vector
+                   : mret_now ? mepc_out
+                              : exmem_npc_q;
+    rvfi_mem_addr  = dbus_addr;
+    rvfi_mem_rmask = is_ld && !trap_now ?
+                     (mf3[1:0] == 2'b00 ? (4'b0001 << moff) :
+                      mf3[1:0] == 2'b01 ? (moff[1] ? 4'b1100 : 4'b0011) :
+                                          4'b1111) : 4'b0000;
+    rvfi_mem_wmask = exmem_mem_q == MEM_STORE && !trap_now ? dbus_wstrb
+                                                              : 4'b0000;
+    rvfi_mem_rdata = dbus_rdata;
+    rvfi_mem_wdata = dbus_wdata;
+  end
 
   // Unused instruction bits (decoder/slices take what they need).
   // verilator lint_off UNUSED

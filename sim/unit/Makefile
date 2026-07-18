@@ -5,9 +5,9 @@ VFLAGS    := -Wall --cc -O2
 
 RTL_CORE := ../../rtl/core
 
-MODULES := regfile alu immdec decoder branch_cmp
+MODULES := regfile alu immdec decoder branch_cmp muldiv
 
-CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp csr_file axcore
+CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file axcore
 
 test: $(MODULES:%=run-%) run-axcore
 

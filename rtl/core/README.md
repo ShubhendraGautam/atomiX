@@ -1,6 +1,6 @@
 # rtl/core/ — aXcore CPU
 
-The from-scratch RISC-V CPU: **RV32I + Zicsr** (M extension in phase 2),
+The from-scratch RISC-V CPU: **RV32IM + Zicsr**,
 classic 5-stage pipeline (IF ID EX MEM WB), machine mode first, S/U modes +
 Sv32 MMU in phase 4. See DESIGN.md §4 for the closed microarchitecture.
 
@@ -12,6 +12,8 @@ Load-bearing properties (do not regress):
   a single commit point in WB; interrupts inject there too.
 - **Serialized irregular instructions**: CSR writes, `mret`, `fence.i` flush
   younger instructions and execute alone — no CSR forwarding network exists.
+  RV32M operations also execute alone through the fixed-32-cycle iterative
+  `muldiv.sv` unit, then resume fetch at the following instruction.
 - **Register file**: 32×32 flip-flops, x0 hardwired, 2R1W, internal
   write-before-read bypass.
 
@@ -23,7 +25,8 @@ modules: `axcore_pkg.sv` (shared types), `regfile.sv`, `alu.sv`, `immdec.sv`,
 `decoder.sv`, `branch_cmp.sv`, `csr_file.sv`; later `mmu.sv`/`tlb.sv`.
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
-**and** riscv-formal — all three. Built in phase 1, after the ISS exists.
+**and** riscv-formal — all three. The RVFI/formal integration was added in
+phase 2, after the ISS and lock-step harness existed.
 
 `axcore.sv` also exposes a non-invasive `trace_*` commit-observation port.
 It is sampled by `sim/cosim/` immediately before the committing clock edge;

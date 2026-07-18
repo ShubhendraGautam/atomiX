@@ -50,7 +50,7 @@ def reg(rng):
 
 
 def instruction(rng):
-    kind = rng.randrange(11)
+    kind = rng.randrange(12)
     rd, rs1, rs2 = reg(rng), reg(rng), reg(rng)
     if kind == 0:  # RV32I register ALU (ADD/SUB/SLL/SLT/SLTU/XOR/SRL/SRA/OR/AND)
         f3 = rng.randrange(8)
@@ -82,11 +82,15 @@ def instruction(rng):
         return j_type(4, rd)  # JAL with an architecturally visible link value
     if kind == 9:  # harmless serializing cache barrier forms
         return rng.choice((0x0000000f, 0x0000100f))
-    # Keep CSR traffic away from timing counters: architectural cycle counts
-    # differ between an ISS and a five-stage, wait-state-tolerant pipeline.
-    csr = rng.choice((0x300, 0x304, 0x305, 0x340, 0x341, 0x342, 0x343, 0x344))
-    return csr_type(csr, rs1 if rng.randrange(2) else 0,
-                    rng.choice((1, 2, 3, 5, 6, 7)), rd)
+    if kind == 10:
+        # Keep CSR traffic away from timing counters: architectural cycle
+        # counts differ between an ISS and a wait-state-tolerant pipeline.
+        csr = rng.choice((0x300, 0x304, 0x305, 0x340, 0x341, 0x342, 0x343, 0x344))
+        return csr_type(csr, rs1 if rng.randrange(2) else 0,
+                        rng.choice((1, 2, 3, 5, 6, 7)), rd)
+    # RV32M: the serializing 32-cycle execution path and its forwarding
+    # boundary are a principal Phase-2 fuzz target.
+    return r_type(1, rs2, rs1, rng.randrange(8), rd)
 
 
 def program(seed, count):

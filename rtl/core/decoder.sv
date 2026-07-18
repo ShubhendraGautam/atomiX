@@ -5,7 +5,9 @@
 // Field extraction (rs1/rs2/rd indices, funct3 for branch kind and load/
 // store size) is sliced from the instruction by the consuming stages; this
 // module owns only *control*.
-module decoder (
+module decoder #(
+  parameter bit ENABLE_M = 1'b1
+) (
   input  logic [31:0]          insn,
 
   output logic                 illegal,
@@ -19,6 +21,7 @@ module decoder (
   output axcore_pkg::br_sel_e  br_sel,
   output axcore_pkg::csr_op_e  csr_op,
   output logic                 csr_imm,   // uimm form (csrrwi/si/ci)
+  output logic                 muldiv,    // RV32M operation; funct3 selects it
   output axcore_pkg::sys_e     sys,
   output logic                 uses_rs1,  // for the hazard/forwarding unit
   output logic                 uses_rs2
@@ -43,6 +46,7 @@ module decoder (
     br_sel   = BR_NONE;
     csr_op   = CSR_NONE;
     csr_imm  = 1'b0;
+    muldiv   = 1'b0;
     sys      = SYS_NONE;
     uses_rs1 = 1'b0;
     uses_rs2 = 1'b0;
@@ -124,7 +128,7 @@ module decoder (
         end
       end
 
-      7'b0110011: begin  // OP (f7 = 0x01 is the M extension: phase 2)
+      7'b0110011: begin  // OP, including RV32M when funct7=0x01
         rd_we    = 1'b1;
         uses_rs1 = 1'b1;
         uses_rs2 = 1'b1;
@@ -132,6 +136,8 @@ module decoder (
           alu_op = {1'b0, f3};
         else if (f7 == 7'b0100000 && (f3 == 3'b000 || f3 == 3'b101))
           alu_op = {1'b1, f3};
+        else if (f7 == 7'b0000001 && ENABLE_M)
+          muldiv = 1'b1;
         else
           illegal = 1'b1;
       end

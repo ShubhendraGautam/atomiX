@@ -62,7 +62,7 @@ Stop Cpu::trap(uint32_t cause, uint32_t tval) {
 bool Cpu::csr_read(uint32_t addr, uint32_t& val) {
   switch (addr) {
     case 0x300: val = csr.mstatus; return true;
-    case 0x301: val = 0x40000100; return true;  // misa: RV32I (MXL=1, I)
+    case 0x301: val = 0x40001100; return true;  // misa: RV32IM (MXL=1, I/M)
     case 0x304: val = csr.mie; return true;
     case 0x305: val = csr.mtvec; return true;
     case 0x340: val = csr.mscratch; return true;
@@ -202,7 +202,7 @@ Stop Cpu::step() {
       wr = true;
       break;
     }
-    case 0x33: {  // OP (f7=0x01 = M extension, phase 2)
+    case 0x33: {  // OP + RV32M
       if (f7 == 0x00) {
         switch (f3) {
           case 0: wval = a + b; break;                         // ADD
@@ -218,6 +218,22 @@ Stop Cpu::step() {
         wval = a - b;                                          // SUB
       } else if (f7 == 0x20 && f3 == 5) {
         wval = (uint32_t)((int32_t)a >> (b & 31));             // SRA
+      } else if (f7 == 0x01) {
+        const int64_t sa = (int32_t)a, sb = (int32_t)b;
+        switch (f3) {
+          case 0: wval = (uint32_t)((uint64_t)a * b); break;   // MUL
+          case 1: wval = (uint32_t)((uint64_t)(sa * sb) >> 32); break;
+          case 2: wval = (uint32_t)((uint64_t)(sa * (int64_t)(uint64_t)b) >> 32); break;
+          case 3: wval = (uint32_t)(((uint64_t)a * b) >> 32); break;
+          case 4:  // DIV
+            wval = b == 0 ? 0xFFFFFFFFu : (uint32_t)(sa / sb); break;
+          case 5:  // DIVU
+            wval = b == 0 ? 0xFFFFFFFFu : a / b; break;
+          case 6:  // REM
+            wval = b == 0 ? a : (uint32_t)(sa % sb); break;
+          case 7:  // REMU
+            wval = b == 0 ? a : a % b; break;
+        }
       } else {
         return trap(EXC_ILLEGAL, insn);
       }

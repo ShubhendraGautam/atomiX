@@ -16,6 +16,7 @@ sim/axsim/axsim
 *.fst
 *.fst.hier
 trace.log
+__pycache__/
 
 # FPGA flow outputs
 *.json
@@ -26,3 +27,5 @@ trace.log
 # editor noise
 *.swp
 .vscode/
+# Formal-generated jobs, solver databases, and counterexample traces.
+formal/build/

@@ -17,7 +17,7 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S user.S kernel.c page.c
+SOURCES := boot.S trap.S user.S kernel.c page.c shell.c
 
 all: $(ELF)
 images: $(BIN) $(HEX)
@@ -42,7 +42,8 @@ run-qemu: $(ELF)
 	  -cpu rv32,pmp=false -nographic -kernel $<
 
 run-rtl: $(HEX)
-	$(MAKE) -C ../../sim/soc run RAM_INIT_FILE=$(abspath $<) RESET_PC=0x80000000
+	$(MAKE) -C ../../sim/soc run RAM_INIT_FILE=$(abspath $<) RESET_PC=0x80000000 \
+	  UART_INPUT_FILE=$(UART_INPUT_FILE)
 
 check-boot: images
 	$(MAKE) -C ../../sim/axsim axsim

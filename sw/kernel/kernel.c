@@ -41,6 +41,7 @@ enum {
 extern void s_entry(void);
 extern void machine_timer_trap(void);
 extern void user_entry(void);
+extern void shell_run(void);
 
 static volatile uint32_t supervisor_ticks;
 
@@ -297,7 +298,8 @@ static void scheduler_make_user_task(uint32_t slot) {
   zero_page(user_pt);
   for (uint32_t i = 0; i < 1024u; ++i) page_root[i] = root_pt[i];
   page_root[USER_CODE_VA >> 22] = pte_pointer((uint32_t)(uintptr_t)user_pt);
-  user_pt[0] = pte_leaf(0x80000000u, PTE_V | PTE_R | PTE_X | PTE_U | PTE_A);
+  user_pt[0] = pte_leaf((uint32_t)(uintptr_t)user_entry & ~(PAGE_SIZE - 1u),
+                        PTE_V | PTE_R | PTE_X | PTE_U | PTE_A);
   user_pt[1] = pte_leaf((uint32_t)(uintptr_t)user_stack,
                         PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D);
   uint32_t *const frame =
@@ -313,7 +315,7 @@ static void scheduler_make_user_task(uint32_t slot) {
   tasks[slot].pid = next_pid++;
   tasks[slot].parent_pid = 0;
   tasks[slot].sepc = USER_CODE_VA +
-      ((uint32_t)(uintptr_t)user_entry - 0x80000000u);
+      ((uint32_t)(uintptr_t)user_entry & (PAGE_SIZE - 1u));
   frame[TRAP_FRAME_A0] = slot;
   frame[TRAP_FRAME_SP] = USER_STACK_VA + PAGE_SIZE;
   /* SRET returns to U mode with supervisor interrupts enabled. */
@@ -414,10 +416,13 @@ static void scheduler_start(void) {
   clint_arm_timer(2000);
 }
 
+void kernel_fork_demo(void) {
+  scheduler_start();
+  for (;;) __asm__ volatile("wfi");
+}
+
 void kmain(void) {
   page_init();
   page_allocator_self_test();
-  uart_puts("aXos: Sv32 fork/wait online\n");
-  scheduler_start();
-  for (;;) __asm__ volatile("wfi");
+  shell_run();
 }

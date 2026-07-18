@@ -1,0 +1,5 @@
+help
+ls
+cat motd
+echo atomiX
+exit

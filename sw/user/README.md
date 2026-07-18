@@ -1,12 +1,13 @@
 # sw/user/ — userland
 
 Programs running in U-mode under aXos, against its syscall ABI (static ELF,
-no dynamic linking). Phase 5.
+no dynamic linking).
 
-Initial set: `init`, `sh`, `ls`, `cat`, `echo` — the minimum for an
-interactive system that can inspect itself. Plus a tiny user-side libc
-(syscall stubs + string/format helpers), shared with nothing: userland links
-only what lives here.
+Phase 5 delivers the resident aXos shell and a U-mode fork/wait process demo
+in `sw/kernel/`; the shell supplies `ls`, `cat`, and `echo` over its RAM disk.
+This directory becomes the home for separately linked `init`, `sh`, and
+coreutils once the executable loader and persistent filesystem arrive with
+real memory/SD work.
 
 Later: role demo clients (e.g. matmul driving the TPU role from *inside* the
 box, complementing host-driven offload).

@@ -1,6 +1,7 @@
 // Generic full-SoC runner used by bare-metal integration tests. The loaded
 // program is expected to use the standard UART and sifive_test interfaces.
 #include <cstdio>
+#include <fstream>
 #include <string>
 
 #include "Vsoc_top.h"
@@ -8,10 +9,20 @@
 
 int main(int argc, char** argv) {
   Verilated::commandArgs(argc, argv);
+  std::string input;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--uart-input" && i + 1 < argc) input = argv[++i];
+    if (std::string(argv[i]) == "--uart-input-file" && i + 1 < argc) {
+      std::ifstream stream(argv[++i], std::ios::binary);
+      input.assign(std::istreambuf_iterator<char>(stream), {});
+    }
+  }
   Vsoc_top* top = new Vsoc_top;
   top->rst = 1;
   top->clk = 0;
   top->irq_external = 0;
+  top->uart_rx_valid = 0;
+  top->uart_rx_data = 0;
   top->eval();
   top->clk = 1;
   top->eval();
@@ -21,8 +32,11 @@ int main(int argc, char** argv) {
 
   std::string uart;
   unsigned cycles = 0;
+  size_t input_pos = 0;
   for (; cycles < 100000 && !top->finished; ++cycles) {
     top->clk = 0;
+    top->uart_rx_valid = input_pos < input.size() && top->uart_rx_ready;
+    if (top->uart_rx_valid) top->uart_rx_data = (unsigned char)input[input_pos++];
     top->eval();
     top->clk = 1;
     top->eval();

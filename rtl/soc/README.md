@@ -21,8 +21,9 @@ of the shell + role platform, DESIGN.md §3.3):
   `$readmemh` initialized through `soc_top`'s `ROM_INIT_FILE` parameter.
 - `clint.sv` — hart 0 `msip`, `mtimecmp`, and `mtime`, using the QEMU-virt
   offsets and raising core software/timer interrupt lines.
-- `uart.sv` — TX plus IIR/LSR read subset; byte registers are packed correctly
-  into aXbus's word-aligned read lanes.
+- `uart.sv` — 16550-style THR/RBR plus LSR subset. A one-byte RX holding
+  register reports LSR.DR and is driven by the simulation console sideband;
+  byte registers are packed correctly into aXbus's word-aligned read lanes.
 - `test_finisher.sv` — synthesizable simulation endpoint for QEMU's
   `sifive_test` pass/fail convention.
 - `soc_top.sv` — ties the shell together; reset defaults to boot ROM

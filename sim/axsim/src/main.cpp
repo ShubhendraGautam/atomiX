@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <inttypes.h>
 #include <vector>
 
@@ -18,6 +19,8 @@ static void usage(const char* argv0) {
           "  --pc ADDR    reset PC (default: ELF entry / --base)\n"
           "  --ram MB     RAM size in MiB     (default 32)\n"
           "  --max N      stop after N instructions (default: unlimited)\n"
+          "  --uart-input TEXT  bytes available through the 16550 RX register\n"
+          "  --uart-input-file FILE  bytes available through the 16550 RX register\n"
           "  --trace      log every retired instruction to stderr\n",
           argv0);
 }
@@ -32,6 +35,8 @@ int main(int argc, char** argv) {
   size_t ram_mib = 32;
   uint64_t max_insns = 0;
   bool trace = false;
+  const char* uart_input = nullptr;
+  const char* uart_input_file = nullptr;
 
   for (int i = 1; i < argc; i++) {
     auto arg_val = [&](const char* name) -> const char* {
@@ -44,6 +49,8 @@ int main(int argc, char** argv) {
     else if (const char* v = arg_val("--pc")) { reset_pc = parse_u32(v); have_pc = true; }
     else if (const char* v = arg_val("--ram")) ram_mib = parse_u32(v);
     else if (const char* v = arg_val("--max")) max_insns = strtoull(v, nullptr, 0);
+    else if (const char* v = arg_val("--uart-input")) uart_input = v;
+    else if (const char* v = arg_val("--uart-input-file")) uart_input_file = v;
     else if (!strcmp(argv[i], "--trace")) trace = true;
     else { usage(argv[0]); return 1; }
   }
@@ -51,6 +58,12 @@ int main(int argc, char** argv) {
   if (!have_pc) reset_pc = base;
 
   Bus bus(ram_mib << 20);
+  if (uart_input) bus.set_uart_input(uart_input);
+  if (uart_input_file) {
+    std::ifstream stream(uart_input_file, std::ios::binary);
+    std::string input((std::istreambuf_iterator<char>(stream)), {});
+    bus.set_uart_input(input.c_str());
+  }
 
   if (is_elf(bin_path)) {
     ElfInfo info;

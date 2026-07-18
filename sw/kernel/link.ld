@@ -18,7 +18,7 @@ SECTIONS {
     *(.text*)
   } > RAM :load
 
-  .usertext : { *(.usertext) } > RAM :load
+  .usertext ALIGN(4K) : { *(.usertext) } > RAM :load
   .rodata : { *(.rodata*) *(.srodata*) } > RAM :load
   .data   : { *(.data*) *(.sdata*) } > RAM :load
 
@@ -34,8 +34,8 @@ SECTIONS {
   __stack_top = ORIGIN(RAM) + LENGTH(RAM);
   _end = .;
 
-  ASSERT(ADDR(.usertext) + SIZEOF(.usertext) <= 0x80001000,
-         "user payload must fit the kernel's first 4 KiB page")
+  ASSERT(SIZEOF(.usertext) <= 4K,
+         "user payload must fit one mapped 4 KiB page")
 
   /DISCARD/ : { *(.comment) *(.note*) *(.riscv.attributes) }
 }

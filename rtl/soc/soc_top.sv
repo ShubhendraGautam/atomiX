@@ -11,6 +11,9 @@ module soc_top #(
   input  logic       irq_external,
   output logic       uart_tx_valid,
   output logic [7:0] uart_tx_data,
+  input  logic       uart_rx_valid,
+  input  logic [7:0] uart_rx_data,
+  output logic       uart_rx_ready,
   output logic       finished,
   output logic [15:0] exit_code
 );
@@ -112,6 +115,7 @@ module soc_top #(
     .i_wstrb(4'b0), .i_ready(i_uart_ready), .i_rdata(i_uart_rdata), .i_err(i_uart_err),
     .d_valid(d_uart_valid), .d_addr(dbus_addr), .d_wdata(dbus_wdata), .d_wstrb(dbus_wstrb),
     .d_ready(d_uart_ready), .d_rdata(d_uart_rdata), .d_err(d_uart_err),
-    .tx_valid(uart_tx_valid), .tx_data(uart_tx_data)
+    .tx_valid(uart_tx_valid), .tx_data(uart_tx_data),
+    .rx_valid(uart_rx_valid), .rx_data(uart_rx_data), .rx_ready(uart_rx_ready)
   );
 endmodule

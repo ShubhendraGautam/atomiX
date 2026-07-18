@@ -138,6 +138,9 @@ make -C sim/unit run-privilege    # M/S/U transitions, delegation, sret
 make -C sim/unit run-sv32         # Sv32 walk, A/D update, page fault
 make -C sim/testgen paging        # 10 seeds × 10k user-mode Sv32 instructions
 SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si
+
+# Phase-5 aXos shell plus U-mode fork/wait on ISS, QEMU, and RTL
+make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
 ```
 
 ## QEMU required for Phase 5
@@ -166,7 +169,7 @@ qemu-system-riscv32 --version       # expect 8.2.x (or any version >= 7)
 
 The source tree under `/tmp` may be removed after installation. Keep the
 `PATH` export in your shell profile if you want this QEMU to be the default.
-Then verify the platform-neutral kernel bootstrap:
+Then verify the platform-neutral aXos shell and fork/wait sessions:
 
 ```bash
 make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"

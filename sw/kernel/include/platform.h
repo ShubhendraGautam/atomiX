@@ -28,6 +28,15 @@ static inline void uart_puts(const char *s) {
   while (*s) uart_putchar(*s++);
 }
 
+static inline int uart_rx_ready(void) {
+  return mmio_read8(AX_UART_BASE + 5) & 0x01;
+}
+
+static inline char uart_getchar(void) {
+  while (!uart_rx_ready()) {}
+  return (char)mmio_read8(AX_UART_BASE);
+}
+
 __attribute__((noreturn)) static inline void test_finish(unsigned code) {
   const uint32_t value = code ? (uint32_t)(code << 16) | 0x3333u : 0x5555u;
   mmio_write32(AX_TEST_BASE, value);

@@ -1,48 +1,43 @@
 # sw/kernel/ — aXos
 
-Our monolithic Unix-like kernel: **xv6-inspired in scope** (the known-good
-reference when stuck), our own code. Roadmap phase 5, developed on aXsim/QEMU
-in parallel with earlier RTL phases.
+`aXos` is the small monolithic kernel developed in Phase 5. It runs unchanged
+on aXsim, QEMU `virt`, and the RTL SoC.
 
-Core scope (DESIGN.md §7): boot → Sv32 paging on → trap handling → processes
-with round-robin preemptive scheduling (CLINT timer) → syscalls
-(fork/exec/exit/wait/read/write/pipe) → inode filesystem (RAM-disk first, SD
-later) → serial console shell.
+Phase 5 provides Sv32 paging, M/S/U trap transitions, a physical-page
+allocator, CLINT-driven preemptive scheduling, and a minimal U-mode process
+model. `SYS_FORK` clones the Sv32 root, page table, user stack, and trap
+context; `SYS_WAIT` blocks and later reaps the child; `SYS_EXIT` releases every
+process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 
-**Platform duties** (the pivot, DESIGN.md §3.3) — aXos is also the resident
-OS of the accelerator card in every mode:
+## Shell and RAM disk
 
-- Role service: discover the attached role by ID register, manage its
-  descriptor ring, feed it work, handle its completions
-- Host-link service: speak the `docs/host-protocol.md` framed protocol with
-  `axhost` over USB — buffer transfer, work submission, events
+The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
+It supports `help`, `ls`, `cat motd`, `cat readme`, `echo`, `fork`, and `exit`.
+The initial immutable RAM disk is a named-file table; this keeps the shell
+contract independent of its future inode/SD-backed implementation.
 
-Exit criterion (phase 5): interactive shell on the RTL simulation console.
+`fork` launches the U-mode parent/child demonstration. The child gets return
+value zero; the parent receives a child PID, blocks in `wait`, wakes when the
+child exits, and reaps it. The shell test accepts either valid first scheduling
+order, `PCW` or `CPW`.
 
-## Bootstrap milestone
+## Run and verify
 
-`make check-boot` builds the first aXos image. M-mode constructs an Sv32
-identity map for kernel RAM plus UART, CLINT, and the test finisher; it then
-enters S-mode with `mret`. The S-mode kernel prints
-`aXos: Sv32 fork/wait online` and exits through the usual
-finisher. The
-machine timer is acknowledged in a tiny M-mode shim and turned into a
-delegated supervisor software interrupt; the S-mode trap entry saves every
-GPR, acknowledges it, and resumes. The kernel then exercises every available
-4 KiB physical RAM page through its free-list allocator, while reserving one
-page for the live bootstrap/trap stack. The first U-mode process writes a
-marker to its private stack and invokes `SYS_FORK`. The child receives a cloned
-Sv32 root, page table, user stack, trap frame, and a zero return value; the
-parent receives the child PID. Both invoke `SYS_CONSOLE_PUTC`; the parent then
-blocks in `SYS_WAIT`, is woken by the child's `SYS_EXIT`, prints again, and
-exits. The regression accepts `PCW` or `CPW`, and checks that reaping returns
-every process page to the allocator. This is the foundation for richer process
-and syscall work.
+Run the complete shell and fork/wait regression on the ISS, QEMU, and RTL:
 
-Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
-pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.
+```bash
+make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
+```
 
-The Ubuntu 22.04 QEMU 6.2 package has an upstream RISC-V PMP bug that rejects
-`mret` to S/U when no PMP region exists. This project does not implement PMP,
-so the cross-platform kernel check requires QEMU 7 or newer with
-`-cpu rv32,pmp=false`; setup is in [docs/toolchain.md](../../docs/toolchain.md).
+To run the RTL console with a reproducible command script:
+
+```bash
+make -C sw/kernel run-rtl \
+  UART_INPUT_FILE="$PWD/sw/kernel/shell_input.txt"
+```
+
+The file supplies newline-terminated bytes to the synthesizable UART RX
+holding register. Replace it with any command script; `exit` sends the normal
+test-finisher success value. QEMU 7 or newer is required with
+`-cpu rv32,pmp=false` because aXcore does not implement PMP; setup is in
+[docs/toolchain.md](../../docs/toolchain.md).

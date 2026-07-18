@@ -1,5 +1,5 @@
-// Minimal 16550-compatible transmit/status subset. THR writes emit one byte
-// on the synthesizable tx_* sideband; LSR reports the transmitter idle.
+// Minimal 16550-compatible console subset. THR writes emit one byte on the
+// synthesizable tx_* sideband; a one-byte RX holding register feeds RBR reads.
 module uart #(
   parameter logic [31:0] BASE = 32'h1000_0000
 ) (
@@ -20,8 +20,13 @@ module uart #(
   output logic [31:0] d_rdata,
   output logic        d_err,
   output logic        tx_valid,
-  output logic [7:0]  tx_data
+  output logic [7:0]  tx_data,
+  input  logic        rx_valid,
+  input  logic [7:0]  rx_data,
+  output logic        rx_ready
 );
+  logic rx_full;
+  logic [7:0] rx_byte;
   wire i_in_range = i_addr >= BASE && i_addr - BASE < 32'h1000;
   wire d_in_range = d_addr >= BASE && d_addr - BASE < 32'h1000;
   wire [2:0] i_off = i_addr[2:0];
@@ -30,8 +35,8 @@ module uart #(
   // lane so the core's normal load extractor sees UART offsets 2 and 5.
   function automatic logic [31:0] read_offset(input logic [2:0] off);
     unique case (off)
-      3'd0:    read_offset = 32'h0001_0000;  // IIR at byte offset 2
-      3'd4:    read_offset = 32'h0000_6000;  // LSR at byte offset 5
+      3'd0:    read_offset = {24'b0, rx_byte};
+      3'd4:    read_offset = 32'h0000_6000 | (rx_full ? 32'h0000_0100 : 0);
       default: read_offset = 32'b0;
     endcase
   endfunction
@@ -39,11 +44,14 @@ module uart #(
   always_comb begin
     i_ready = i_valid; i_err = i_valid && !i_in_range; i_rdata = read_offset(i_off);
     d_ready = d_valid; d_err = d_valid && !d_in_range; d_rdata = read_offset(d_off);
+    rx_ready = !rx_full;
   end
   always_ff @(posedge clk) begin
     if (rst) begin
       tx_valid <= 1'b0;
       tx_data  <= 8'b0;
+      rx_full  <= 1'b0;
+      rx_byte  <= 8'b0;
     end else begin
       tx_valid <= 1'b0;
       if (i_valid && i_off == 3'd0 && i_wstrb[0]) begin
@@ -51,6 +59,11 @@ module uart #(
       end
       if (d_valid && d_off == 3'd0 && d_wstrb[0]) begin
         tx_valid <= 1'b1; tx_data <= d_wdata[7:0];
+      end
+      if (d_valid && d_off == 3'd0 && d_wstrb == 4'b0) rx_full <= 1'b0;
+      if (rx_valid && rx_ready) begin
+        rx_full <= 1'b1;
+        rx_byte <= rx_data;
       end
     end
   end

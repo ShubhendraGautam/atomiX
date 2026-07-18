@@ -84,6 +84,11 @@ class Bus {
   uint32_t tohost_addr = 0;
   bool uart_echo = true;   // false lets cosim print the RTL side only
 
+  void set_uart_input(const char* text) {
+    uart_rx.assign(text, text + strlen(text));
+    uart_rx_pos = 0;
+  }
+
   // One ISS time step per retired instruction. The precise delivery point is
   // defined in Cpu::step(); this exposes the same MSIP/MTIP sources as RTL.
   void tick() { ++mtime; }
@@ -114,8 +119,8 @@ class Bus {
     return const_cast<Bus*>(this)->backing(addr, len);
   }
 
-  // 16550 subset: THR (offset 0) transmits; LSR (offset 5) always reports
-  // "transmitter empty". RX side arrives with the interactive console.
+  // 16550 subset: THR/RBR at offset 0 and LSR at offset 5.  Tests feed a
+  // deterministic byte stream; a read of RBR consumes one byte.
   void uart_write(uint32_t off, uint8_t b) {
     if (off == 0 && uart_echo) {
       fputc(b, stdout);
@@ -123,7 +128,11 @@ class Bus {
     }
   }
   uint32_t uart_read(uint32_t off) {
-    if (off == 5) return 0x60;  // LSR: THR empty + transmitter idle
+    if (off == 0) {
+      if (uart_rx_pos >= uart_rx.size()) return 0;
+      return uart_rx[uart_rx_pos++];
+    }
+    if (off == 5) return 0x60 | (uart_rx_pos < uart_rx.size() ? 1 : 0);
     return 0;
   }
 
@@ -178,4 +187,6 @@ class Bus {
   bool msip = false;
   uint64_t mtime = 0;
   uint64_t mtimecmp = ~0ull;
+  std::vector<uint8_t> uart_rx;
+  size_t uart_rx_pos = 0;
 };

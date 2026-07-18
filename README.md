@@ -38,6 +38,8 @@ make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(npr
 tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
 tests/run-riscv-tests.sh rv32si        # supervisor ISA suite: 6 passed expected
 SIM=../sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si  # lock-step
+# Phase-5 aXos shell + U-mode fork/wait on ISS, QEMU, and RTL
+make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
 ```
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).

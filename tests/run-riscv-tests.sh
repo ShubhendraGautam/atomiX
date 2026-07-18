@@ -12,15 +12,19 @@ globs=("${@:-rv32ui rv32mi}")
 #   rv32ui-p-ma_data expects HARDWARE misaligned data access support; atomiX
 #   (like Spike without --misaligned) traps on misaligned accesses instead —
 #   the complementary rv32mi-p-ma_addr test verifies those traps and must pass.
-exclude=(rv32ui-p-ma_data)
+exclude=(rv32ui-p-ma_data rv32ui-v-ma_data)
 
 pass=0 fail=0
 failed=()
 for suite in "${globs[@]}"; do
-  for t in riscv-tests/isa/"$suite"-p-*; do
+  # A suite named like "rv32ui-v" selects the virtual-memory environment
+  # binaries; a plain suite name selects the physical "-p" ones.
+  pat="$suite-p-*"
+  [[ $suite == *-v ]] && pat="${suite%-v}-v-*"
+  for t in riscv-tests/isa/$pat; do
     [[ $t == *.dump || ! -f $t ]] && continue
     [[ " ${exclude[*]} " == *" $(basename "$t") "* ]] && continue
-    if "$sim" --bin "$t" --max 2000000 >/dev/null 2>&1; then
+    if "$sim" --bin "$t" --max 4000000 >/dev/null 2>&1; then
       pass=$((pass + 1))
     else
       fail=$((fail + 1))

@@ -3,16 +3,16 @@
 #include "bus.h"
 
 // Why step() ended the simulation. Exceptions no longer stop the sim — they
-// take a real M-mode trap. Fault remains only for "cannot continue"
-// situations (trap taken while mtvec is still 0, i.e. before the program
+// take a real trap. Fault remains only for "cannot continue" situations
+// (trap taken while the target tvec is still 0, i.e. before the program
 // installed a handler).
 enum class Stop { None, Fault };
 
-// M-mode CSR state. mcycle/minstret are served from the retired-instruction
-// counter (cycle == instret in an ISS; the cosim spec will pin down counter
-// comparison rules).
+// Privileged CSR state (phase 4: M + S + U). mcycle/minstret are served from
+// the retired-instruction counter (cycle == instret in an ISS; cosim masks
+// counter CSRs until the model difference is resolved).
 struct Csrs {
-  uint32_t mstatus = 0x1800;  // MPP=M; MIE clear at reset
+  uint32_t mstatus = 0x1800;  // MPP=M; everything else clear at reset
   uint32_t mtvec = 0;
   uint32_t mepc = 0;
   uint32_t mcause = 0;
@@ -20,6 +20,16 @@ struct Csrs {
   uint32_t mscratch = 0;
   uint32_t mie = 0;
   uint32_t mip = 0;
+  uint32_t medeleg = 0;
+  uint32_t mideleg = 0;
+  uint32_t mcounteren = 0;
+  uint32_t stvec = 0;
+  uint32_t sepc = 0;
+  uint32_t scause = 0;
+  uint32_t stval = 0;
+  uint32_t sscratch = 0;
+  uint32_t scounteren = 0;
+  uint32_t satp = 0;
 };
 
 // Architectural result of the most recent step.  This is deliberately a
@@ -49,9 +59,14 @@ class Cpu {
 
   uint32_t pc;
   uint32_t x[32] = {};       // x0 held at zero by the writeback path
+  uint32_t prv = 3;          // current privilege: 0=U, 1=S, 3=M
   Csrs csr;
   StepTrace last;
   bool trace = false;        // one line per retired instruction, to stderr
+  // Phase 4 S/U + Sv32 support. The RTL is still M-only, so the cosim
+  // harness clears this to keep lock-step semantics identical; standalone
+  // aXsim models the full privileged architecture.
+  bool ext_su = true;
   uint64_t retired() const { return ninsn; }
 
  private:
@@ -61,7 +76,13 @@ class Cpu {
                   bool is_interrupt);
   bool csr_read(uint32_t addr, uint32_t& val);
   bool csr_write(uint32_t addr, uint32_t val);
+  bool ctr_ok(unsigned bit) const;
+  // Sv32 translation for acc 0=fetch/1=load/2=store. On success returns
+  // true with the physical address in pa; on failure returns false with the
+  // page/access-fault cause in cause (tval is the caller's virtual address).
+  bool translate(uint32_t va, int acc, uint32_t& pa, uint32_t& cause);
 
   Bus& bus;
   uint64_t ninsn = 0;
+  uint32_t soft_ip = 0;      // software-writable mip bits (SSIP/STIP/SEIP)
 };

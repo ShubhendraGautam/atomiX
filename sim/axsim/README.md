@@ -13,7 +13,10 @@ Scope grows with the CPU phases:
    `mtval`, ecall/mret, illegal instruction (phase 0)
 3. ELF loading + riscv-tests `tohost`/`fromhost` harness (phase 0)
 4. CLINT + UART device models, interrupt injection (phase 3)
-5. M extension (phase 2); S/U modes and Sv32 page-table walks (phase 4)
+5. M extension (phase 2); S/U modes, medeleg/mideleg trap delegation, and
+   Sv32 page-table walks with hardware A/D update (phase 4). The `Cpu::ext_su`
+   flag (default on) gates the privileged extension; the cosim harness clears
+   it until the RTL catches up, keeping lock-step semantics identical.
 
 Interfaces it must expose:
 

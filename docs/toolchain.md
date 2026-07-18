@@ -92,6 +92,12 @@ Later phases add:
   `sudo apt update` first (with sudo; without it apt can't take its locks).
   A handful of QEMU audio/GUI dependencies (alsa, gstreamer) may still 404
   harmlessly: we run QEMU headless and never need them.
+- **riscv-tests `-v` (virtual-memory) builds:** the env/v harness includes
+  `string.h`/`stdint.h`, which the Ubuntu `gcc-riscv64-unknown-elf` package
+  doesn't put on the default include path — they live in the companion
+  picolibc package. Build the `-v` targets with the extra flag
+  `-isystem /usr/lib/picolibc/riscv64-unknown-elf/include` appended to
+  `RISCV_GCC_OPTS` (tests/README.md shows the full invocation).
 - **Verilator 4.038** (jammy) is old but sufficient for now.
 - **Yosys 0.9** (the Ubuntu 22.04 package) is *not* sufficient for this
   project's formal flow: it rejects `axcore_pkg.sv` with a `TOK_TYPEDEF`

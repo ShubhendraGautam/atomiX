@@ -277,8 +277,8 @@ CI runs legs 1–2 on every change; formal runs on core changes.
 |---|---|---|
 | **0. Foundations** ✅ | Repo layout, toolchain container/Makefiles, `aXsim` ISS | ISS passes rv32ui + rv32mi riscv-tests — **met 2026-07-18** (`ma_data` policy-excluded: we trap on misaligned, verified by `ma_addr`) |
 | **1. Core, M-mode** ✅ | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence — **met 2026-07-18** (41 rv32ui/rv32mi tests; 10,000,060 generated lock-step events) |
-| **2. Formal + M ext** | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass |
-| **3. SoC v1** | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL |
+| **2. Formal + M ext** ✅ | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass — **met 2026-07-18** (insn add/beq/lw/sw sby checks; 8 rv32um tests lock-step on RTL) |
+| **3. SoC v1** ✅ | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL — **met 2026-07-18** (`check-preempt`; interrupt/commit collision regressions added) |
 | **4. Privileged CPU** | S/U modes, Sv32 MMU + TLB, delegation | rv32si tests + cosim with paging-heavy random tests |
 | **5. Kernel bring-up** | `aXos` core: paging, processes, syscalls, shell on RAM-disk | Interactive shell on the RTL simulation console |
 | **6. Real memory** | SDRAM controller + I$/D$ (board-dependent), SD card (SPI) + on-disk FS | Kernel boots from SD, runs in SDRAM |

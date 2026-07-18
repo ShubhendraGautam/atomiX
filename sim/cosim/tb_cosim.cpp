@@ -177,6 +177,10 @@ int main(int argc, char** argv) {
   rtl_bus.tohost_en = iss_bus.tohost_en;
   rtl_bus.tohost_addr = iss_bus.tohost_addr;
   Cpu iss(iss_bus, reset_pc);
+  // The RTL is still M-only: run the ISS with the phase-4 S/U + Sv32
+  // extension off so lock-step semantics stay identical. Remove when the
+  // privileged aXcore lands.
+  iss.ext_su = false;
 
   Vaxcore* top = new Vaxcore;
   int icnt = 0, dcnt = 0;

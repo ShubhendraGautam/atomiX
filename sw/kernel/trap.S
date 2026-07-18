@@ -5,6 +5,8 @@
   .globl supervisor_trap_entry
   .type supervisor_trap_entry, @function
 supervisor_trap_entry:
+  /* sscratch holds a per-task supervisor trap stack while a task runs. */
+  csrrw sp, sscratch, sp
   addi sp, sp, -128
   sw ra,   0(sp)
   sw gp,   4(sp)
@@ -36,9 +38,13 @@ supervisor_trap_entry:
   sw t4, 108(sp)
   sw t5, 112(sp)
   sw t6, 116(sp)
+  csrr t0, sscratch
+  sw t0, 120(sp)                 /* interrupted task's stack pointer */
   mv a0, sp
   call supervisor_trap
   mv sp, a0
+  lw t0, 120(sp)
+  csrw sscratch, t0
   lw ra,   0(sp)
   lw gp,   4(sp)
   lw tp,   8(sp)
@@ -70,6 +76,7 @@ supervisor_trap_entry:
   lw t5, 112(sp)
   lw t6, 116(sp)
   addi sp, sp, 128
+  csrrw sp, sscratch, sp
   sret
   .size supervisor_trap_entry, . - supervisor_trap_entry
 
@@ -78,10 +85,14 @@ supervisor_trap_entry:
   .globl machine_timer_trap
   .type machine_timer_trap, @function
 machine_timer_trap:
+  /* M-mode cannot use a U-mode virtual SP; switch through mscratch first. */
+  csrrw sp, mscratch, sp
   addi sp, sp, -16
   sw t0, 0(sp)
   sw t1, 4(sp)
   sw t2, 8(sp)
+  csrr t0, mscratch
+  sw t0, 12(sp)
 
   csrr t0, mcause
   li t1, 0x80000007             /* machine timer interrupt */
@@ -102,10 +113,13 @@ machine_timer_trap:
   ori t0, t0, 2
   csrw mip, t0
 
+  lw t0, 12(sp)
+  csrw mscratch, t0
   lw t0, 0(sp)
   lw t1, 4(sp)
   lw t2, 8(sp)
   addi sp, sp, 16
+  csrrw sp, mscratch, sp
   mret
 
 machine_trap_bad:

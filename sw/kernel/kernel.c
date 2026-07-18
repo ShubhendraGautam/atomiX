@@ -10,20 +10,29 @@ enum {
   PTE_R = 1u << 1,
   PTE_W = 1u << 2,
   PTE_X = 1u << 3,
+  PTE_U = 1u << 4,
   PTE_A = 1u << 6,
   PTE_D = 1u << 7,
   MSTATUS_MPP = 3u << 11,
   MSTATUS_MPP_S = 1u << 11,
   SSTATUS_SPIE = 1u << 5,
-  SSTATUS_SPP = 1u << 8,
   SATP_MODE_SV32 = 1u << 31,
   TASK_COUNT = 2,
   TASK_NONE = TASK_COUNT,
   TRAP_FRAME_BYTES = 128,
+  TRAP_FRAME_A0 = 8,
+  TRAP_FRAME_A7 = 15,
+  TRAP_FRAME_SP = 30,
+  SCAUSE_USER_ECALL = 8,
+  SCAUSE_SUPERVISOR_SOFTWARE = 0x80000001u,
+  SYS_USER_ONLINE = 1,
+  USER_CODE_VA = 0x40000000u,
+  USER_STACK_VA = USER_CODE_VA + PAGE_SIZE,
 };
 
 extern void s_entry(void);
 extern void machine_timer_trap(void);
+extern void user_entry(void);
 
 static volatile uint32_t supervisor_ticks;
 
@@ -36,14 +45,15 @@ struct task {
 static struct task tasks[TASK_COUNT];
 static uint32_t current_task = TASK_NONE;
 static volatile uint32_t scheduler_running;
-static volatile uint32_t task_a_runs;
-static volatile uint32_t task_b_runs;
+static volatile uint32_t scheduled_ticks;
+static volatile uint32_t users_online;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
  * occupies one 4 KiB L0 mapping because it is not 4 MiB aligned. */
 static volatile uint32_t root_pt[1024] __attribute__((aligned(4096)));
 static volatile uint32_t low_pt[1024] __attribute__((aligned(4096)));
+static volatile uint32_t user_pt[1024] __attribute__((aligned(4096)));
 
 static uint32_t pte_leaf(uint32_t physical, uint32_t flags) {
   return ((physical >> 12) << 10) | flags;
@@ -63,6 +73,12 @@ static inline void csr_write_mstatus(uint32_t value) {
   __asm__ volatile("csrw mstatus, %0" :: "r"(value));
 }
 
+static inline uint32_t csr_read_sp(void) {
+  uint32_t value;
+  __asm__ volatile("mv %0, sp" : "=r"(value));
+  return value;
+}
+
 static inline void csr_write_mepc(uint32_t value) {
   __asm__ volatile("csrw mepc, %0" :: "r"(value));
 }
@@ -75,8 +91,16 @@ static inline void csr_write_mtvec(uint32_t value) {
   __asm__ volatile("csrw mtvec, %0" :: "r"(value));
 }
 
+static inline void csr_write_mscratch(uint32_t value) {
+  __asm__ volatile("csrw mscratch, %0" :: "r"(value));
+}
+
 static inline void csr_write_mideleg(uint32_t value) {
   __asm__ volatile("csrw mideleg, %0" :: "r"(value));
+}
+
+static inline void csr_write_medeleg(uint32_t value) {
+  __asm__ volatile("csrw medeleg, %0" :: "r"(value));
 }
 
 static inline void csr_write_mie(uint32_t value) {
@@ -126,6 +150,7 @@ static void clint_arm_timer(uint32_t delta) {
 void m_setup(void) {
   const uint32_t kernel_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
   const uint32_t device_flags = PTE_V | PTE_R | PTE_W | PTE_A | PTE_D;
+  const uint32_t user_code_flags = PTE_V | PTE_R | PTE_X | PTE_U | PTE_A;
 
   /* Kernel RAM (VPN1 512), UART (64), and CLINT (8) are 4 MiB superpages. */
   root_pt[0x200] = pte_leaf(0x80000000u, kernel_flags);
@@ -134,24 +159,25 @@ void m_setup(void) {
   root_pt[0x000] = pte_pointer((uint32_t)(uintptr_t)low_pt);
   low_pt[(AX_TEST_BASE >> 12) & 0x3ffu] =
       pte_leaf(AX_TEST_BASE, device_flags);
+  root_pt[USER_CODE_VA >> 22] = pte_pointer((uint32_t)(uintptr_t)user_pt);
+  user_pt[0] = pte_leaf(0x80000000u, user_code_flags);
 
+  csr_write_mscratch(csr_read_sp());
   csr_write_mtvec((uint32_t)(uintptr_t)machine_timer_trap);
+  csr_write_medeleg(1u << SCAUSE_USER_ECALL);
   /* MTIP stays M-owned; the shim raises delegated SSIP for S-mode policy. */
   csr_write_mideleg(1u << 1);
   csr_write_mie((1u << 7) | (1u << 1));
-  clint_arm_timer(2000);
+  /* Keep interrupts out of the bootstrap; kmain arms the first scheduler tick
+   * once its allocator, task state, and trap stacks are all ready. */
+  clint_arm_timer(0x00100000u);
   csr_write_satp(SATP_MODE_SV32 | ((uint32_t)(uintptr_t)root_pt >> 12));
   __asm__ volatile("sfence.vma zero, zero");
   csr_write_mepc((uint32_t)(uintptr_t)s_entry);
   csr_write_mstatus((csr_read_mstatus() & ~MSTATUS_MPP) | MSTATUS_MPP_S);
 }
 
-uint32_t *supervisor_trap(uint32_t *trap_frame) {
-  /* M-mode turns the hardware MTIP into this delegated supervisor SSIP. */
-  if (csr_read_scause() != 0x80000001u) test_finish(1);
-  csr_write_sip(0);
-  supervisor_ticks++;
-
+static uint32_t *schedule(uint32_t *trap_frame) {
   if (!scheduler_running) return trap_frame;
 
   if (current_task != TASK_NONE) {
@@ -163,6 +189,31 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
   csr_write_sepc(tasks[current_task].sepc);
   csr_write_sstatus(tasks[current_task].sstatus);
   return tasks[current_task].trap_frame;
+}
+
+uint32_t *supervisor_trap(uint32_t *trap_frame) {
+  const uint32_t cause = csr_read_scause();
+
+  if (cause == SCAUSE_SUPERVISOR_SOFTWARE) {
+    /* M-mode turns MTIP into delegated SSIP for scheduler policy. */
+    csr_write_sip(0);
+    supervisor_ticks++;
+    if (!scheduler_running) return trap_frame;
+    scheduled_ticks++;
+    if (users_online == 3u && scheduled_ticks >= 4u) test_finish(0);
+    return schedule(trap_frame);
+  }
+
+  if (cause == SCAUSE_USER_ECALL) {
+    if (trap_frame[TRAP_FRAME_A7] != SYS_USER_ONLINE ||
+        trap_frame[TRAP_FRAME_A0] >= TASK_COUNT)
+      test_finish(1);
+    users_online |= 1u << trap_frame[TRAP_FRAME_A0];
+    csr_write_sepc(csr_read_sepc() + 4u);
+    return trap_frame;
+  }
+
+  test_finish(1);
 }
 
 static void page_allocator_self_test(void) {
@@ -181,49 +232,37 @@ static void page_allocator_self_test(void) {
   while (total != page_free_count()) page_free(pages[page_free_count()]);
 }
 
-static void task_pause_until_next_tick(void) {
-  const uint32_t seen = supervisor_ticks;
-  while (supervisor_ticks == seen) __asm__ volatile("nop");
-}
-
-static void task_a(void) {
-  for (;;) {
-    task_a_runs++;
-    task_pause_until_next_tick();
-  }
-}
-
-static void task_b(void) {
-  for (;;) {
-    task_b_runs++;
-    if (task_a_runs >= 3u && task_b_runs >= 3u) test_finish(0);
-    task_pause_until_next_tick();
-  }
-}
-
-static void scheduler_make_task(uint32_t slot, void (*entry)(void)) {
-  uint32_t *const stack = page_alloc();
-  if (stack == 0) test_finish(1);
+static void scheduler_make_user_task(uint32_t slot, uint32_t user_sp) {
+  uint32_t *const kernel_stack = page_alloc();
+  if (kernel_stack == 0) test_finish(1);
   uint32_t *const frame =
-      (uint32_t *)((uintptr_t)stack + PAGE_SIZE - TRAP_FRAME_BYTES);
+      (uint32_t *)((uintptr_t)kernel_stack + PAGE_SIZE - TRAP_FRAME_BYTES);
   for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i) frame[i] = 0;
   tasks[slot].trap_frame = frame;
-  tasks[slot].sepc = (uint32_t)(uintptr_t)entry;
-  /* SRET returns to an S-mode task with supervisor interrupts enabled. */
-  tasks[slot].sstatus = SSTATUS_SPP | SSTATUS_SPIE;
+  tasks[slot].sepc = USER_CODE_VA +
+      ((uint32_t)(uintptr_t)user_entry - 0x80000000u);
+  frame[TRAP_FRAME_A0] = slot;
+  frame[TRAP_FRAME_SP] = user_sp;
+  /* SRET returns to U mode with supervisor interrupts enabled. */
+  tasks[slot].sstatus = SSTATUS_SPIE;
 }
 
 static void scheduler_start(void) {
-  scheduler_make_task(0, task_a);
-  scheduler_make_task(1, task_b);
+  uint32_t *const user_stack = page_alloc();
+  if (user_stack == 0) test_finish(1);
+  user_pt[1] = pte_leaf((uint32_t)(uintptr_t)user_stack,
+                        PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D);
+  __asm__ volatile("sfence.vma zero, zero");
+  scheduler_make_user_task(0, USER_STACK_VA + PAGE_SIZE);
+  scheduler_make_user_task(1, USER_STACK_VA + PAGE_SIZE);
   scheduler_running = 1;
+  clint_arm_timer(2000);
 }
 
 void kmain(void) {
-  while (supervisor_ticks == 0) __asm__ volatile("nop");
   page_init();
   page_allocator_self_test();
-  uart_puts("aXos: S-mode Sv32 preemptive scheduler online\n");
+  uart_puts("aXos: Sv32 user-mode scheduler online\n");
   scheduler_start();
   for (;;) __asm__ volatile("wfi");
 }

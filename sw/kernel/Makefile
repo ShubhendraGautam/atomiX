@@ -17,7 +17,7 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S kernel.c page.c
+SOURCES := boot.S trap.S user.S kernel.c page.c
 
 all: $(ELF)
 images: $(BIN) $(HEX)

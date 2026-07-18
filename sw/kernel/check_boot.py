@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED = "aXos: S-mode Sv32 preemptive scheduler online\n"
+EXPECTED = "aXos: Sv32 user-mode scheduler online\n"
 
 
 def run(label: str, command: list[str]) -> None:

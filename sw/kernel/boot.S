@@ -28,8 +28,10 @@ s_entry:
   .option norelax
   la sp, __stack_top
   la t0, supervisor_trap_entry
+  la t1, __stack_top
   .option pop
   csrw stvec, t0
+  csrw sscratch, t1
   csrsi sstatus, 2               /* enable delegated supervisor interrupts */
   call kmain
 3:

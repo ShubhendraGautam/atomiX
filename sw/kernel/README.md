@@ -24,8 +24,11 @@ Exit criterion (phase 5): interactive shell on the RTL simulation console.
 `make check-boot` builds the first aXos image. M-mode constructs an Sv32
 identity map for kernel RAM plus UART, CLINT, and the test finisher; it then
 enters S-mode with `mret`. The S-mode kernel prints
-`aXos: S-mode Sv32 online` and exits through the usual finisher. It is the
-foundation for the S-mode trap path, timer shim, allocator, and process work.
+`aXos: S-mode Sv32 timer online` and exits through the usual finisher. The
+machine timer is acknowledged in a tiny M-mode shim and turned into a
+delegated supervisor software interrupt; the S-mode trap entry saves every
+GPR, acknowledges it, and resumes. This is the foundation for preemption,
+allocator, and process work.
 
 Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
 pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.

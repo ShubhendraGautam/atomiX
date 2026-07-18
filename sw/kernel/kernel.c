@@ -17,6 +17,9 @@ enum {
 };
 
 extern void s_entry(void);
+extern void machine_timer_trap(void);
+
+static volatile uint32_t supervisor_ticks;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
@@ -50,6 +53,38 @@ static inline void csr_write_satp(uint32_t value) {
   __asm__ volatile("csrw satp, %0" :: "r"(value));
 }
 
+static inline void csr_write_mtvec(uint32_t value) {
+  __asm__ volatile("csrw mtvec, %0" :: "r"(value));
+}
+
+static inline void csr_write_mideleg(uint32_t value) {
+  __asm__ volatile("csrw mideleg, %0" :: "r"(value));
+}
+
+static inline void csr_write_mie(uint32_t value) {
+  __asm__ volatile("csrw mie, %0" :: "r"(value));
+}
+
+static inline uint32_t csr_read_scause(void) {
+  uint32_t value;
+  __asm__ volatile("csrr %0, scause" : "=r"(value));
+  return value;
+}
+
+static inline void csr_write_sip(uint32_t value) {
+  __asm__ volatile("csrw sip, %0" :: "r"(value));
+}
+
+static void clint_arm_timer(uint32_t delta) {
+  volatile uint32_t *const mtimecmp =
+      (volatile uint32_t *)(uintptr_t)(AX_CLINT_BASE + 0x4000u);
+  volatile const uint32_t *const mtime =
+      (volatile const uint32_t *)(uintptr_t)(AX_CLINT_BASE + 0xbff8u);
+  mtimecmp[1] = 0xffffffffu;
+  mtimecmp[0] = *mtime + delta;
+  mtimecmp[1] = 0;
+}
+
 void m_setup(void) {
   const uint32_t kernel_flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
   const uint32_t device_flags = PTE_V | PTE_R | PTE_W | PTE_A | PTE_D;
@@ -62,13 +97,26 @@ void m_setup(void) {
   low_pt[(AX_TEST_BASE >> 12) & 0x3ffu] =
       pte_leaf(AX_TEST_BASE, device_flags);
 
+  csr_write_mtvec((uint32_t)(uintptr_t)machine_timer_trap);
+  /* MTIP stays M-owned; the shim raises delegated SSIP for S-mode policy. */
+  csr_write_mideleg(1u << 1);
+  csr_write_mie((1u << 7) | (1u << 1));
+  clint_arm_timer(2000);
   csr_write_satp(SATP_MODE_SV32 | ((uint32_t)(uintptr_t)root_pt >> 12));
   __asm__ volatile("sfence.vma zero, zero");
   csr_write_mepc((uint32_t)(uintptr_t)s_entry);
   csr_write_mstatus((csr_read_mstatus() & ~MSTATUS_MPP) | MSTATUS_MPP_S);
 }
 
+void supervisor_trap(void) {
+  /* M-mode turns the hardware MTIP into this delegated supervisor SSIP. */
+  if (csr_read_scause() != 0x80000001u) test_finish(1);
+  csr_write_sip(0);
+  supervisor_ticks++;
+}
+
 void kmain(void) {
-  uart_puts("aXos: S-mode Sv32 online\n");
+  while (supervisor_ticks == 0) __asm__ volatile("nop");
+  uart_puts("aXos: S-mode Sv32 timer online\n");
   test_finish(0);
 }

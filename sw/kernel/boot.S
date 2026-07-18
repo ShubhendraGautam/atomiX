@@ -27,9 +27,10 @@ s_entry:
   .option push
   .option norelax
   la sp, __stack_top
-  la t0, supervisor_trap
+  la t0, supervisor_trap_entry
   .option pop
   csrw stvec, t0
+  csrsi sstatus, 2               /* enable delegated supervisor interrupts */
   call kmain
 3:
   wfi

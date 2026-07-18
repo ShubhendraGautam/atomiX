@@ -1,11 +1,11 @@
 # sw/kernel/ — aXos
 
-`aXos` is the small monolithic kernel developed in Phase 5. It runs unchanged
-on aXsim, QEMU `virt`, and the RTL SoC.
+`aXos` is the small monolithic reference kernel. It runs unchanged on aXsim,
+QEMU `virt`, and the RTL SoC.
 
-Phase 5 provides Sv32 paging, M/S/U trap transitions, a physical-page
-allocator, CLINT-driven preemptive scheduling, and a minimal U-mode process
-model. `SYS_FORK` clones the Sv32 root, page table, user stack, and trap
+It provides Sv32 paging, M/S/U trap transitions, a physical-page allocator,
+CLINT-driven preemptive scheduling, and a minimal U-mode process model.
+`SYS_FORK` clones the Sv32 root, page table, user stack, and trap
 context; `SYS_WAIT` blocks and later reaps the child; `SYS_EXIT` releases every
 process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 
@@ -13,8 +13,8 @@ process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 
 The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
 It supports `help`, `ls`, `cat NAME`, `write NAME TEXT`, `echo`, `fork`, and
-`exit`. The initial immutable RAM disk is a named-file table. Phase 6 adds an
-optional AXFS v1 SD image path: on cached external-memory RTL, `check-storage`
+`exit`. The initial immutable RAM disk is a named-file table. An optional AXFS
+v1 SD image path runs on cached external-memory RTL: `check-storage`
 mounts `motd` and `readme` through the kernel SPI block driver. `write` creates
 or replaces one sector-sized AXFS file through SD CMD24; it is deliberately not
 a crash-safe general filesystem. The RAM disk remains the ISS/QEMU fallback.
@@ -42,9 +42,10 @@ make -C sw/kernel check-boot \
 ```
 
 `include/scheduler.h` defines the narrow task-selection contract and
-`include/vm.h` defines bootstrap and user-address-space lifecycle. An external
-manifest can also supply the `page_*`, `shell_run`, `fs_*`, or `sd_*` source
-implementation without copying it into aXos. These
+`include/vm.h` defines bootstrap and user-address-space lifecycle. The
+reference service implementations live in their owning `components/` folders;
+an external manifest can also supply the `page_*`, `shell_run`, `fs_*`, or
+`sd_*` source implementation without copying it into aXos. These
 interfaces do not constrain a custom kernel: it can instead supply a separate
 software component and its own build rules.
 
@@ -56,8 +57,8 @@ Run the complete shell and fork/wait regression on the ISS, QEMU, and RTL:
 make -C sw/kernel check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"
 ```
 
-Phase 6's board-independent memory regression retains the same kernel image,
-but runs it on 32 MiB of delayed RAM through optional I/D caches:
+The board-independent memory regression retains the same kernel image but runs
+it on 32 MiB of delayed RAM through optional I/D caches:
 
 ```bash
 make -C sw/kernel check-memory
@@ -88,5 +89,5 @@ The file supplies newline-terminated bytes to the synthesizable UART RX
 holding register. Replace it with any command script; `exit` sends the normal
 test-finisher success value. QEMU 7 or newer is required with
 `-cpu rv32,pmp=false` because aXcore does not implement PMP; setup is in
-[docs/toolchain.md](../../docs/toolchain.md).
+[docs/dependencies.md](../../docs/dependencies.md).
 Memory-model and cache design details are in [docs/memory.md](../../docs/memory.md).

@@ -1,18 +1,36 @@
-# docs/ — block-level specifications
+# atomiX documentation
 
-Per-block specs, split out of DESIGN.md as blocks solidify. DESIGN.md stays
-the top-level contract; a spec lands here when a block needs more detail than
-the contract should carry.
+`DESIGN.md` is the architectural contract.  This directory holds the focused
+guides and interface specifications that make the contract buildable,
+verifiable, and replaceable.
 
-Expected documents (created in the phase that needs them):
+## Start with these guides
 
-- `axbus.md` — bus signals, timing diagrams, error semantics (phase 1)
-- `csr-map.md` — implemented CSRs, reset values, WARL behavior (phase 1)
-- `memory-map.md` — authoritative device map if it outgrows DESIGN.md §3.2
-- `components.md` — selectable implementation model and extension boundary
-- `component-map.md` — repository-wide component coverage and selection rule
-- `host-protocol.md` — USB framing between `axhost` and the shell (phase 7)
-- `role-interface.md` — doorbell, descriptor ring, role ID discovery (phase 7)
+- [build.md](build.md) — profile selection, builds, verification, formal, and
+  FPGA flow.
+- [dependencies.md](dependencies.md) — dependency tiers and compatibility
+  baseline.
+- [design-checklist.md](design-checklist.md) — live, evidence-based status and
+  the final hardware gate.
+- [toolchain.md](toolchain.md) — exact Ubuntu/Debian setup and known tool
+  workarounds.
+- [ulx3s-bringup.md](ulx3s-bringup.md) — safe ULX3S board procedure.
 
-Convention: specs are written *before* the RTL/software that implements them,
-and updated in the same change when behavior is deliberately altered.
+## Architecture and composition
+
+- [axbus.md](axbus.md) — the normative aXbus transaction contract.
+- [memory.md](memory.md) — reference memory, cache, SDRAM, and SD architecture.
+- [components.md](components.md) — component model and extension boundary.
+- [component-map.md](component-map.md) — which repository areas are selectable
+  and where their sources live.
+
+## Planned specifications
+
+The following documents are intentionally absent until their interface is
+designed and an implementation is ready to consume it:
+
+- `host-protocol.md` — host-link framing between `axhost` and the shell.
+- `role-interface.md` — role MMIO, descriptors, discovery, and interrupts.
+
+Keep a specification and its implementation change together whenever a
+documented interface changes.

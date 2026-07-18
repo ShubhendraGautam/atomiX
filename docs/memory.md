@@ -1,10 +1,10 @@
-# Phase 6 memory architecture
+# Reference memory and storage architecture
 
-Status: Phase 6's RTL path is complete and regressed. It provides the delayed
+Status: the reference RTL path is complete and regressed. It provides the delayed
 32 MiB model plus split I/D caches, a ULX3S-targeted MT48LC16M16 SDRAM
 controller boundary, SPI SDHC CMD17/CMD24, writable AXFS v1, and ROM SD boot.
-The physical-board proof remains the final Phase 10 gate; no simulation result is
-presented as electrical SDRAM validation.
+The physical-board proof remains the final hardware gate; no simulation result
+is presented as electrical SDRAM validation.
 
 ## Boundary and configuration
 
@@ -19,8 +19,8 @@ aXcore dbus ── D$ ── aXbus mux ── RAM / ROM / MMIO
 
 The cache boundary only claims the RAM range `0x8000_0000 .. RAM_BYTES-1`.
 ROM, CLINT, UART, test finisher, and decode errors bypass it exactly once; no
-device register is cached. The default SoC remains the Phase 5, 128 KiB
-dual-port BRAM configuration. Select the Phase 6 simulation configuration
+device register is cached. The default SoC remains the 128 KiB dual-port BRAM
+configuration. Select the delayed-memory/cache simulation configuration
 explicitly:
 
 ```bash
@@ -127,8 +127,7 @@ make -C sw/kernel check-storage
 
 This builds a deterministic SD image containing `motd` and `readme`, mounts it
 through the kernel SPI driver, and runs the normal shell plus fork/wait script
-on cached delayed RTL. It preserves the Phase 5 RAM-disk fallback for ISS and
-QEMU.
+on cached delayed RTL. It preserves the RAM-disk fallback for ISS and QEMU.
 
 ## Writable AXFS v1
 

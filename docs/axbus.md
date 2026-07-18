@@ -5,8 +5,8 @@ request/response, single outstanding transaction, deliberately a near-subset
 of Wishbone classic (a bridge is a thin adapter). Both aXcore masters
 (`ibus`, `dbus`) and every slave speak exactly this.
 
-Status: **v1, normative for phase 1+**. Changes require updating this spec in
-the same commit.
+Status: **v1, normative for the reference system**. Changes require updating
+this spec in the same commit.
 
 ## 1. Signals
 
@@ -86,9 +86,9 @@ err     __/‾‾‾\______      master takes an access-fault exception
 
 ## 4. Topology
 
-- `axbus_mux` (rtl/soc): address decode per DESIGN.md §3.2, routes one master
-  to N slaves; decode miss completes with `err=1` (never hangs — rule for
-  every slave too: bounded completion).
+- `axbus_mux` (`components/interconnect/axbus-reference/`): address decode per
+  DESIGN.md §3.2, routes one master to N slaves; decode miss completes with
+  `err=1` (never hangs — rule for every slave too: bounded completion).
 - v1 has two masters (`ibus`, `dbus`) hitting disjoint or dual-ported slaves;
   a true arbiter joins when a shared slave or a DMA master appears.
 

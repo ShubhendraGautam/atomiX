@@ -21,8 +21,8 @@ project's published v2/v3 pin map. It constrains only pins used by the shell.
 The Makefile targets `--85k`, `CABGA381`, ECP5 speed grade 6, and a 25 MHz
 timing goal.
 
-Build after the ECP5 tools in [docs/toolchain.md](../../docs/toolchain.md) are
-on `PATH`:
+Build after the ECP5 tools in [docs/dependencies.md](../../docs/dependencies.md)
+are on `PATH`:
 
 ```bash
 make fpga CONFIG=configs/ulx3s-85f.json  # boot ROM, Yosys, nextpnr, .bit
@@ -49,4 +49,5 @@ source RTL. This is a tool-frontend adapter, not a second hardware design.
 Until the ECP5 P&R tools are installed, `make -C rtl/fpga` fails immediately
 at its tool preflight rather than spending time on synthesis. The checked-in
 target has passed Yosys synthesis; the P&R timing report and physical-board
-transcript are deferred to the final Phase 10 evidence gate.
+transcript are deferred to the final hardware evidence gate in
+[docs/design-checklist.md](../../docs/design-checklist.md).

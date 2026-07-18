@@ -1,12 +1,16 @@
 # Toolchain and host setup
 
 Everything needed to build, simulate, and formally verify atomiX, captured
-from the actual bring-up on Ubuntu 22.04 (jammy) under WSL2. The compiler,
+from the verified Ubuntu 22.04 (jammy) WSL2 host. The compiler,
 simulator, and SMT solvers are distro packages. SymbiYosys (SBY),
 riscv-formal, and a current Yosys are installed from upstream because Ubuntu
 22.04's Yosys 0.9 cannot parse the SystemVerilog packages used by aXcore.
 
-## Install (Ubuntu/Debian)
+For a dependency-tier overview and a short build path, see
+[dependencies.md](dependencies.md) and [build.md](build.md).  This document
+keeps the detailed commands and compatibility workarounds.
+
+## Core packages (Ubuntu/Debian)
 
 ```bash
 sudo apt update          # do this first: stale lists cause 404s mid-install
@@ -23,17 +27,17 @@ sudo apt install \
   python3
 ```
 
-| Package | Provides | Needed from |
+| Package | Provides | When needed |
 |---|---|---|
-| `build-essential` | host `g++`, `make` — builds aXsim and the cosim harness (`clang++` works too; the Makefile auto-detects) | phase 0 |
-| `gcc-riscv64-unknown-elf` | the RISC-V cross-compiler (multilib: targets rv32 despite the name) + binutils | phase 0 |
-| `picolibc-riscv64-unknown-elf` | optional libc for later, richer bare-metal programs; the current runtime is freestanding and does not need it | later phase 3 |
-| `verilator` | SystemVerilog → C++ simulation | phase 1 |
-| `qemu-system-misc` | `qemu-system-riscv32` — the third platform of the §3.1 three-platform rule | phase 3 |
-| `boolector`, `z3` | optional alternate SMT solvers for exploratory formal work | phase 2 |
-| `git`, `make`, `python3` | test runners and upstream formal-tool installation | phases 0–2 |
+| `build-essential` | host `g++`, `make` — builds aXsim and the cosim harness (`clang++` works too; the Makefile auto-detects) | core build |
+| `gcc-riscv64-unknown-elf` | the RISC-V cross-compiler (multilib: targets rv32 despite the name) + binutils | target software |
+| `picolibc-riscv64-unknown-elf` | optional libc headers for richer bare-metal and some riscv-tests virtual-memory builds | target software |
+| `verilator` | SystemVerilog → C++ simulation | RTL simulation |
+| `qemu-system-misc` | `qemu-system-riscv32` — the third platform of the §3.1 rule | basic QEMU experiments |
+| `boolector`, `z3` | optional alternate SMT solvers for exploratory formal work | formal exploration |
+| `git`, `make`, `python3` | test runners and upstream formal-tool installation | general use |
 
-## Formal tools (phase 2)
+## Formal verification
 
 The Ubuntu 22.04 `yosys` package is useful for simple Verilog, but its 0.9
 parser fails on `package`/`import` in this RTL. Install current Yosys before
@@ -76,7 +80,7 @@ distro version on a normal Ubuntu `PATH`. `/opt/sby` similarly places `sby` in
 `/usr/local/bin`. `/opt/riscv-formal` remains an external reference checkout;
 the atomiX repository never modifies it.
 
-## ECP5 FPGA tools (final Phase 10 hardware gate)
+## ECP5 FPGA tools
 
 The ULX3S target needs the ECP5-specific tools `nextpnr-ecp5` and `ecppack`
 from Project Trellis in addition to Yosys. Ubuntu 22.04 packages generic and
@@ -204,7 +208,7 @@ source "$HOME/opt/oss-cad-suite/environment"  # if using the suite above
 make -C rtl/fpga
 ```
 
-## QEMU required for Phase 5
+## QEMU for aXos
 
 The Ubuntu 22.04 `qemu-system-riscv32` package is 6.2. Its RISC-V model has a
 known upstream PMP bug: `mret` into S/U mode traps when no PMP entries are

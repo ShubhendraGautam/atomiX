@@ -1,7 +1,7 @@
 # sim/cosim/ — lock-step cosimulation harness
 
-The strongest verification leg (phase 1): a **Verilator** testbench that runs
-the RTL core and `aXsim` in lock step. On every retired instruction it
+The strongest verification leg: a **Verilator** testbench that runs the
+reference RTL core and `aXsim` in lock step. On every retired instruction it
 compares:
 
 - PC and raw instruction bits
@@ -26,5 +26,7 @@ make -C sim/cosim riscv-tests          # built rv32ui + rv32mi binaries
 ```
 
 Inputs grow to include riscv-tests binaries, directed tests from `tests/`, and
-random streams from `sim/testgen/`. Phase 1 exit bar remains 10⁷ random
-instructions with zero divergence. CI wiring is the next verification task.
+random streams from `sim/testgen/`.  The reference CPU has completed a
+10,000,060-event randomized lock-step run across ten seeds; repeat it with
+`make -C sim/testgen fuzz` after core or architectural changes.  A selected
+non-reference core must establish its own cosimulation compatibility claim.

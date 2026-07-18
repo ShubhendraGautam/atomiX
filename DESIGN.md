@@ -39,7 +39,7 @@ we build.
 |---|---|---|
 | Build vs adopt | **Scratch-build only what teaches** (core, bus, kernel, roles); **adopt the industry standard everywhere else** (RISC-V ISA, stock GCC, ELF, riscv-tests, riscv-formal, Verilator, QEMU-`virt` map, 16550 UART, xv6 scope, Wishbone-adjacent bus) | Maximum support and knowledge base; our effort concentrates where the learning is |
 | Languages | **Polyglot, right tool per layer**: C for target software (kernel, bare-metal, userland), C++ for host tooling (ISS/cosim — Verilator emits C++), Python for scripts | Cross-language conflicts are resolved at the boundary where they appear, case by case |
-| ISA | RISC-V **RV32I + Zicsr**, privileged spec M/S/U, **Sv32** MMU; add **M** ext. in phase 2 | Free GCC/LLVM/QEMU ecosystem; privileged spec is mandatory for the kernel goal |
+| ISA | RISC-V **RV32IM + Zicsr**, privileged spec M/S/U, **Sv32** MMU | Free GCC/LLVM/QEMU ecosystem; privileged spec is mandatory for the kernel goal |
 | HDL | **SystemVerilog** (synthesizable subset supported by Yosys) | Verilator for fast sim; portable to any vendor flow |
 | Microarchitecture | **Classic 5-stage pipeline from day one** (IF ID EX MEM WB) | Precise exceptions and hazard handling are designed in from the start, not retrofitted |
 | Memory system | **BRAM first**, then delayed external-memory + I$/D$ caches and an x16 SDRAM controller | CPU↔memory already tolerates wait states, so the cache/controller slots in without core changes; physical proof is a board gate |
@@ -79,8 +79,8 @@ we build.
                  │  ┌───┴──────────────────────────────┐       │
                  │  │        aXcore CPU                 │       │
                  │  │  RV32I(M) Zicsr, 5-stage pipeline │       │
-                 │  │  M/S/U modes, Sv32 MMU (phase 4)  │       │
-                 │  │  [I$ and D$ added in phase 6]     │       │
+                 │  │  M/S/U modes, Sv32 MMU            │       │
+                 │  │  optional I$ and D$ cache path    │       │
                  │  └───────────────────────────────────┘       │
                  └─────────────────────────────────────────────┘
 ```
@@ -102,7 +102,7 @@ bug" from "hardware bug".
 | `0x0200_0000` | 64 KB | CLINT: `msip`, `mtimecmp`, `mtime` |
 | `0x0C00_0000` | 4 MB | PLIC (reserved; implemented when we have >1 interrupt source) |
 | `0x1000_0000` | 4 KB | UART0 (16550-compatible subset) |
-| `0x1001_0000` | 4 KB | SPI0 (polling mode-0 controller for Phase 6 SD card) |
+| `0x1001_0000` | 4 KB | SPI0 (polling mode-0 controller for SD card) |
 | `0x8000_0000` | 128 KB → 32 MB | RAM (BRAM in v1; 32 MiB x16 SDRAM on ULX3S). Kernel loads at `0x8000_0000` |
 
 Misaligned or unmapped accesses raise the appropriate precise exception; the
@@ -165,23 +165,21 @@ runs end-to-end under Verilator before any hardware exists.
 
 ## 4. CPU: `aXcore`
 
-### 4.1 ISA subset by phase
+### 4.1 ISA profile and scope
 
-- **Phase 1:** RV32I + Zicsr + `ecall`/`ebreak`/`mret`, machine mode only,
-  with precise synchronous traps (illegal instruction, misaligned, ecall).
-- **Phase 2:** M extension (multiply/divide; multi-cycle unit that stalls EX).
-- **Phase 3:** Machine software/timer/external interrupt lines, CLINT, and the
-  QEMU-`virt`-aligned SoC shell; a pending enabled interrupt is taken after
-  the current instruction retires. The exit demo is a timer-preempted,
-  two-context bare-metal program whose UART transcript is identical on ISS,
-  QEMU, and RTL.
-- **Phase 4:** S and U modes, `sret`, Sv32 page tables, `sfence.vma`, TLB,
-  `mstatus` interposition (SUM/MXR), delegation via `medeleg`/`mideleg`.
-- **Deliberately skipped:** C extension (complicates fetch alignment for little
-  design value here), A extension (single hart; kernel critical sections use
-  interrupt disabling). Revisit A only if multicore ever enters scope.
+The reference core implements RV32IM + Zicsr, precise synchronous traps,
+machine/supervisor/user modes, CLINT interrupts, Sv32 page tables and TLB,
+`sfence.vma`, SUM/MXR handling, and delegation through `medeleg`/`mideleg`.
+Multiply and divide use a fixed-latency unit that stalls EX.
 
-Toolchain flags: `-march=rv32i_zicsr -mabi=ilp32` (later `rv32im_zicsr`).
+The C extension remains deliberately out of scope because it complicates
+fetch alignment without enabling the current system goals.  The A extension is
+also out of scope for the single-hart design; kernel critical sections disable
+interrupts.  Revisit either only when a concrete enabling need exists.
+
+The portable baseline is `-march=rv32im -mabi=ilp32`.  Newer toolchains may
+use the explicit `rv32im_zicsr` spelling; Ubuntu 22.04 GCC 10 accepts CSR
+instructions through the compatible `rv32im` spelling.
 
 ### 4.2 Pipeline
 
@@ -217,8 +215,9 @@ Classic 5 stages: **IF → ID → EX → MEM → WB**.
   forwarding network exists or needs verifying.
 - **CSR file:** its own module, accessed in EX under the serialization rule.
 - **`FENCE`:** no extra hardware action in the single-hart write-through
-  cache design. **`FENCE.I`:** serializes in the core and, with Phase 6
-  caches enabled, retires a registered I-cache invalidation before refetch.
+  cache design. **`FENCE.I`:** serializes in the core and, when the selected
+  profile enables caches, retires a registered I-cache invalidation before
+  refetch.
   **`WFI`:** executes as a nop in v1.
 
 ### 4.3 Correctness definition
@@ -258,42 +257,36 @@ slave  → master: ready, rdata[31:0], err
 3. **riscv-formal + SymbiYosys:** bounded formal proofs of the pipeline
    (register writeback correctness, PC ordering, trap precision).
 
-CI runs legs 1–2 on every change; formal runs on core changes.
+The recommended automation policy is to run simulation legs on every relevant
+change and formal jobs on core/RVFI changes.  The reproducible commands and
+current evidence are in [docs/build.md](docs/build.md) and
+[docs/design-checklist.md](docs/design-checklist.md).
 
-## 7. Software stack plan
+## 7. Software stack
 
 - **Toolchain:** stock `riscv64-unknown-elf-gcc` (multilib rv32) — no custom
   compiler work.
-- **Bare-metal phase:** crt0 + linker script + tiny libc subset (`printf` over
-  UART) for bring-up programs and tests.
-- **Kernel (`aXos`):** monolithic, xv6-inspired scope, our own code:
-  boot → paging on (Sv32) → trap handling → processes + selectable scheduler
-  (preemption via CLINT timer) → fork/exec/exit/wait/read/write/pipe →
-  simple inode filesystem (RAM-disk first, SD card later) → userland: init,
-  `sh`, `ls`, `cat`, `echo`.
-- Kernel development starts on `aXsim`/QEMU in parallel with RTL work — the
-  platform-compatibility rule (§3.1) makes it land on real RTL unchanged.
+- **Bare metal:** crt0, linker script, MMIO helpers, timer/preemption, and SD
+  bring-up programs are checked across ISS, QEMU, and RTL.
+- **Kernel (`aXos`):** monolithic and xv6-inspired in scope: Sv32, trap
+  handling, tasks, selectable scheduling/VM/storage policies, a resident
+  shell, and SD boot/storage paths.  It is developed against aXsim/QEMU in
+  parallel with RTL under the platform-compatibility rule (§3.1).
+- **Future user and host software:** separately linked userland and `axhost`
+  begin only when their executable-loader and host-link contracts are defined.
 
-## 8. Roadmap
+## 8. Engineering status and next work
 
-| Phase | Deliverable | Exit criterion |
-|---|---|---|
-| **0. Foundations** ✅ | Repo layout, toolchain container/Makefiles, `aXsim` ISS | ISS passes rv32ui + rv32mi riscv-tests — **met 2026-07-18** (`ma_data` policy-excluded: we trap on misaligned, verified by `ma_addr`) |
-| **1. Core, M-mode** ✅ | 5-stage RV32I+Zicsr core, traps, lock-step cosim rig | RTL passes riscv-tests + 10⁷-instruction random cosim with zero divergence — **met 2026-07-18** (41 rv32ui/rv32mi tests; 10,000,060 generated lock-step events) |
-| **2. Formal + M ext** ✅ | riscv-formal integration; multiply/divide unit | Formal checks pass; `rv32um` tests pass — **met 2026-07-18** (insn add/beq/lw/sw sby checks; 8 rv32um tests lock-step on RTL) |
-| **3. SoC v1** ✅ | aXbus, BRAM ROM/RAM, UART, CLINT; interrupt-driven bare-metal demo | Timer-preempted multitasking demo over UART, identical on ISS/QEMU/RTL — **met 2026-07-18** (`check-preempt`; interrupt/commit collision regressions added) |
-| **4. Privileged CPU** ✅ | S/U modes, Sv32 MMU + TLB, delegation | `rv32si` and paging-heavy lock-step cosim — **met 2026-07-18** (6 upstream supervisor tests in ISS and RTL; 100,000 randomized Sv32/U-mode events across 10 seeds) |
-| **5. Kernel bring-up** ✅ | `aXos` core: paging, processes, syscalls, shell on RAM-disk | Interactive shell on the RTL simulation console — **met 2026-07-18** (`help`, `ls`, `cat`, `echo`, `fork`, `exit`; shell and fork/wait sessions pass unchanged on ISS, QEMU, and RTL) |
-| **6. Real memory** ✅ *(RTL verified)* | Delayed 32 MiB model + I$/D$; ULX3S x16 SDRAM controller boundary; SPI SDHC CMD17/CMD24; writable AXFS; ROM SD boot | Kernel boots from SD into the physical SDRAM-controller simulation path — **met 2026-07-18** |
-| **7. Host link + role framework** | USB framed protocol, `axhost` host tool, role slot on aXbus (doorbell + descriptor ring), null "loopback" role | Host submits a buffer, loopback role echoes it, completion reaches `axhost` — end-to-end in simulation |
-| **8. TPU-lite role** | int8 systolic GEMM array + aXos role service + host matmul library | Offloaded matmul matches reference results; measured speedup vs aXcore software matmul |
-| **9. Platform polish** | Bitstream-swap mode switching from `axhost`, second role (stretch), docs | One-command mode switch; same `axhost` drives both roles |
-| **10. Physical FPGA bring-up** *(final gate)* | ULX3S-85F top, LPF constraints, UART PHY, synthesis adapter, P&R timing, reversible programming, and board proof | Same bitstream-driven shell on physical hardware |
+The reference CPU, SoC, kernel, memory/storage path, component composition,
+and simulation/formal verification infrastructure are complete to their
+current contracts.  The live, command-backed status is maintained in
+[docs/design-checklist.md](docs/design-checklist.md), rather than duplicating
+a phase ledger here.
 
-Phases 0–9 can progress without a board; simulation remains the integration
-environment until hardware arrives. Phase 10 is deliberately the final gate:
-it records P&R/timing and ULX3S board evidence without blocking component,
-kernel, host-link, or accelerator work.
+The next platform work is the host-link/role contract and its loopback proof,
+followed by the TPU-lite role.  ECP5 place-and-route and physical ULX3S
+bring-up remain the final gate: they do not block simulation or component work,
+but no physical-hardware claim is made before their evidence is recorded.
 
 ## 9. Repository layout
 
@@ -301,46 +294,40 @@ kernel, host-link, or accelerator work.
 atomiX/
 ├── DESIGN.md            # this document
 ├── docs/                # per-block specs as they solidify (bus, CSR map, …)
-├── components/          # selectable implementation manifests + extension guide
+├── components/          # selectable manifests and owned RTL/service sources
 ├── configs/             # reproducible component selections for sim/boards
 ├── tools/               # dependency-free configuration resolver
 ├── rtl/
-│   ├── core/            # aXcore: pipeline stages, CSR file, MMU
-│   ├── soc/             # aXbus, memories, UART, CLINT, top-level (the shell)
-│   ├── roles/           # role designs: loopback, tpu/ (phase 7+)
-│   └── fpga/            # board top-levels + constraints (final Phase 10 gate)
+│   ├── core/            # CPU architecture signpost -> components/core/
+│   ├── soc/             # SoC architecture signpost -> component owners
+│   ├── roles/           # future role design area
+│   └── fpga/            # generic ECP5 flow; board sources live in components/
 ├── sim/
 │   ├── axsim/           # the ISS golden model
 │   ├── cosim/           # Verilator harness, lock-step checker
+│   ├── soc/             # generic complete-SoC runner
 │   └── testgen/         # random instruction generator
 ├── formal/              # riscv-formal glue + SymbiYosys configs
 ├── sw/
 │   ├── baremetal/       # crt0, linker scripts, bring-up programs
-│   ├── kernel/          # aXos (incl. role services, host-link protocol)
-│   ├── user/            # userland programs
-│   └── host/            # axhost driver/daemon + per-role host libraries
+│   ├── kernel/          # aXos orchestration; services selected from components/
+│   ├── user/            # future separately linked userland
+│   └── host/            # future axhost driver/daemon + role libraries
 └── tests/               # riscv-tests submodule + directed tests
 ```
 
-## 10. Open questions (to close in phase 0)
+## 10. Deferred design decisions
 
-1. ~~**ISS language**~~ **Closed:** C++ (direct linkage into the Verilator
-   cosim testbench). See the Languages row in §2 for the project-wide policy.
-2. **License** for the repo (BSD/MIT/Apache-2.0).
-3. ~~**Random test generation**~~ **Closed:** a small, own-code constrained
-   generator (`sim/testgen/gen.py`) supplies deterministic RV32I+Zicsr
-   streams to lock-step cosim. Revisit riscv-dv only when richer privilege,
-   MMU, or extension coverage makes the small generator insufficient.
-4. **UART model:** full 16550 register compatibility vs minimal
-   data/status pair. QEMU-`virt` alignment argues for the 16550 subset.
+1. **License:** choose the repository license before external distribution.
+2. **Host link:** define USB-serial framing, flow control, failure recovery,
+   and whether bitstream upload shares the transport or uses the FTDI JTAG
+   path.
+3. **Role interface:** allocate the role MMIO region and descriptor format,
+   including doorbell and completion semantics (polling versus PLIC).
+4. **TPU-lite sizing:** choose array dimensions within the ECP5-85F DSP budget
+   and settle the int8×int8→int32 accumulation/activation split.
+5. **UART compatibility depth:** retain the current 16550-style subset or
+   expand it only when a concrete software compatibility need appears.
 
-**To close in phase 7 (platform):**
-
-5. **Host-link protocol:** framing, flow control, error recovery over
-   USB-serial; whether bitstream upload goes through the same channel or
-   the board's FTDI JTAG path.
-6. **Role MMIO map + descriptor format:** ring layout, doorbell semantics,
-   completion signaling (polling vs PLIC interrupt).
-7. **TPU-lite dimensions:** array size vs ECP5-85F DSP budget (156 18×18
-   multipliers), int8×int8→int32 accumulate, activation ops in HW vs on
-   aXcore.
+Physical-board observations are not an open design question: they are the
+separate final evidence gate in [docs/design-checklist.md](docs/design-checklist.md).

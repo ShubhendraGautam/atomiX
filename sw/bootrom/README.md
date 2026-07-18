@@ -1,4 +1,4 @@
-# sw/bootrom/ — Phase 6 SD boot ROM
+# sw/bootrom/ — SD boot ROM
 
 This is a small M-mode loader linked at `0x0000_1000`. It uses the polling
 SPI controller to initialize an SDHC card, reads an `AXBT` header and raw

@@ -12,15 +12,15 @@ Everything around the core that forms the stock shell + role platform
 - `axbus_*` — the interconnect: minimal synchronous valid/ready bus, address
   decode, arbiter slot for future DMA/debug masters. Deliberately a
   near-subset of Wishbone classic so a bridge to third-party cores is thin.
-- Boot ROM + RAM (BRAM by default, dual-port to serve ibus and dbus). Phase 6
-  adds a delayed external-memory model, optional split I/D caches, and
+- Boot ROM + RAM (BRAM by default, dual-port to serve ibus and dbus), plus a
+  delayed external-memory model, optional split I/D caches, and
   `axsdram.sv`, the ULX3S x16 SDR SDRAM controller.
 - `uart.sv` — 16550-compatible subset (industry standard; matches QEMU-`virt`
   so software runs unchanged on ISS/QEMU/RTL).
 - `clint.sv` — timer + software interrupts (`mtime`, `mtimecmp`, `msip`),
   RISC-V-standard programming model. PLIC joins when there is more than one
   external interrupt source.
-- Host-link endpoint (USB-serial framing, phase 7) and the role slot that
+- Planned host-link endpoint (USB-serial framing) and role slot that future
   `rtl/roles/` designs plug into.
 - `axbus_mux.sv` — one fixed-map aXbus decode fabric per aXcore master;
   unmapped accesses complete with an error rather than hanging.
@@ -49,8 +49,8 @@ Everything around the core that forms the stock shell + role platform
   implementations; the actual named-port instantiations are the compact stock
   integration contracts.
 
-The memory map is QEMU-`virt`-aligned — see DESIGN.md §3.1/§3.2. Built in
-phase 3. The currently implemented shell is covered by:
+The memory map is QEMU-`virt`-aligned — see DESIGN.md §3.1/§3.2. The currently
+implemented shell is covered by:
 
 ```bash
 make -C sim/unit run-soc        # ROM, RAM, UART, and finisher

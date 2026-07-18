@@ -10,7 +10,11 @@ and enforced (DESIGN.md §6).
 | [cosim/](cosim/) | Verilator harness comparing RTL against aXsim per retired instruction |
 | [soc/](soc/) | Complete `soc_top` runner with `$readmemh`-initialized RAM |
 | [testgen/](testgen/) | Random RISC-V instruction-stream generator for cosim fuzzing |
+| [unit/](unit/) | Directed RTL block and SoC integration tests |
 
 Three-platform rule: all software must run unchanged on aXsim, QEMU
 (`-machine virt`), and the Verilated RTL — that's how "software bug" is
 isolated from "hardware bug".
+
+Use [docs/build.md](../docs/build.md) for the recommended test order and
+[docs/design-checklist.md](../docs/design-checklist.md) for current evidence.

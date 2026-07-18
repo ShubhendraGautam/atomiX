@@ -8,7 +8,7 @@ selected ISA properties.
 ## Prerequisites
 
 Install the required tools as documented in
-[`docs/toolchain.md`](../docs/toolchain.md#formal-tools-phase-2). In short,
+[`docs/toolchain.md`](../docs/toolchain.md#formal-verification). In short,
 the host needs `yosys`, `sby`, and an unmodified `riscv-formal` checkout at
 `/opt/riscv-formal`. Boolector and Z3 are optional for exploratory jobs.
 
@@ -53,5 +53,7 @@ python3 formal/run_checks.py insn_add_ch0
 
 The generated check and its solver log are below `formal/build/sat/`.
 
-CI policy: formal jobs run on every change touching `components/core/pipeline5/`;
-simulation legs run on everything.
+Recommended gate policy: run formal jobs for changes touching
+`components/core/pipeline5/` and run the relevant simulation legs for every
+behavioral change.  The project-wide command matrix is in
+[docs/build.md](../docs/build.md).

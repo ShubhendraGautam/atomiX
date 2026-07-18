@@ -6,8 +6,8 @@ only a short architecture-facing signpost; build selection always comes from
 this component's manifest.
 
 The from-scratch RISC-V CPU: **RV32IM + Zicsr**,
-classic 5-stage pipeline (IF ID EX MEM WB), machine mode first, S/U modes +
-Sv32 MMU in phase 4. See DESIGN.md §4 for the closed microarchitecture.
+classic 5-stage pipeline (IF ID EX MEM WB), M/S/U modes, and Sv32 MMU.  See
+DESIGN.md §4 for the closed microarchitecture.
 
 Load-bearing properties (do not regress):
 
@@ -30,8 +30,8 @@ modules: `axcore_pkg.sv` (shared types), `regfile.sv`, `alu.sv`, `immdec.sv`,
 `decoder.sv`, `branch_cmp.sv`, `muldiv.sv`, `csr_file.sv`, and `sv32_mmu.sv`.
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
-**and** riscv-formal — all three. The RVFI/formal integration was added in
-phase 2, after the ISS and lock-step harness existed.
+**and** riscv-formal — all three.  Run the current evidence commands from
+[docs/build.md](../../../docs/build.md).
 
 `axcore.sv` also exposes a non-invasive `trace_*` commit-observation port.
 It is sampled by `sim/cosim/` immediately before the committing clock edge;

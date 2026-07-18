@@ -2,7 +2,7 @@
 
 - `riscv-tests/` — the official RISC-V ISA test suite (git submodule). The
   industry-standard correctness baseline: rv32ui (base ISA), rv32mi (M-mode
-  traps), later rv32um (M ext) and rv32si (S-mode). Run against **both**
+  traps), rv32um (M extension), and rv32si (S-mode). Run against **both**
   aXsim and the RTL.
   - Build: `make -C riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf-`
     builds the `-p` (physical) variants. The `-v` (Sv32 demand-paging)
@@ -12,8 +12,10 @@
     -nostartfiles -isystem /usr/lib/picolibc/riscv64-unknown-elf/include"`
     (docs/toolchain.md has the full story).
   - Run: `./run-riscv-tests.sh` (env `SIM=` selects the simulator). Suite
-    args select more: `rv32si` (S-mode, ISS-only until the phase-4 RTL),
-    `rv32um`, and `rv32ui-v`/`rv32um-v` for the virtual-memory environment.
+    args select `rv32si`, `rv32um`, and `rv32ui-v`/`rv32um-v` for the
+    virtual-memory environment. For RTL lock-step, run for example
+    `SIM=sim/cosim/obj_dir/axcosim tests/run-riscv-tests.sh rv32si` from the
+    repository root after building the harness.
   - Policy exclusion: `rv32ui-p-ma_data` expects hardware misaligned-access
     support; atomiX traps on misaligned (like Spike without `--misaligned`),
     which `rv32mi-p-ma_addr` verifies instead.

@@ -1,0 +1,83 @@
+# Dependencies and compatibility
+
+atomiX separates its dependency tiers so a simulator-only user does not need a
+formal toolchain or FPGA tools.  The commands below are safe to review and run
+yourself; this repository never installs system packages automatically.
+
+For exact installation procedures, version-specific workarounds, and commands
+for a local QEMU or upstream formal stack, use [toolchain.md](toolchain.md).
+
+## Core: simulation and target software
+
+Required for the ISS, Verilator simulation, and bare-metal images on
+Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install build-essential gcc-riscv64-unknown-elf \
+  picolibc-riscv64-unknown-elf verilator qemu-system-misc git make python3
+```
+
+`gcc-riscv64-unknown-elf` includes RV32 multilib support despite its package
+name.  The project defaults to `-march=rv32im -mabi=ilp32`, which works with
+Ubuntu 22.04's GCC 10.2 as well as newer toolchains.
+
+## Kernel checks: a current QEMU
+
+The packaged Ubuntu 22.04 QEMU 6.2 is adequate for basic experiments but is
+not adequate for the PMP-less S/U-mode aXos checks.  Use QEMU 7 or newer and
+pass it explicitly when needed:
+
+```bash
+make -C sw/kernel check-boot QEMU=/path/to/qemu-system-riscv32
+```
+
+[toolchain.md](toolchain.md#qemu-for-axos) gives a small RISC-V-only local
+build procedure that coexists with the distro package and needs no system-wide
+installation.
+
+## Formal verification
+
+The formal flow needs a current upstream Yosys, SymbiYosys (`sby`), and a
+separate riscv-formal checkout.  Boolector and Z3 are useful solver choices:
+
+```bash
+sudo apt install boolector z3
+```
+
+Ubuntu 22.04's Yosys 0.9 is too old for the SystemVerilog packages used by
+this project.  Follow the guarded upstream installation in
+[toolchain.md](toolchain.md#formal-verification) before running:
+
+```bash
+make -C formal check
+```
+
+## FPGA synthesis, place-and-route, and programming
+
+The ULX3S ECP5 target needs a matched `yosys`, `nextpnr-ecp5`, and `ecppack`.
+Use the prebuilt [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases)
+rather than compiling the complete FPGA stack locally.  It keeps the tools
+matched and avoids a long one-off build.
+
+`openFPGALoader` and `picocom` are only needed for physical-board work.  The
+setup, tool verification, and safe SRAM-versus-flash distinction are in
+[toolchain.md](toolchain.md#ecp5-fpga-tools) and
+[ulx3s-bringup.md](ulx3s-bringup.md).
+
+## Recorded working baseline
+
+The following is a compatibility record from the verified Ubuntu 22.04.5 WSL2
+host on 2026-07-18, not a set of strict pins:
+
+| Tool | Recorded version | Use |
+|---|---:|---|
+| RISC-V GCC | 10.2.0 | RV32 bare-metal and kernel images |
+| Verilator | 4.038 | RTL simulation |
+| QEMU | 8.2.10 (local) | Three-platform and aXos checks |
+| Yosys | 0.67+ (upstream) | Formal flow |
+| Python | 3.10.12 | Test generation and runners |
+| GNU Make | 4.3 | Build orchestration |
+
+Newer compatible releases are welcome.  Record the version and the evidence
+you ran when changing a toolchain assumption.

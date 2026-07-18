@@ -1,9 +1,10 @@
 # ULX3S-85F bring-up checklist
 
-This is the final hardware gate for Phase 10. It applies to an ULX3S v2/v3 with an
+This is the final hardware gate. It applies to an ULX3S v2/v3 with an
 LFE5U-85F-6BG381C, the on-board 32 MiB SDR SDRAM, and a microSD card used as
 the atomiX boot disk. Do not treat passing simulation as proof of board
-electrical timing.
+electrical timing. Review [dependencies.md](dependencies.md) and the physical
+section of [design-checklist.md](design-checklist.md) before starting.
 
 ## 1. Regressions before a bitstream
 

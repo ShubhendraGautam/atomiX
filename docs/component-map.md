@@ -43,8 +43,8 @@ harnesses, and aXos services are
 The following items are not missing components; they are future systems that
 will introduce their own coherent boundaries when they exist:
 
-- Host-link transports and accelerator roles (Phase 7) will be `host_link` and
-  `role` components, with a virtual-pipe simulation implementation first.
+- Host-link transports and accelerator roles will be `host_link` and `role`
+  components, with a virtual-pipe simulation implementation first.
 - Userland, bootloader, and alternate operating systems are `software`
   components today. A project that wants a distinct boot chain owns it through
   its software manifest instead of being forced into aXos internals.
@@ -52,7 +52,7 @@ will introduce their own coherent boundaries when they exist:
   not runtime implementations. They validate every selected component rather
   than being silently substituted for one another. Their profiles and commands
   stay explicit evidence gates.
-- ECP5 place-and-route and physical ULX3S proof are the final Phase 10 gate;
+- ECP5 place-and-route and physical ULX3S proof are the final hardware gate;
   they do not block simulation-first component work.
 
 Use `make component-list` to inspect the catalog, `make component-show

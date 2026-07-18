@@ -13,8 +13,8 @@ QEMU-virt-aligned UART, CLINT, and test-finisher addresses.
   full-register M-mode trap entry plus a three-tick machine-timer demo
 - `examples/preempt.c` — two task contexts on distinct stacks, switched by
   timer interrupts. Its expected UART transcript is `preempt: ABABAB`.
-- `include/spi.h`, `examples/spi.c`, and `examples/sd.c` — the Phase 6
-  polling SPI register interface, an idle-MISO smoke image, and SPI-mode SDHC
+- `include/spi.h`, `examples/spi.c`, and `examples/sd.c` — the polling SPI
+  register interface, an idle-MISO smoke image, and SPI-mode SDHC
   initialization plus a 512-byte CMD17 sector read.
 
 Build and run the current bring-up program:
@@ -35,7 +35,7 @@ make -C sw/baremetal check-sd    # virtual SDHC init + block read on RTL
 `RISCV_ARCH=rv32im` (its Zicsr support is included in that spelling); newer
 toolchains may be invoked with `RISCV_ARCH=rv32im_zicsr`.
 
-The Phase 3 bare-metal exit demo is now covered by `check-preempt`. It saves
+The timer-preemption demo is covered by `check-preempt`. It saves
 all integer registers into the interrupted task's frame, selects another
 frame/`mepc`, restores it, and executes `mret`; this is intentionally a small
 and inspectable scheduler substrate rather than a kernel API.

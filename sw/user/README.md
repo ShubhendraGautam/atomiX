@@ -3,8 +3,8 @@
 Programs running in U-mode under aXos, against its syscall ABI (static ELF,
 no dynamic linking).
 
-Phase 5 delivers the resident aXos shell and a U-mode fork/wait process demo
-in `sw/kernel/`; the shell supplies `ls`, `cat`, and `echo` over its RAM disk.
+The resident aXos shell and U-mode fork/wait process demo currently live in
+`sw/kernel/`; the shell supplies `ls`, `cat`, and `echo` over its RAM disk.
 This directory becomes the home for separately linked `init`, `sh`, and
 coreutils once the executable loader and persistent filesystem arrive with
 real memory/SD work.

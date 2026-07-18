@@ -1,22 +1,14 @@
 # sim/axsim/ — the aXsim instruction-set simulator
 
-**The first thing built in the project** (phase 0): an instruction-accurate
-RV32IM ISS in C++ (chosen for direct linkage into the Verilator cosim
-testbench). It is the golden model the RTL is judged against, and doubles as
-the fast kernel-development platform (~10⁸ inst/s vs ~10⁶ cycles/s Verilated).
+`aXsim` is an instruction-accurate RV32IM ISS in C++ (chosen for direct
+linkage into the Verilator cosim testbench).  It is the golden model the RTL
+is judged against and the fast kernel-development platform.
 
-Scope grows with the CPU phases:
-
-1. RV32I fetch/decode/execute, regfile, flat memory with the DESIGN.md §3.2
-   map (phase 0)
-2. Zicsr + full M-mode trap machinery: `mstatus`, `mtvec`, `mepc`, `mcause`,
-   `mtval`, ecall/mret, illegal instruction (phase 0)
-3. ELF loading + riscv-tests `tohost`/`fromhost` harness (phase 0)
-4. CLINT + UART device models, interrupt injection (phase 3)
-5. M extension (phase 2); S/U modes, medeleg/mideleg trap delegation, and
-   Sv32 page-table walks with hardware A/D update (phase 4). The `Cpu::ext_su`
-   flag (default on) gates the privileged extension; lock-step cosimulation
-   runs with it enabled and compares the effective privilege at every event.
+Current scope includes RV32I execution, Zicsr and full M-mode trap state, ELF
+loading with the riscv-tests `tohost`/`fromhost` harness, CLINT and UART device
+models, RV32M, M/S/U trap delegation, and Sv32 page-table walks with hardware
+A/D updates.  `Cpu::ext_su` (on by default) gates the privileged extension;
+lock-step cosimulation compares the effective privilege at every event.
 
 Interfaces it must expose:
 
@@ -26,4 +18,5 @@ Interfaces it must expose:
 - **Library API**: `step()`-able C++ object for embedding in the cosim
   testbench.
 
-**Phase 0 exit criterion: passes all rv32ui + rv32mi riscv-tests.**
+Run `make -C sim/axsim test` for directed evidence.  The wider verification
+matrix is in [docs/build.md](../../docs/build.md).

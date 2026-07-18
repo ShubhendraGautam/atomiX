@@ -1,10 +1,11 @@
-# sw/host/ — axhost, the host-side driver
+# sw/host/ — planned axhost host-side driver
 
 The software that runs on your PC (Linux) and makes the FPGA a managed
-accelerator card (phase 7+):
+accelerator card. No host-link implementation exists yet; this directory
+records the intended boundary:
 
 - `axhost` daemon/CLI: opens the USB link, speaks the framed
-  `docs/host-protocol.md` shell protocol — bitstream upload (mode switch),
+  future `docs/host-protocol.md` shell protocol — bitstream upload (mode switch),
   buffer read/write, work submission, completion events
 - Per-role client libraries layered on top (e.g. `libaxtpu`: a matmul API
   that marshals tensors into role descriptors)

@@ -1,7 +1,7 @@
 # sim/testgen/ — random instruction-stream generator
 
-`gen.py` is a small, own-code constrained generator chosen for phase 1. It
-emits reproducible flat RV32IM+Zicsr images that terminate through the standard
+`gen.py` is a small, own-code constrained generator. It emits reproducible
+flat RV32IM+Zicsr images that terminate through the standard
 test finisher and run identically in aXsim and the Verilated core.
 
 Streams cover ALU dependencies, aligned byte/half/word loads and stores,
@@ -15,7 +15,7 @@ difference that must be resolved before those accesses enter cosim fuzzing.
 
 ```bash
 make -C sim/testgen quick     # one 10k-instruction stream with bus waits
-make -C sim/testgen fuzz      # at least 10,000,000 checked cosim events
+make -C sim/testgen fuzz      # 10 seeds; target >=10,000,000 checked events
 ```
 
 Every run prints its seed. A failing seed must be copied to `tests/directed/`

@@ -1,0 +1,463 @@
+// aXcore — RV32I + Zicsr, classic 5-stage pipeline (DESIGN.md §4).
+//
+//   IF: fetch via ibus; wait-state tolerant (holds valid/addr stable; a
+//       redirect during an in-flight fetch drains it and discards).
+//   ID: decode, regfile read (write-before-read bypass), immediates,
+//       load-use stall, serialization detect.
+//   EX: ALU, branch resolve (redirect, 2-cycle taken penalty), misaligned
+//       load/store detect, operand forwarding (EX/MEM and MEM/WB -> EX).
+//   MEM: dbus loads/stores; THE COMMIT POINT — traps, CSR effects, mret,
+//       serialize-resume redirects all fire here, so nothing younger can
+//       have had architectural effect.
+//   WB: register writeback only.
+//
+// Serialized instructions (CSR ops, mret, fence.i, wfi, ecall, ebreak):
+// fetch halts while they drain, the effect happens at commit, and fetch
+// resumes at the redirect target (pc+4 / mepc / mtvec). No CSR forwarding
+// network exists — by design.
+module axcore #(
+  parameter logic [31:0] RESET_PC = 32'h8000_0000
+) (
+  input  logic        clk,
+  input  logic        rst,       // synchronous, active high
+
+  // instruction fetch master (reads only)
+  output logic        ibus_valid,
+  output logic [31:0] ibus_addr,
+  input  logic        ibus_ready,
+  input  logic [31:0] ibus_rdata,
+  input  logic        ibus_err,
+
+  // data master
+  output logic        dbus_valid,
+  output logic [31:0] dbus_addr,
+  output logic [31:0] dbus_wdata,
+  output logic [3:0]  dbus_wstrb,
+  input  logic        dbus_ready,
+  input  logic [31:0] dbus_rdata,
+  input  logic        dbus_err
+);
+
+  import axcore_pkg::*;
+
+  // Exception causes (privileged spec).
+  localparam logic [3:0] EXC_IADDR = 4'd0, EXC_IFAULT = 4'd1,
+                         EXC_ILL = 4'd2, EXC_BREAK = 4'd3,
+                         EXC_LADDR = 4'd4, EXC_LFAULT = 4'd5,
+                         EXC_SADDR = 4'd6, EXC_SFAULT = 4'd7,
+                         EXC_ECALL_M = 4'd11;
+
+  // ---------------------------------------------------------------- control
+  logic        stall_ld;                    // load-use: ID holds, EX bubbles
+  logic        mem_busy;                    // dbus wait state: global freeze
+  logic        redirect_ex, redirect_mem;
+  logic [31:0] redirect_ex_pc, redirect_mem_pc;
+  wire         redirect    = redirect_mem || redirect_ex;
+  wire  [31:0] redirect_pc = redirect_mem ? redirect_mem_pc : redirect_ex_pc;
+
+  // ---------------------------------------------------------------- IF
+  logic [31:0] pc_q;      // address being fetched (stable while in flight)
+  logic [31:0] npc_q;     // deferred redirect target (fetch was in flight)
+  logic        kill_q;    // in-flight fetch is wrong-path: drop its result
+  logic        halt_q;    // serialized instruction draining
+  logic        ser_in_id; // (from ID) serialized instruction sits in ID now
+
+  wire fetch_halt    = halt_q || ser_in_id;
+  wire pc_misaligned = pc_q[1:0] != 2'b00;
+  wire want_fetch    = !fetch_halt && !pc_misaligned;
+  wire pend_hold     = ibus_valid && !ibus_ready;   // must keep valid+addr
+
+  logic pend_q;                                     // request crossed an edge
+  assign ibus_valid = !rst && (pend_q || want_fetch);
+  assign ibus_addr  = pc_q;
+  wire fetch_done   = ibus_valid && ibus_ready;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pc_q   <= RESET_PC;
+      npc_q  <= 32'b0;
+      kill_q <= 1'b0;
+      pend_q <= 1'b0;
+      halt_q <= 1'b0;
+    end else begin
+      pend_q <= pend_hold;
+
+      if (redirect) begin
+        halt_q <= 1'b0;
+        if (pend_hold) begin              // drain in-flight fetch first
+          kill_q <= 1'b1;
+          npc_q  <= redirect_pc;
+        end else begin
+          pc_q   <= redirect_pc;
+          kill_q <= 1'b0;
+        end
+      end else begin
+        if (ser_in_id && !stall_ld && !mem_busy)
+          halt_q <= 1'b1;                 // serialized insn advances to EX
+        if (fetch_done && kill_q) begin   // stale fetch drained
+          pc_q   <= npc_q;
+          kill_q <= 1'b0;
+        end else if (fetch_done && !mem_busy && !stall_ld && !fetch_halt)
+          pc_q <= pc_q + 32'd4;           // normal advance
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------- IF/ID
+  logic        ifid_v_q;
+  logic [31:0] ifid_pc_q, ifid_insn_q;
+  logic        ifid_exc_q;
+  logic [3:0]  ifid_cause_q;
+  logic [31:0] ifid_tval_q;
+
+  wire if_capture = fetch_done && !kill_q && !fetch_halt;
+
+  always_ff @(posedge clk) begin
+    if (rst || redirect) begin
+      ifid_v_q <= 1'b0;
+    end else if (!mem_busy && !stall_ld) begin
+      if (if_capture) begin
+        ifid_v_q     <= 1'b1;
+        ifid_pc_q    <= pc_q;
+        ifid_insn_q  <= ibus_rdata;
+        ifid_exc_q   <= ibus_err;
+        ifid_cause_q <= EXC_IFAULT;
+        ifid_tval_q  <= pc_q;
+      end else if (pc_misaligned && !fetch_halt) begin
+        ifid_v_q     <= 1'b1;             // inject fetch-misalign exception
+        ifid_pc_q    <= pc_q;
+        ifid_insn_q  <= 32'b0;
+        ifid_exc_q   <= 1'b1;
+        ifid_cause_q <= EXC_IADDR;
+        ifid_tval_q  <= pc_q;
+      end else begin
+        ifid_v_q <= 1'b0;                 // bubble
+      end
+    end
+    // stall_ld or mem_busy: IF/ID holds
+  end
+
+  // ---------------------------------------------------------------- ID
+  logic     dec_illegal, dec_rd_we, dec_csr_imm, dec_rs1, dec_rs2;
+  opa_sel_e dec_opa;
+  opb_sel_e dec_opb;
+  imm_sel_e dec_imm_sel;
+  alu_op_t  dec_alu_op;
+  wb_sel_e  dec_wb;
+  mem_op_e  dec_mem;
+  br_sel_e  dec_br;
+  csr_op_e  dec_csr;
+  sys_e     dec_sys;
+
+  decoder u_dec (
+    .insn(ifid_insn_q), .illegal(dec_illegal), .rd_we(dec_rd_we),
+    .opa_sel(dec_opa), .opb_sel(dec_opb), .imm_sel(dec_imm_sel),
+    .alu_op(dec_alu_op), .wb_sel(dec_wb), .mem_op(dec_mem), .br_sel(dec_br),
+    .csr_op(dec_csr), .csr_imm(dec_csr_imm), .sys(dec_sys),
+    .uses_rs1(dec_rs1), .uses_rs2(dec_rs2)
+  );
+
+  logic [31:0] dec_imm;
+  immdec u_imm (.insn(ifid_insn_q), .sel(dec_imm_sel), .imm(dec_imm));
+
+  wire [4:0] id_rs1 = ifid_insn_q[19:15];
+  wire [4:0] id_rs2 = ifid_insn_q[24:20];
+  wire [4:0] id_rd  = ifid_insn_q[11:7];
+
+  logic [31:0] rf_rs1, rf_rs2;
+  logic        wb_we;
+  logic [4:0]  wb_rd;
+  logic [31:0] wb_val;
+  regfile u_rf (
+    .clk(clk), .we(wb_we), .waddr(wb_rd), .wdata(wb_val),
+    .raddr1(id_rs1), .rdata1(rf_rs1), .raddr2(id_rs2), .rdata2(rf_rs2)
+  );
+
+  assign ser_in_id =
+      ifid_v_q && !ifid_exc_q && (dec_csr != CSR_NONE || dec_sys != SYS_NONE);
+
+  // ---------------------------------------------------------------- ID/EX
+  logic        idex_v_q, idex_exc_q, idex_rd_we_q, idex_csr_imm_q;
+  logic        idex_rs1_use_q, idex_rs2_use_q;
+  logic [3:0]  idex_cause_q;
+  logic [31:0] idex_tval_q, idex_pc_q, idex_insn_q;
+  logic [31:0] idex_rs1v_q, idex_rs2v_q, idex_imm_q;
+  logic [4:0]  idex_rs1_q, idex_rs2_q, idex_rd_q;
+  opa_sel_e    idex_opa_q;
+  opb_sel_e    idex_opb_q;
+  alu_op_t     idex_alu_q;
+  wb_sel_e     idex_wb_q;
+  mem_op_e     idex_mem_q;
+  br_sel_e     idex_br_q;
+  csr_op_e     idex_csr_q;
+  sys_e        idex_sys_q;
+
+  // Load-use hazard: consumer in ID, load in EX.
+  assign stall_ld =
+      idex_v_q && idex_mem_q == MEM_LOAD && idex_rd_q != 5'd0 &&
+      ifid_v_q && !ifid_exc_q &&
+      ((dec_rs1 && id_rs1 == idex_rd_q) || (dec_rs2 && id_rs2 == idex_rd_q));
+
+  always_ff @(posedge clk) begin
+    if (rst || redirect || (!mem_busy && (stall_ld || !ifid_v_q))) begin
+      idex_v_q <= 1'b0;
+    end else if (!mem_busy) begin
+      idex_v_q       <= 1'b1;
+      idex_pc_q      <= ifid_pc_q;
+      idex_insn_q    <= ifid_insn_q;
+      idex_exc_q     <= ifid_exc_q || dec_illegal;
+      idex_cause_q   <= ifid_exc_q ? ifid_cause_q : EXC_ILL;
+      idex_tval_q    <= ifid_exc_q ? ifid_tval_q : ifid_insn_q;
+      idex_rs1v_q    <= rf_rs1;
+      idex_rs2v_q    <= rf_rs2;
+      idex_imm_q     <= dec_imm;
+      idex_rs1_q     <= id_rs1;
+      idex_rs2_q     <= id_rs2;
+      idex_rd_q      <= id_rd;
+      idex_rd_we_q   <= dec_rd_we;
+      idex_rs1_use_q <= dec_rs1;
+      idex_rs2_use_q <= dec_rs2;
+      idex_opa_q     <= dec_opa;
+      idex_opb_q     <= dec_opb;
+      idex_alu_q     <= dec_alu_op;
+      idex_wb_q      <= dec_wb;
+      idex_mem_q     <= dec_mem;
+      idex_br_q      <= dec_br;
+      idex_csr_q     <= dec_csr;
+      idex_sys_q     <= dec_sys;
+      idex_csr_imm_q <= dec_csr_imm;
+    end
+  end
+
+  // ---------------------------------------------------------------- EX
+  // Forwarding: EX/MEM (ALU/link results) and MEM/WB (any result) -> EX.
+  logic        exmem_v_q, exmem_rd_we_q;
+  logic [4:0]  exmem_rd_q;
+  logic [31:0] exmem_y_q, exmem_pc_q;
+  wb_sel_e     exmem_wb_q;
+
+  logic        memwb_v_q, memwb_rd_we_q;
+  logic [4:0]  memwb_rd_q;
+  logic [31:0] memwb_val_q;
+
+  wire [31:0] exmem_fwd =
+      (exmem_wb_q == WB_PC4) ? exmem_pc_q + 32'd4 : exmem_y_q;
+
+  logic [31:0] rs1_fwd, rs2_fwd;
+  always_comb begin
+    rs1_fwd = idex_rs1v_q;
+    if (memwb_v_q && memwb_rd_we_q && memwb_rd_q == idex_rs1_q &&
+        idex_rs1_q != 5'd0)
+      rs1_fwd = memwb_val_q;
+    if (exmem_v_q && exmem_rd_we_q && exmem_rd_q == idex_rs1_q &&
+        idex_rs1_q != 5'd0)
+      rs1_fwd = exmem_fwd;
+
+    rs2_fwd = idex_rs2v_q;
+    if (memwb_v_q && memwb_rd_we_q && memwb_rd_q == idex_rs2_q &&
+        idex_rs2_q != 5'd0)
+      rs2_fwd = memwb_val_q;
+    if (exmem_v_q && exmem_rd_we_q && exmem_rd_q == idex_rs2_q &&
+        idex_rs2_q != 5'd0)
+      rs2_fwd = exmem_fwd;
+  end
+
+  logic [31:0] alu_a, alu_b, alu_y;
+  always_comb begin
+    unique case (idex_opa_q)
+      OPA_RS1:  alu_a = rs1_fwd;
+      OPA_PC:   alu_a = idex_pc_q;
+      default:  alu_a = 32'b0;            // OPA_ZERO
+    endcase
+    alu_b = (idex_opb_q == OPB_IMM) ? idex_imm_q : rs2_fwd;
+  end
+  alu u_alu (.a(alu_a), .b(alu_b), .op(idex_alu_q), .y(alu_y));
+
+  logic br_taken_cond;
+  branch_cmp u_bcmp (
+    .a(rs1_fwd), .b(rs2_fwd), .f3(idex_insn_q[14:12]), .taken(br_taken_cond)
+  );
+
+  wire [31:0] br_target =
+      (idex_br_q == BR_JALR) ? (rs1_fwd + idex_imm_q) & ~32'h1
+                             : idex_pc_q + idex_imm_q;
+
+  wire ex_take = idex_v_q && !idex_exc_q &&
+                 (idex_br_q == BR_JAL || idex_br_q == BR_JALR ||
+                  (idex_br_q == BR_COND && br_taken_cond));
+
+  // Branch acts only when this instruction actually advances, and an older
+  // committing instruction's redirect wins (it flushes EX anyway).
+  assign redirect_ex    = ex_take && !mem_busy && !redirect_mem;
+  assign redirect_ex_pc = br_target;
+
+  // Misaligned data address detect (address is known here).
+  wire [1:0] msize = idex_insn_q[13:12];  // funct3[1:0]: 00 B, 01 H, 10 W
+  wire misal = (msize == 2'b01 && alu_y[0]) ||
+               (msize == 2'b10 && alu_y[1:0] != 2'b00);
+  wire ex_mem_exc = idex_mem_q != MEM_NONE && misal;
+
+  // CSR write operand: rs1 value or zero-extended uimm (rs1 field).
+  wire [31:0] csr_wdata =
+      idex_csr_imm_q ? {27'b0, idex_rs1_q} : rs1_fwd;
+  wire csr_rs1x0 = idex_rs1_q == 5'd0;
+
+  // ---------------------------------------------------------------- EX/MEM
+  logic        exmem_exc_q, exmem_csr_rs1x0_q;
+  logic [3:0]  exmem_cause_q;
+  logic [31:0] exmem_tval_q, exmem_insn_q, exmem_data_q;
+  mem_op_e     exmem_mem_q;
+  csr_op_e     exmem_csr_q;
+  sys_e        exmem_sys_q;
+
+  always_ff @(posedge clk) begin
+    // A taken branch is NOT flushed here — it advances and commits; only
+    // younger stages (IF/ID, ID/EX) are flushed by redirect_ex.
+    if (rst || redirect_mem || (!mem_busy && !idex_v_q)) begin
+      exmem_v_q <= 1'b0;
+    end else if (!mem_busy) begin
+      exmem_v_q         <= 1'b1;
+      exmem_pc_q        <= idex_pc_q;
+      exmem_insn_q      <= idex_insn_q;
+      exmem_y_q         <= alu_y;
+      exmem_data_q      <= (idex_csr_q != CSR_NONE) ? csr_wdata : rs2_fwd;
+      exmem_rd_q        <= idex_rd_q;
+      exmem_rd_we_q     <= idex_rd_we_q;
+      exmem_wb_q        <= idex_wb_q;
+      exmem_mem_q       <= idex_mem_q;
+      exmem_csr_q       <= idex_csr_q;
+      exmem_sys_q       <= idex_sys_q;
+      exmem_csr_rs1x0_q <= csr_rs1x0;
+      exmem_exc_q       <= idex_exc_q || ex_mem_exc;
+      exmem_cause_q     <= idex_exc_q ? idex_cause_q
+                         : (idex_mem_q == MEM_LOAD ? EXC_LADDR : EXC_SADDR);
+      exmem_tval_q      <= idex_exc_q ? idex_tval_q : alu_y;
+    end
+  end
+
+  // ---------------------------------------------------------------- MEM
+  // The commit point: memory access, CSR/system effects, traps.
+  wire [2:0]  mf3   = exmem_insn_q[14:12];
+  wire [1:0]  moff  = exmem_y_q[1:0];
+  wire        is_ld = exmem_mem_q == MEM_LOAD;
+
+  assign dbus_valid = exmem_v_q && !exmem_exc_q && exmem_mem_q != MEM_NONE;
+  assign dbus_addr  = {exmem_y_q[31:2], 2'b00};
+  assign dbus_wdata = exmem_data_q << {moff, 3'b000};
+  always_comb begin
+    if (exmem_mem_q != MEM_STORE) dbus_wstrb = 4'b0000;
+    else unique case (mf3[1:0])
+      2'b00:   dbus_wstrb = 4'b0001 << moff;
+      2'b01:   dbus_wstrb = moff[1] ? 4'b1100 : 4'b0011;
+      default: dbus_wstrb = 4'b1111;
+    endcase
+  end
+  assign mem_busy = dbus_valid && !dbus_ready;
+
+  // Load result extraction.
+  wire [31:0] ld_shift = dbus_rdata >> {moff, 3'b000};
+  logic [31:0] ld_val;
+  always_comb begin
+    unique case (mf3)
+      3'b000:  ld_val = {{24{ld_shift[7]}}, ld_shift[7:0]};    // LB
+      3'b001:  ld_val = {{16{ld_shift[15]}}, ld_shift[15:0]};  // LH
+      3'b100:  ld_val = {24'b0, ld_shift[7:0]};                // LBU
+      3'b101:  ld_val = {16'b0, ld_shift[15:0]};               // LHU
+      default: ld_val = ld_shift;                              // LW
+    endcase
+  end
+
+  // CSR file access (serialized: nothing younger is live).
+  logic [31:0] csr_rdata, trap_vector, mepc_out;
+  logic        csr_illegal;
+  wire mem_commit = exmem_v_q && !mem_busy;
+  wire csr_acc_en = mem_commit && !exmem_exc_q && exmem_csr_q != CSR_NONE;
+
+  // Final exception resolution at commit.
+  wire bus_fault = dbus_valid && dbus_ready && dbus_err;
+  logic       trap_now;
+  logic [3:0] trap_cause;
+  logic [31:0] trap_tval;
+  always_comb begin
+    trap_now   = 1'b0;
+    trap_cause = 4'd0;
+    trap_tval  = 32'b0;
+    if (mem_commit) begin
+      if (exmem_exc_q) begin
+        trap_now = 1'b1; trap_cause = exmem_cause_q; trap_tval = exmem_tval_q;
+      end else if (bus_fault) begin
+        trap_now   = 1'b1;
+        trap_cause = is_ld ? EXC_LFAULT : EXC_SFAULT;
+        trap_tval  = exmem_y_q;
+      end else if (csr_illegal) begin
+        trap_now = 1'b1; trap_cause = EXC_ILL; trap_tval = exmem_insn_q;
+      end else if (exmem_sys_q == SYS_ECALL) begin
+        trap_now = 1'b1; trap_cause = EXC_ECALL_M; trap_tval = 32'b0;
+      end else if (exmem_sys_q == SYS_EBREAK) begin
+        trap_now = 1'b1; trap_cause = EXC_BREAK; trap_tval = exmem_pc_q;
+      end
+    end
+  end
+
+  wire mret_now = mem_commit && !trap_now && exmem_sys_q == SYS_MRET;
+  wire ser_done = mem_commit && !trap_now &&
+                  (exmem_csr_q != CSR_NONE || exmem_sys_q == SYS_WFI ||
+                   exmem_sys_q == SYS_FENCE_I);
+
+  assign redirect_mem    = trap_now || mret_now || ser_done;
+  assign redirect_mem_pc = trap_now ? trap_vector
+                         : mret_now ? mepc_out
+                                    : exmem_pc_q + 32'd4;
+
+  wire retire = mem_commit && !trap_now;
+
+  csr_file u_csr (
+    .clk(clk), .rst(rst),
+    .acc_en(csr_acc_en), .acc_addr(exmem_insn_q[31:20]),
+    .acc_op(exmem_csr_q), .acc_wdata(exmem_data_q),
+    .acc_rs1x0(exmem_csr_rs1x0_q), .acc_commit(mem_commit),
+    .acc_rdata(csr_rdata), .acc_illegal(csr_illegal),
+    .trap_en(trap_now), .trap_pc(exmem_pc_q), .trap_cause(trap_cause),
+    .trap_tval(trap_tval), .trap_vector(trap_vector),
+    .mret_en(mret_now), .mepc_out(mepc_out),
+    .retire(retire)
+  );
+
+  // ---------------------------------------------------------------- MEM/WB
+  logic [31:0] wb_mux;
+  always_comb begin
+    unique case (exmem_wb_q)
+      WB_MEM:  wb_mux = ld_val;
+      WB_PC4:  wb_mux = exmem_pc_q + 32'd4;
+      WB_CSR:  wb_mux = csr_rdata;
+      default: wb_mux = exmem_y_q;        // WB_ALU
+    endcase
+  end
+
+  // MEM/WB must HOLD during a dbus stall: a consumer frozen in EX still
+  // forwards from here, and its ID-time regfile read predates this result.
+  // (The repeated regfile write while held is idempotent.)
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      memwb_v_q <= 1'b0;
+    end else if (!mem_busy) begin
+      memwb_v_q     <= retire;
+      memwb_rd_q    <= exmem_rd_q;
+      memwb_rd_we_q <= exmem_rd_we_q;
+      memwb_val_q   <= wb_mux;
+    end
+  end
+
+  // ---------------------------------------------------------------- WB
+  assign wb_we  = memwb_v_q && memwb_rd_we_q;
+  assign wb_rd  = memwb_rd_q;
+  assign wb_val = memwb_val_q;
+
+  // Unused instruction bits (decoder/slices take what they need).
+  // verilator lint_off UNUSED
+  logic unused_bits;
+  assign unused_bits = ^{idex_rs2_use_q, idex_rs1_use_q, exmem_insn_q[19:15],
+                         exmem_insn_q[11:0], ld_shift[31:16]};
+  // verilator lint_on UNUSED
+
+endmodule

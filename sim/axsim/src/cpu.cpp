@@ -216,7 +216,10 @@ Stop Cpu::step() {
       wr = true;
       break;
     }
-    case 0x0F:  // FENCE/FENCE.I: no-ops — single hart, no caches (DESIGN §4.2)
+    case 0x0F:  // MISC-MEM: FENCE/FENCE.I are no-ops — single hart, no
+                // caches (DESIGN §4.2); reserved funct3 is illegal (must
+                // match the RTL decoder exactly or cosim diverges).
+      if (f3 > 1) return trap(EXC_ILLEGAL, insn);
       break;
     case 0x73: {  // SYSTEM
       if (insn == 0x00000073) return trap(EXC_ECALL_M, 0);       // ECALL

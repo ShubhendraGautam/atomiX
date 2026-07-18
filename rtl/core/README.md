@@ -15,8 +15,12 @@ Load-bearing properties (do not regress):
 - **Register file**: 32×32 flip-flops, x0 hardwired, 2R1W, internal
   write-before-read bypass.
 
-Expected structure: one file per pipeline stage, plus `regfile.sv`, `csr.sv`,
-hazard/forwarding unit, and later `mmu.sv`/`tlb.sv`.
+Structure: `axcore.sv` is the pipeline — the five stages and the hazard/
+forwarding/flush control live there, clearly sectioned, because the pipeline
+registers are the boundaries that matter and module ports between stages
+would only add noise. Functional units are separate, individually-tested
+modules: `axcore_pkg.sv` (shared types), `regfile.sv`, `alu.sv`, `immdec.sv`,
+`decoder.sv`, `branch_cmp.sv`, `csr_file.sv`; later `mmu.sv`/`tlb.sv`.
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
 **and** riscv-formal — all three. Built in phase 1, after the ISS exists.

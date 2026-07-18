@@ -11,6 +11,9 @@ user_entry:
   sw t1, 0(t0)
   li a7, 1                       /* SYS_USER_ONLINE */
   ecall
+  addi a0, a0, 'A'               /* process 0 prints A, process 1 prints B */
+  li a7, 2                       /* SYS_CONSOLE_PUTC */
+  ecall
 1:
   nop
   nop

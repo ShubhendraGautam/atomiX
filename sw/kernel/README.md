@@ -35,7 +35,10 @@ through an `ecall`, each has a private Sv32 root, user stack, and supervisor
 trap stack. Every CLINT tick saves the interrupted trap frame, switches SATP,
 and round-robins to the other workload. Both write distinct markers at the
 same user virtual address; the kernel verifies those markers through its
-supervisor mapping. This is the foundation for user processes and syscalls.
+supervisor mapping. They then invoke the first useful syscall,
+`SYS_CONSOLE_PUTC`, producing one `A` and one `B` on UART from U-mode. The
+order depends on the first timer boundary, which the regression accepts. This
+is the foundation for user processes and richer syscalls.
 
 Run it with `make check-boot`. If the local QEMU install is not on `PATH`,
 pass it explicitly: `make check-boot QEMU="$HOME/.local/bin/qemu-system-riscv32"`.

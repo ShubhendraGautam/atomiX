@@ -26,6 +26,7 @@ enum {
   SCAUSE_USER_ECALL = 8,
   SCAUSE_SUPERVISOR_SOFTWARE = 0x80000001u,
   SYS_USER_ONLINE = 1,
+  SYS_CONSOLE_PUTC = 2,
   USER_CODE_VA = 0x40000000u,
   USER_STACK_VA = USER_CODE_VA + PAGE_SIZE,
 };
@@ -49,6 +50,7 @@ static uint32_t current_task = TASK_NONE;
 static volatile uint32_t scheduler_running;
 static volatile uint32_t scheduled_ticks;
 static volatile uint32_t users_online;
+static volatile uint32_t users_printed;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
@@ -199,17 +201,28 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
     supervisor_ticks++;
     if (!scheduler_running) return trap_frame;
     scheduled_ticks++;
-    if (users_online == 3u && scheduled_ticks >= 4u) test_finish(0);
+    if (users_online == 3u && users_printed == 3u && scheduled_ticks >= 4u)
+      test_finish(0);
     return schedule(trap_frame);
   }
 
   if (cause == SCAUSE_USER_ECALL) {
-    if (trap_frame[TRAP_FRAME_A7] != SYS_USER_ONLINE ||
-        trap_frame[TRAP_FRAME_A0] >= TASK_COUNT)
+    const uint32_t syscall = trap_frame[TRAP_FRAME_A7];
+    if (syscall == SYS_USER_ONLINE) {
+      const uint32_t id = trap_frame[TRAP_FRAME_A0];
+      if (id >= TASK_COUNT || id != current_task ||
+          *tasks[id].user_stack != (0x51a00000u | id))
+        test_finish(1);
+      users_online |= 1u << id;
+    } else if (syscall == SYS_CONSOLE_PUTC) {
+      if (current_task == TASK_NONE ||
+          trap_frame[TRAP_FRAME_A0] != ('A' + current_task))
+        test_finish(1);
+      uart_putchar((char)trap_frame[TRAP_FRAME_A0]);
+      users_printed |= 1u << current_task;
+    } else {
       test_finish(1);
-    const uint32_t id = trap_frame[TRAP_FRAME_A0];
-    if (*tasks[id].user_stack != (0x51a00000u | id)) test_finish(1);
-    users_online |= 1u << id;
+    }
     csr_write_sepc(csr_read_sepc() + 4u);
     return trap_frame;
   }

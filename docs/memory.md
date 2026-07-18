@@ -119,3 +119,20 @@ transcript, so it cannot pass through the RAM-disk fallback. It preserves the
 Phase 5 RAM-disk fallback for ISS and
 QEMU; replacing that fallback and loading the kernel itself from SD remain the
 boot-path work.
+
+## SD boot path
+
+`sw/bootrom/` contains a less-than-4-KiB ROM-resident M-mode loader. It brings
+up SPI SDHC, validates the `AXBT` boot header, copies the raw kernel sectors to
+`0x8000_0000`, and jumps to the kernel's existing reset entry. The boot disk
+places AXFS at sector 64 so the loaded kernel mounts the same SD image.
+
+```bash
+make -C sw/kernel check-sdboot
+```
+
+This is a true SD-to-RAM boot in cached delayed RTL; the test requires the
+`aXboot` banner, SD-specific `readme`, and fork/wait transcript. It currently
+takes roughly 1.6 million simulation cycles because the intentionally simple
+controller transfers one SPI byte at a time. The remaining memory work is a
+physical SDRAM controller/PHY for a selected board and a writable filesystem.

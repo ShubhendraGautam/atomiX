@@ -46,6 +46,7 @@ make -C sw/baremetal check-fencei QEMU="$HOME/.local/bin/qemu-system-riscv32"
 make -C sw/kernel check-memory         # 32 MiB delayed RAM + I/D-cache RTL
 make -C sw/baremetal check-sd           # SPI SDHC init + sector read on RTL
 make -C sw/kernel check-storage         # aXos mounts AXFS files from SD RTL
+make -C sw/kernel check-sdboot          # ROM loads aXos from SD into RAM RTL
 ```
 
 Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).

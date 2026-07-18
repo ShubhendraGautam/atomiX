@@ -10,8 +10,9 @@ CACHES ?= 0
 MAX_CYCLES ?= 100000
 STORAGE ?= 0
 SD_IMAGE ?=
+FS_BLOCK ?= 0
 
-CPPFLAGS := -Iinclude -DAXOS_SD=$(STORAGE)
+CPPFLAGS := -Iinclude -DAXOS_SD=$(STORAGE) -DAXFS_BLOCK=$(FS_BLOCK)
 # GCC 10's ISA parser accepts rv32im (which includes CSR instructions) but
 # rejects the newer explicit _zicsr spelling. Newer toolchains may override
 # RISCV_ARCH without changing the source.
@@ -66,7 +67,13 @@ check-storage: images
 	python3 make_fs_image.py build/axfs.img
 	SD_IMAGE=$(abspath build/axfs.img) python3 check_boot.py --external-memory
 
+check-sdboot: images
+	$(MAKE) -B images STORAGE=1 FS_BLOCK=64
+	$(MAKE) -C ../bootrom images
+	python3 make_boot_disk.py build/axos_boot.bin build/axos_boot.img
+	SD_IMAGE=$(abspath build/axos_boot.img) BOOT_ROM=$(abspath ../bootrom/build/bootrom.hex) python3 check_boot.py --sd-boot
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage clean
+.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-sdboot clean

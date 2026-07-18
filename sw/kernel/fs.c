@@ -11,6 +11,9 @@ struct fs_entry {
 };
 
 static uint8_t sector[512];
+#ifndef AXFS_BLOCK
+#define AXFS_BLOCK 0u
+#endif
 static struct fs_entry entries[8];
 static uint32_t entry_count;
 static int mounted;
@@ -26,7 +29,7 @@ static int same(const char *a, const char *b) {
 }
 
 int fs_mount(void) {
-  if (sd_init() || sd_read_block(0, sector)) return -1;
+  if (sd_init() || sd_read_block(AXFS_BLOCK, sector)) return -1;
   if (sector[0] != 'A' || sector[1] != 'X' || sector[2] != 'F' ||
       sector[3] != 'S' || sector[4] != 1 || sector[5] > 8) return -1;
   entry_count = sector[5];

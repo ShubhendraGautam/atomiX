@@ -25,6 +25,7 @@ SHELL_OUTPUT = (
 SHELL_OUTPUT_SD = SHELL_OUTPUT.replace(
     "aXos RAM disk: help, ls, cat, echo, exit.\n",
     "aXos SD disk: help, ls, cat, echo, exit.\n")
+BOOT_PREFIX = "aXboot\n"
 FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
 
 
@@ -50,13 +51,14 @@ def run(label: str, command: list[str], input_file: Path, expected: str | None) 
             f"[kernel] {label}: UART mismatch\n"
             f"  expected: {expected!r}\n"
             f"  got:      {result.stdout!r}")
+    fork_prefix = BOOT_PREFIX + FORK_PREFIX if label.startswith("RTL SD boot") else FORK_PREFIX
     if expected is None and (
-            not result.stdout.startswith(FORK_PREFIX) or
-            result.stdout[len(FORK_PREFIX):] not in {"PCW", "CPW"}):
+            not result.stdout.startswith(fork_prefix) or
+            result.stdout[len(fork_prefix):] not in {"PCW", "CPW"}):
         sys.stderr.write(result.stderr)
         raise SystemExit(
             f"[kernel] {label}: fork UART mismatch\n"
-            f"  expected: {FORK_PREFIX!r} followed by PCW or CPW\n"
+            f"  expected: {fork_prefix!r} followed by PCW or CPW\n"
             f"  got:      {result.stdout!r}")
     print(f"[kernel] {label}: PASS")
 
@@ -77,8 +79,19 @@ def main() -> None:
         ]
         if sd_image:
             platforms[0][1].append(f"SD_IMAGE={sd_image}")
+    elif sys.argv[1:] == ["--sd-boot"]:
+        boot_rom = os.environ.get("BOOT_ROM", "")
+        if not sd_image or not boot_rom:
+            raise SystemExit("--sd-boot requires SD_IMAGE and BOOT_ROM")
+        platforms = [("RTL SD boot", [
+            "make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
+            "run", f"RAM_INIT_FILE={ROOT / 'sw/bootrom/blank.hex'}",
+            f"ROM_INIT_FILE={boot_rom}", "RESET_PC=0x00001000",
+            "RAM_BYTES=33554432", "EXTERNAL_MEMORY=1", "CACHES=1",
+            "MAX_CYCLES=2000000", "BUILD_ID=sdboot", f"SD_IMAGE={sd_image}",
+        ])]
     elif sys.argv[1:]:
-        raise SystemExit("usage: check_boot.py [--external-memory]")
+        raise SystemExit("usage: check_boot.py [--external-memory|--sd-boot]")
     else:
         platforms = [
         ("ISS", [str(ROOT / "sim/axsim/axsim"), "--bin", str(elf)]),
@@ -92,14 +105,17 @@ def main() -> None:
         shell_command = command + ([f"UART_INPUT_FILE={SHELL_INPUT}"] if label.startswith("RTL")
                                    else ["--uart-input-file", str(SHELL_INPUT)] if label == "ISS"
                                    else [])
-        run(f"{label} shell", shell_command, SHELL_INPUT,
-            SHELL_OUTPUT_SD if sd_image else SHELL_OUTPUT)
+        expected_shell = SHELL_OUTPUT_SD if sd_image else SHELL_OUTPUT
+        if label == "RTL SD boot": expected_shell = BOOT_PREFIX + expected_shell
+        run(f"{label} shell", shell_command, SHELL_INPUT, expected_shell)
         fork_command = command + ([f"UART_INPUT_FILE={FORK_INPUT}"] if label.startswith("RTL")
                                   else ["--uart-input-file", str(FORK_INPUT)] if label == "ISS"
                                   else [])
         run(f"{label} fork", fork_command, FORK_INPUT, None)
     if sys.argv[1:] == ["--external-memory"]:
         print("[kernel] shell + fork/wait: PASS on 32 MiB cached external-memory RTL")
+    elif sys.argv[1:] == ["--sd-boot"]:
+        print("[kernel] SD boot + AXFS shell: PASS on cached external-memory RTL")
     else:
         print("[kernel] shell + fork/wait: PASS on ISS, QEMU, and RTL")
 

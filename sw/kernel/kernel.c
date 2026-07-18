@@ -14,13 +14,30 @@ enum {
   PTE_D = 1u << 7,
   MSTATUS_MPP = 3u << 11,
   MSTATUS_MPP_S = 1u << 11,
+  SSTATUS_SPIE = 1u << 5,
+  SSTATUS_SPP = 1u << 8,
   SATP_MODE_SV32 = 1u << 31,
+  TASK_COUNT = 2,
+  TASK_NONE = TASK_COUNT,
+  TRAP_FRAME_BYTES = 128,
 };
 
 extern void s_entry(void);
 extern void machine_timer_trap(void);
 
 static volatile uint32_t supervisor_ticks;
+
+struct task {
+  uint32_t *trap_frame;
+  uint32_t sepc;
+  uint32_t sstatus;
+};
+
+static struct task tasks[TASK_COUNT];
+static uint32_t current_task = TASK_NONE;
+static volatile uint32_t scheduler_running;
+static volatile uint32_t task_a_runs;
+static volatile uint32_t task_b_runs;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
@@ -72,6 +89,26 @@ static inline uint32_t csr_read_scause(void) {
   return value;
 }
 
+static inline uint32_t csr_read_sepc(void) {
+  uint32_t value;
+  __asm__ volatile("csrr %0, sepc" : "=r"(value));
+  return value;
+}
+
+static inline void csr_write_sepc(uint32_t value) {
+  __asm__ volatile("csrw sepc, %0" :: "r"(value));
+}
+
+static inline uint32_t csr_read_sstatus(void) {
+  uint32_t value;
+  __asm__ volatile("csrr %0, sstatus" : "=r"(value));
+  return value;
+}
+
+static inline void csr_write_sstatus(uint32_t value) {
+  __asm__ volatile("csrw sstatus, %0" :: "r"(value));
+}
+
 static inline void csr_write_sip(uint32_t value) {
   __asm__ volatile("csrw sip, %0" :: "r"(value));
 }
@@ -109,11 +146,23 @@ void m_setup(void) {
   csr_write_mstatus((csr_read_mstatus() & ~MSTATUS_MPP) | MSTATUS_MPP_S);
 }
 
-void supervisor_trap(void) {
+uint32_t *supervisor_trap(uint32_t *trap_frame) {
   /* M-mode turns the hardware MTIP into this delegated supervisor SSIP. */
   if (csr_read_scause() != 0x80000001u) test_finish(1);
   csr_write_sip(0);
   supervisor_ticks++;
+
+  if (!scheduler_running) return trap_frame;
+
+  if (current_task != TASK_NONE) {
+    tasks[current_task].trap_frame = trap_frame;
+    tasks[current_task].sepc = csr_read_sepc();
+    tasks[current_task].sstatus = csr_read_sstatus();
+  }
+  current_task = current_task == TASK_NONE ? 0u : current_task ^ 1u;
+  csr_write_sepc(tasks[current_task].sepc);
+  csr_write_sstatus(tasks[current_task].sstatus);
+  return tasks[current_task].trap_frame;
 }
 
 static void page_allocator_self_test(void) {
@@ -132,10 +181,49 @@ static void page_allocator_self_test(void) {
   while (total != page_free_count()) page_free(pages[page_free_count()]);
 }
 
+static void task_pause_until_next_tick(void) {
+  const uint32_t seen = supervisor_ticks;
+  while (supervisor_ticks == seen) __asm__ volatile("nop");
+}
+
+static void task_a(void) {
+  for (;;) {
+    task_a_runs++;
+    task_pause_until_next_tick();
+  }
+}
+
+static void task_b(void) {
+  for (;;) {
+    task_b_runs++;
+    if (task_a_runs >= 3u && task_b_runs >= 3u) test_finish(0);
+    task_pause_until_next_tick();
+  }
+}
+
+static void scheduler_make_task(uint32_t slot, void (*entry)(void)) {
+  uint32_t *const stack = page_alloc();
+  if (stack == 0) test_finish(1);
+  uint32_t *const frame =
+      (uint32_t *)((uintptr_t)stack + PAGE_SIZE - TRAP_FRAME_BYTES);
+  for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i) frame[i] = 0;
+  tasks[slot].trap_frame = frame;
+  tasks[slot].sepc = (uint32_t)(uintptr_t)entry;
+  /* SRET returns to an S-mode task with supervisor interrupts enabled. */
+  tasks[slot].sstatus = SSTATUS_SPP | SSTATUS_SPIE;
+}
+
+static void scheduler_start(void) {
+  scheduler_make_task(0, task_a);
+  scheduler_make_task(1, task_b);
+  scheduler_running = 1;
+}
+
 void kmain(void) {
   while (supervisor_ticks == 0) __asm__ volatile("nop");
   page_init();
   page_allocator_self_test();
-  uart_puts("aXos: S-mode Sv32 timer + allocator online\n");
-  test_finish(0);
+  uart_puts("aXos: S-mode Sv32 preemptive scheduler online\n");
+  scheduler_start();
+  for (;;) __asm__ volatile("wfi");
 }

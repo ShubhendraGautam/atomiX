@@ -36,7 +36,9 @@ supervisor_trap_entry:
   sw t4, 108(sp)
   sw t5, 112(sp)
   sw t6, 116(sp)
+  mv a0, sp
   call supervisor_trap
+  mv sp, a0
   lw ra,   0(sp)
   lw gp,   4(sp)
   lw tp,   8(sp)

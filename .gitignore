@@ -5,7 +5,7 @@
 *.bin
 *.hex
 *.map
-obj_dir/
+obj_dir*/
 build/
 
 # aXsim binary

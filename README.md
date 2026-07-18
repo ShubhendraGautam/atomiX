@@ -20,6 +20,19 @@ decision, the architecture, and the phased roadmap live there.
 - **Verified, not demoed**: golden-model cosimulation + official ISA tests +
   formal proofs define "correct".
 
+## Getting started
+
+```bash
+git clone --recurse-submodules <repo-url> && cd atomiX
+sudo apt update && sudo apt install build-essential gcc-riscv64-unknown-elf \
+  picolibc-riscv64-unknown-elf verilator qemu-system-misc
+make -C sim/axsim test                # build the ISS + run directed tests
+make -C tests/riscv-tests/isa XLEN=32 RISCV_PREFIX=riscv64-unknown-elf- -j"$(nproc)"
+tests/run-riscv-tests.sh              # official ISA suite: 41 passed expected
+```
+
+Full prerequisites, per-phase tool needs, and known quirks: [docs/toolchain.md](docs/toolchain.md).
+
 ## Layout
 
 | Path | Contents |

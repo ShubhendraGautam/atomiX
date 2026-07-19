@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt fencei spi sd role
+PROGRAMS := hello timer preempt fencei spi sd role tpu
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -70,6 +70,13 @@ check-role: build/role.hex
 	$(MAKE) -C ../../sim/soc run \
 	  COMPONENT_CONFIG=../../configs/sim-role-loopback.json \
 	  RAM_INIT_FILE=$(abspath build/role.hex) RESET_PC=0x80000000
+
+# RTL-only like check-role.  The raised cycle budget covers the on-core
+# reference matmuls (three 12x8x8 GEMMs on the 32-cycle mul/div unit).
+check-tpu: build/tpu.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-tpu-lite.json \
+	  RAM_INIT_FILE=$(abspath build/tpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
 
 clean:
 	rm -rf build

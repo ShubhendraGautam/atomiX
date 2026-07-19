@@ -164,11 +164,16 @@ The endgame architecture. The FPGA design is split into two parts:
   submission, completion events. It knows the shell protocol, never the role
   internals — role-specific logic lives in aXos and in per-role host libraries
   above `axhost`.
-- **First role: TPU-lite** — an int8 systolic GEMM array (target ~8×8 MACs,
-  sized to ECP5 DSP-block budget), with weight-stationary dataflow and an
-  accumulate/activation output stage. Chosen because a systolic array is the
-  most tractable genuinely-real accelerator and offloaded matmul is trivially
-  benchmarkable against the host CPU.
+- **First role: TPU-lite (implemented, `role.tpu-lite`)** — an int8
+  weight-stationary systolic GEMM engine: an 8×8 MAC grid holding the weight
+  tile stationary, partial sums flowing down the columns through pipeline
+  registers, activations entering through per-row skew delay lines, with
+  32-bit accumulation, an accumulate mode (the K > 8 tiling primitive), and
+  a ReLU output stage.  Chosen because a systolic array is the most
+  tractable genuinely-real accelerator and offloaded matmul is trivially
+  benchmarkable against the host CPU — `make -C sw/baremetal check-tpu`
+  verifies three GEMM jobs against an on-core reference and prints both
+  cycle counts (~210× on the reference machine's 32-cycle multiplier).
 
 Simulation story is unchanged: the host link models as a virtual pipe, so the
 full stack — axhost on the real host, aXos on the simulated shell, role RTL —
@@ -294,10 +299,10 @@ current contracts.  The live, command-backed status is maintained in
 [docs/design-checklist.md](docs/design-checklist.md), rather than duplicating
 a phase ledger here.
 
-The role contract and its loopback proof are in place (`role` components,
-`make -C sw/baremetal check-role`).  The next platform work is the TPU-lite
-role, then a GPU-compute role sharing the same descriptor driver model, and
-the host-link protocol.  ECP5 place-and-route and physical ULX3S
+The role contract, its loopback proof, and the first real accelerator are in
+place (`role` components, `make -C sw/baremetal check-role` and
+`check-tpu`).  The next platform work is the GPU-compute role sharing the
+same descriptor driver model, and the host-link protocol.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 
@@ -337,9 +342,7 @@ atomiX/
    path.
 3. **Role interface:** allocate the role MMIO region and descriptor format,
    including doorbell and completion semantics (polling versus PLIC).
-4. **TPU-lite sizing:** choose array dimensions within the ECP5-85F DSP budget
-   and settle the int8×int8→int32 accumulation/activation split.
-5. **UART compatibility depth:** retain the current 16550-style subset or
+4. **UART compatibility depth:** retain the current 16550-style subset or
    expand it only when a concrete software compatibility need appears.
 
 Physical-board observations are not an open design question: they are the

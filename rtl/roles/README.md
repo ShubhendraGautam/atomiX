@@ -20,8 +20,11 @@ Current and planned roles:
 - `role.none` — empty window; the shell default, proves discovery-of-absence.
 - `role.loopback` — copies buffers inside its window; proves the framework
   (evidence: `make -C sw/baremetal check-role`).
-- TPU-lite — int8 systolic GEMM array on ECP5 DSP blocks, weight-stationary
-  dataflow.  First real accelerator role.
+- `role.tpu-lite` — the first real accelerator: an int8 weight-stationary
+  8×8 systolic GEMM engine with 32-bit accumulation, an accumulate mode for
+  K > 8 tiling, and a ReLU output stage (evidence:
+  `make -C sw/baremetal check-tpu`, which also prints the measured
+  role-versus-CPU matmul cycle counts).
 - GPU-compute — SIMT-style data-parallel engine sharing the same descriptor
   driver model.  After TPU-lite.
 

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "role.tpu-lite",
+  "kind": "role",
+  "title": "TPU-lite int8 weight-stationary systolic GEMM role",
+  "sources": ["components/role/tpu-lite/axrole.sv"],
+  "stock_soc_module": "axrole",
+  "capabilities": ["role-window", "doorbell", "status-poll", "int8-gemm", "systolic-8x8", "weight-stationary", "accumulate", "relu"]
+}

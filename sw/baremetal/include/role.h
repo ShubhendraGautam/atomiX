@@ -23,6 +23,20 @@
 #define AX_ROLE_LOOP_COUNT (AX_ROLE_BASE + 0x001cu)
 #define AX_ROLE_LOOP_BUF   (AX_ROLE_BASE + 0x1000u)
 
+/* role.tpu-lite programming model: C = acc_base + A x W, int8 operands,
+ * int32 results.  W is the stationary 8x8 tile; A is M x 8 (M <= 256);
+ * rows pack one int8 per byte, little-endian, two words per row. */
+#define AX_ROLE_TPU_ID    0x5450554cu /* "TPUL" */
+#define AX_ROLE_TPU_CTRL  (AX_ROLE_BASE + 0x0010u)
+#define AX_ROLE_TPU_M     (AX_ROLE_BASE + 0x0014u)
+#define AX_ROLE_TPU_COUNT (AX_ROLE_BASE + 0x0018u)
+#define AX_ROLE_TPU_W     (AX_ROLE_BASE + 0x0100u)
+#define AX_ROLE_TPU_A     (AX_ROLE_BASE + 0x1000u)
+#define AX_ROLE_TPU_C     (AX_ROLE_BASE + 0x2000u)
+
+#define AX_ROLE_TPU_CTRL_RELU 0x1u
+#define AX_ROLE_TPU_CTRL_ACC  0x2u
+
 static inline uint32_t mmio_read32(uint32_t addr) {
   return *(volatile const uint32_t *)(uintptr_t)addr;
 }

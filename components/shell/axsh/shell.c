@@ -2,6 +2,7 @@
 
 #include "platform.h"
 #include "fs.h"
+#include "role.h"
 
 extern void kernel_fork_demo(void);
 
@@ -58,6 +59,25 @@ static void shell_ls(void) {
   }
 }
 
+/* Discover the accelerator role through the shell control plane and, when the
+ * loopback contract-proof role is present, drive one job end-to-end. */
+static void shell_role(void) {
+  const uint32_t id = role_discover();
+  if (id == 0) {
+    uart_puts("role: none\n");
+    return;
+  }
+  uart_puts("role: ");
+  uart_puts(role_name(id));
+  /* VERSION is a single-digit programming-model revision (1 today). */
+  uart_puts(" v");
+  uart_putchar((char)('0' + (role_version() & 0xfu)));
+  uart_puts("\n");
+  if (id == AX_ROLE_ID_LOOPBACK)
+    uart_puts(role_loopback_selftest() == 0 ? "role: copy ok\n"
+                                            : "role: copy FAIL\n");
+}
+
 static void shell_cat(const char *name) {
   if (disk_mounted) {
     if (fs_cat(name)) uart_puts("cat: no such file\n");
@@ -81,7 +101,7 @@ void shell_run(void) {
     readline(line, sizeof(line));
     if (streq(line, "")) continue;
     if (streq(line, "help")) {
-      uart_puts("commands: help ls cat write echo fork exit\n");
+      uart_puts("commands: help ls cat write echo fork role exit\n");
     } else if (streq(line, "ls")) {
       shell_ls();
     } else if (starts_with(line, "cat ")) {
@@ -104,6 +124,8 @@ void shell_run(void) {
     } else if (streq(line, "fork")) {
       uart_puts("fork demo: ");
       kernel_fork_demo();
+    } else if (streq(line, "role")) {
+      shell_role();
     } else if (streq(line, "exit")) {
       test_finish(0);
     } else {

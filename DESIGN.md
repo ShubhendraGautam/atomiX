@@ -317,9 +317,15 @@ The role contract, its loopback proof, and two real accelerators are in
 place (`role` components, `make -C sw/baremetal check-role`, `check-tpu`, and
 `check-gpu`): TPU-lite (fixed-function systolic GEMM) and GPU-compute (a
 programmable SIMT vector engine), both behind the same descriptor driver
-model.  The next platform work is the host-link framing protocol and `axhost`,
-so a host PC can upload kernels and buffers and submit work over USB rather
-than from an on-core test program.  ECP5 place-and-route and physical ULX3S
+model.  aXos now also owns an **in-kernel role driver**: the role window is
+device-mapped into the kernel's S-mode address space, and the resident shell's
+`role` command discovers and drives the accelerator from the management kernel
+itself rather than a bare-metal program (`make -C sw/kernel
+check-role-driver`) — the first piece of the shell control plane.  The next
+platform work builds the host plane on top of that driver: an aXos host-link
+service that dispatches framed host requests to it, the transport (virtual pipe
+in simulation, USB-serial on hardware), the framing protocol, and the host-side
+`axhost`.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 

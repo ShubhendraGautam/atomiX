@@ -44,6 +44,11 @@ void vm_bootstrap_map(volatile uint32_t *root_pt, volatile uint32_t *low_pt) {
   root_pt[0x200] = pte_leaf(0x80000000u, kernel_flags);
   root_pt[0x040] = pte_leaf(AX_UART_BASE, device_flags);
   root_pt[0x008] = pte_leaf(AX_CLINT_BASE, device_flags);
+  /* Accelerator role window: a 4 MiB device superpage identity-maps the fixed
+   * 64 KiB window so the S-mode shell control plane can drive the role.  This
+   * VA index (0x100) also names USER_CODE_VA, but user address spaces overwrite
+   * it with their code mapping, so kernel and user views never collide. */
+  root_pt[AX_ROLE_BASE >> 22] = pte_leaf(AX_ROLE_BASE, device_flags);
   root_pt[0x000] = pte_pointer((uint32_t)(uintptr_t)low_pt);
   low_pt[(AX_TEST_BASE >> 12) & 0x3ffu] = pte_leaf(AX_TEST_BASE, device_flags);
 }

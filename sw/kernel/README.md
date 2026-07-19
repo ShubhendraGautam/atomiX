@@ -12,8 +12,22 @@ process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 ## Shell and RAM disk
 
 The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
-It supports `help`, `ls`, `cat NAME`, `write NAME TEXT`, `echo`, `fork`, and
-`exit`. The initial immutable RAM disk is a named-file table. An optional AXFS
+It supports `help`, `ls`, `cat NAME`, `write NAME TEXT`, `echo`, `fork`,
+`role`, and `exit`.
+
+## Role control plane
+
+`role` is the first piece of the shell + role control plane (DESIGN.md §3.3):
+aXos itself — not a bare-metal test program — administers the accelerator.
+`vm_bootstrap_map` device-maps the fixed 64 KiB role window into the kernel's
+S-mode address space, and the in-kernel driver in [role.c](role.c) discovers
+the role (`ROLE_ID`/`VERSION`) and drives the generic
+doorbell/status/descriptor cycle.  The shell `role` command prints the
+discovered role and, for `role.loopback`, drives one copy job end-to-end as a
+self-test.  Per-role job marshaling (GEMM for TPU-lite, SIMT kernels for
+GPU-compute) and the host-link service that will call this driver on behalf of
+remote requests layer on top of this same header driver.  Evidence:
+`make -C sw/kernel check-role-driver`. The initial immutable RAM disk is a named-file table. An optional AXFS
 v1 SD image path runs on cached external-memory RTL: `check-storage`
 mounts `motd` and `readme` through the kernel SPI block driver. `write` creates
 or replaces one sector-sized AXFS file through SD CMD24; it is deliberately not

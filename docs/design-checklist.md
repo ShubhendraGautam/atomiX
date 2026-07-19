@@ -82,10 +82,19 @@ Use this for a substantive implementation or interface change:
   model.  Evidence: `make -C sw/baremetal check-gpu` (verifies saxpy, fused
   multiply+ReLU, and a masked-tail reduction-style kernel against an on-core
   reference and prints the role-versus-CPU cycle counts).
+- [x] aXos in-kernel role driver: the management kernel (not a bare-metal test
+  program) discovers the role through the window device-mapped into its S-mode
+  address space and drives a job end-to-end from the resident shell — the first
+  piece of the shell control plane, on which the host-link service will sit.
+  Evidence: `make -C sw/kernel check-role-driver` (the `role` command discovers
+  and drives `role.loopback` through the RTL shell).
 - [ ] Partial reconfiguration of the role region on a live bitstream —
   research staged in [partial-reconfig.md](partial-reconfig.md); no
   capability claim before its stage-4 board evidence.
-- [ ] Define and implement the host-link framing protocol and `axhost`.
+- [ ] Host-link control plane, in order: an aXos host-link service that reads
+  framed requests and dispatches them to the in-kernel role driver above; a
+  transport (virtual pipe in simulation, USB-serial on hardware); the framing
+  protocol; and the host-side `axhost`.
 - [ ] Add PLIC/role interrupt integration when a second interrupt source
   exists.
 - [ ] Evaluate A or C ISA extensions only when their enabling need is explicit;

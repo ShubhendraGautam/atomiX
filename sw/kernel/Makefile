@@ -41,7 +41,7 @@ LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S user.S kernel.c \
+SOURCES := boot.S trap.S user.S kernel.c role.c \
            $(COMPONENT_ALLOCATOR_SOURCES) $(COMPONENT_SHELL_SOURCES) \
            $(COMPONENT_FILESYSTEM_SOURCES) $(COMPONENT_BLOCK_SOURCES) \
            $(COMPONENT_SCHEDULER_SOURCES) $(COMPONENT_VM_SOURCES)
@@ -49,7 +49,7 @@ SOURCES := boot.S trap.S user.S kernel.c \
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h include/role.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)
@@ -77,6 +77,13 @@ check-boot: images
 	$(MAKE) -B images STORAGE=0
 	$(MAKE) -C ../../sim/axsim axsim
 	python3 check_boot.py
+
+# RTL-only: aXos's in-kernel role driver discovers and drives the accelerator
+# through the shell control plane.  Selects role.loopback so the shell's `role`
+# command exercises the full descriptor/doorbell/completion cycle.
+check-role-driver: images
+	$(MAKE) -B images STORAGE=0
+	python3 check_role_driver.py
 
 check-memory: images
 	$(MAKE) -B images STORAGE=0
@@ -132,4 +139,4 @@ kernel-component-test: kernel-config-check-all
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-boot check-memory check-storage check-storage-write boot-disk check-sdboot kernel-config kernel-config-check kernel-config-check-all kernel-component-test clean
+.PHONY: all images run-iss run-qemu run-rtl check-boot check-role-driver check-memory check-storage check-storage-write boot-disk check-sdboot kernel-config kernel-config-check kernel-config-check-all kernel-component-test clean

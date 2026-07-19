@@ -13,7 +13,7 @@ STORAGE_WRITE_INPUT = ROOT / "sw/kernel/storage_write_input.txt"
 SHELL_OUTPUT = (
     "aXos: shell online\n"
     "aXos> help\n"
-    "commands: help ls cat write echo fork exit\n"
+    "commands: help ls cat write echo fork role exit\n"
     "aXos> ls\n"
     "motd\n"
     "readme\n"

@@ -44,6 +44,12 @@ contracts and selections are in [components/](../components/).
 - [ ] Every non-reference component must provide its own compatibility claim
   and verification evidence; selection alone never grants reference-machine
   verification status.
+- [x] A non-reference functional unit demonstrates the swap-evidence path:
+  `muldiv.fast-mul` passes the identical unit testbench, directed cosim, the
+  rv32um ISA suite, and randomized fuzzing through the harness unit
+  overrides.  Evidence: `make -C sim/unit run-muldiv-fastmul` and
+  `make -C sim/cosim test rv32um
+  MULDIV_SV=../../components/muldiv/fast-mul/muldiv.sv`.
 
 ## Change-ready checklist
 

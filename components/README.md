@@ -83,7 +83,9 @@ A manifest may declare `defaults`, naming the implementation it expects for
 kinds a profile leaves unselected. `core.pipeline5` defaults its four
 functional units (`alu.single-cycle`, `muldiv.iterative32`,
 `regfile.flipflop`, `mmu.sv32`), so existing profiles select a complete CPU
-with one line while a one-line addition swaps a single unit. An explicit
+with one line while a one-line addition swaps a single unit —
+`configs/sim-fastmul.json` does exactly that, selecting the
+single-cycle-multiply `muldiv.fast-mul` unit. An explicit
 selection always wins over a default, and if two selected components default
 the same kind differently the resolver requires the profile to choose.
 A swapped functional unit re-runs through the same lock-step cosimulation,

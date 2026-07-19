@@ -7,6 +7,7 @@ CORE_COMPONENT := ../../components/core/pipeline5
 COMPONENTS := ../../components
 ALU_REFERENCE := $(COMPONENTS)/alu/single-cycle
 MULDIV_REFERENCE := $(COMPONENTS)/muldiv/iterative32
+MULDIV_FASTMUL := $(COMPONENTS)/muldiv/fast-mul
 REGFILE_REFERENCE := $(COMPONENTS)/regfile/flipflop
 MMU_REFERENCE := $(COMPONENTS)/mmu/sv32
 MEMORY_REFERENCE := $(COMPONENTS)/memory/reference
@@ -46,7 +47,15 @@ SOC_SVS := $(CORE_SOURCES) \
   $(SPI_REFERENCE)/axspi.sv $(FINISHER_REFERENCE)/test_finisher.sv \
   $(SOC_REFERENCE)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-muldiv-fastmul run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
+
+# The alternate muldiv component passes the identical latency-agnostic
+# testbench; a swapped unit earns the same evidence as the reference.
+run-muldiv-fastmul: tb_muldiv.cpp
+	$(VERILATOR) $(VFLAGS) --top-module muldiv --Mdir obj_dir_muldiv_fastmul \
+	  --exe --build -o tb_muldiv $(MULDIV_FASTMUL)/muldiv.sv \
+	  $(CURDIR)/tb_muldiv.cpp >/dev/null
+	./obj_dir_muldiv_fastmul/tb_muldiv
 
 run-%: tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -174,4 +183,4 @@ run-soc-timer: $(SOC_SVS) tb_soc_timer.cpp data/soc_timer.hex
 clean:
 	rm -rf obj_dir_* build
 
-.PHONY: test clean run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
+.PHONY: test clean run-muldiv-fastmul run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer

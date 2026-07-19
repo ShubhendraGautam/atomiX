@@ -7,14 +7,20 @@ VFLAGS    := -Wall --cc -O2
 CORE_COMPONENT := ../../components/core/pipeline5
 COMPONENTS := ../../components
 AXSIM     := ../axsim/src
+# Functional-unit selections.  Override any of these on the command line to
+# run the full lock-step evidence against a swapped unit, for example:
+#   make test rv32um MULDIV_SV=../../components/muldiv/fast-mul/muldiv.sv
+ALU_SV     ?= $(COMPONENTS)/alu/single-cycle/alu.sv
+MULDIV_SV  ?= $(COMPONENTS)/muldiv/iterative32/muldiv.sv
+REGFILE_SV ?= $(COMPONENTS)/regfile/flipflop/regfile.sv
+MMU_SV     ?= $(COMPONENTS)/mmu/sv32/sv32_mmu.sv
 CORE_SOURCES := $(CORE_COMPONENT)/axcore_pkg.sv \
-  $(COMPONENTS)/regfile/flipflop/regfile.sv \
-  $(COMPONENTS)/alu/single-cycle/alu.sv \
+  $(REGFILE_SV) $(ALU_SV) \
   $(CORE_COMPONENT)/immdec.sv $(CORE_COMPONENT)/decoder.sv \
   $(CORE_COMPONENT)/branch_cmp.sv \
-  $(COMPONENTS)/muldiv/iterative32/muldiv.sv \
+  $(MULDIV_SV) \
   $(CORE_COMPONENT)/csr_file.sv \
-  $(COMPONENTS)/mmu/sv32/sv32_mmu.sv \
+  $(MMU_SV) \
   $(CORE_COMPONENT)/axcore.sv
 
 axcosim: $(CORE_SOURCES) tb_cosim.cpp $(AXSIM)/bus.h \

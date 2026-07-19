@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "muldiv.fast-mul",
+  "kind": "muldiv",
+  "title": "Single-cycle-multiply RV32M unit with iterative divide",
+  "sources": ["components/muldiv/fast-mul/muldiv.sv"],
+  "stock_core_module": "muldiv",
+  "capabilities": ["rv32m", "single-cycle-multiply", "iterative-divide-32",
+                   "start-busy-done", "dsp-inferred"]
+}

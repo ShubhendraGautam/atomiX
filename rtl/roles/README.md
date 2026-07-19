@@ -25,8 +25,15 @@ Current and planned roles:
   K > 8 tiling, and a ReLU output stage (evidence:
   `make -C sw/baremetal check-tpu`, which also prints the measured
   role-versus-CPU matmul cycle counts).
-- GPU-compute — SIMT-style data-parallel engine sharing the same descriptor
-  driver model.  After TPU-lite.
+- `role.gpu-compute` — the second real accelerator: an 8-lane SIMT vector
+  engine.  Software uploads a short straight-line kernel (a small load/store +
+  integer ALU ISA) and a flat global data buffer, sets the thread count, and
+  rings the doorbell; 8 lanes run the kernel in lockstep across
+  ceil(threads/8) waves, with out-of-range threads predicated off — the same
+  descriptor driver model as the other roles, but programmable rather than
+  fixed-function (evidence: `make -C sw/baremetal check-gpu`, which verifies
+  saxpy, fused multiply+ReLU, and a gather kernel against an on-core
+  interpreter of the ISA and prints role-versus-CPU cycle counts).
 
 Role swapping today means selecting a different `role` component (one profile
 line) or, at runtime, reloading role programs/descriptors through the window.

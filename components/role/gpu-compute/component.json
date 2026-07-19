@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "role.gpu-compute",
+  "kind": "role",
+  "title": "GPU-compute 8-lane SIMT vector engine role",
+  "sources": ["components/role/gpu-compute/axrole.sv"],
+  "stock_soc_module": "axrole",
+  "capabilities": ["role-window", "doorbell", "status-poll", "simt", "8-lane", "programmable-kernel", "flat-global-memory", "tail-predication"]
+}

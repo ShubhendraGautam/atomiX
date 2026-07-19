@@ -71,9 +71,17 @@ Use this for a substantive implementation or interface change:
   components (`role.none` shell default, `role.loopback` proof), and a
   bare-metal driver path.  Evidence: `make -C sw/baremetal check-role` and
   `make component-test`.
-- [ ] Implement the first real accelerator role, TPU-lite (int8 systolic
-  GEMM on ECP5 DSP blocks), then a GPU-compute role sharing the descriptor
-  driver model.
+- [x] First real accelerator role, TPU-lite (int8 weight-stationary systolic
+  GEMM), attached behind the role window.  Evidence:
+  `make -C sw/baremetal check-tpu` (verifies plain, accumulate, and ReLU GEMM
+  jobs against an on-core reference and prints the role-versus-CPU cycle
+  counts).
+- [x] Second real accelerator role, GPU-compute (an 8-lane SIMT vector engine
+  with a straight-line kernel ISA, per-lane register files, flat global memory,
+  and tail-thread predication), sharing the same doorbell/descriptor driver
+  model.  Evidence: `make -C sw/baremetal check-gpu` (verifies saxpy, fused
+  multiply+ReLU, and a masked-tail reduction-style kernel against an on-core
+  reference and prints the role-versus-CPU cycle counts).
 - [ ] Partial reconfiguration of the role region on a live bitstream —
   research staged in [partial-reconfig.md](partial-reconfig.md); no
   capability claim before its stage-4 board evidence.

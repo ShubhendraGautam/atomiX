@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt fencei spi sd role tpu
+PROGRAMS := hello timer preempt fencei spi sd role tpu gpu
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -78,7 +78,14 @@ check-tpu: build/tpu.hex
 	  COMPONENT_CONFIG=../../configs/sim-tpu-lite.json \
 	  RAM_INIT_FILE=$(abspath build/tpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
 
+# RTL-only like check-tpu.  The raised cycle budget covers the on-core saxpy
+# reference and interpreter oracle over the SIMT kernels.
+check-gpu: build/gpu.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-gpu-compute.json \
+	  RAM_INIT_FILE=$(abspath build/gpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu clean

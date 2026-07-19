@@ -174,6 +174,20 @@ The endgame architecture. The FPGA design is split into two parts:
   benchmarkable against the host CPU — `make -C sw/baremetal check-tpu`
   verifies three GEMM jobs against an on-core reference and prints both
   cycle counts (~210× on the reference machine's 32-cycle multiplier).
+- **Second role: GPU-compute (implemented, `role.gpu-compute`)** — an 8-lane
+  SIMT (Single Instruction, Multiple Threads) vector engine: software uploads
+  a short straight-line kernel written in a small load/store + integer-ALU
+  instruction set and a flat global data buffer, sets a thread count, and
+  rings the doorbell.  Eight lanes execute the kernel in lockstep across
+  ceil(threads/8) waves — each lane on its own thread index, over per-lane
+  register files, with out-of-range threads in the last wave predicated off
+  (the SIMT tail) and memory instructions serializing the lanes onto the
+  buffer port (modeling memory-divergence cost).  It is the same
+  doorbell/descriptor driver model as TPU-lite but *programmable* rather than
+  fixed-function, which is exactly how a GPU differs from a systolic array.
+  `make -C sw/baremetal check-gpu` verifies saxpy, fused multiply+ReLU, and a
+  gather kernel against an on-core interpreter of the ISA and prints the
+  role-versus-CPU cycle counts.
 
 Simulation story is unchanged: the host link models as a virtual pipe, so the
 full stack — axhost on the real host, aXos on the simulated shell, role RTL —
@@ -299,10 +313,13 @@ current contracts.  The live, command-backed status is maintained in
 [docs/design-checklist.md](docs/design-checklist.md), rather than duplicating
 a phase ledger here.
 
-The role contract, its loopback proof, and the first real accelerator are in
-place (`role` components, `make -C sw/baremetal check-role` and
-`check-tpu`).  The next platform work is the GPU-compute role sharing the
-same descriptor driver model, and the host-link protocol.  ECP5 place-and-route and physical ULX3S
+The role contract, its loopback proof, and two real accelerators are in
+place (`role` components, `make -C sw/baremetal check-role`, `check-tpu`, and
+`check-gpu`): TPU-lite (fixed-function systolic GEMM) and GPU-compute (a
+programmable SIMT vector engine), both behind the same descriptor driver
+model.  The next platform work is the host-link framing protocol and `axhost`,
+so a host PC can upload kernels and buffers and submit work over USB rather
+than from an on-core test program.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 

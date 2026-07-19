@@ -321,11 +321,17 @@ model.  aXos now also owns an **in-kernel role driver**: the role window is
 device-mapped into the kernel's S-mode address space, and the resident shell's
 `role` command discovers and drives the accelerator from the management kernel
 itself rather than a bare-metal program (`make -C sw/kernel
-check-role-driver`) — the first piece of the shell control plane.  The next
-platform work builds the host plane on top of that driver: an aXos host-link
-service that dispatches framed host requests to it, the transport (virtual pipe
-in simulation, USB-serial on hardware), the framing protocol, and the host-side
-`axhost`.  ECP5 place-and-route and physical ULX3S
+check-role-driver`) — the first piece of the shell control plane.  On top of
+that driver sits the **host plane**, now working end-to-end in simulation: a
+framed request/response protocol ([docs/host-protocol.md](docs/host-protocol.md)),
+an aXos host-link service that dispatches host requests to the role driver, and
+the host-side `axhost` — a host PC discovers the role and runs a job on it over
+the link (`make -C sw/kernel check-hostlink`), through a virtual-pipe transport
+that models the console byte pipe.  The remaining platform work enhances this
+base: a dedicated USB-serial channel so a console and the host daemon coexist
+(with the board gate), per-role job opcodes (a GEMM descriptor for TPU-lite, a
+SIMT kernel for GPU-compute) on the same frame format, and bitstream-upload mode
+switching.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 

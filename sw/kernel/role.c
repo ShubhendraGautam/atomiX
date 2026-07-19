@@ -40,3 +40,18 @@ int role_loopback_selftest(void) {
       return -1;
   return 0;
 }
+
+/* Same descriptor cycle as the self-test, but the payload comes from the
+ * caller (the host-link service) instead of a fixed pattern.  Source words
+ * occupy [0, words); the destination is placed immediately after them. */
+void role_loopback_copy(const uint32_t *in, uint32_t *out, uint32_t words) {
+  for (uint32_t i = 0; i < words; ++i)
+    mmio_write32(AX_ROLE_LOOP_BUF + 4u * i, in[i]);
+  mmio_write32(AX_ROLE_LOOP_SRC, 0u);
+  mmio_write32(AX_ROLE_LOOP_DST, 4u * words);
+  mmio_write32(AX_ROLE_LOOP_LEN, words);
+  role_ring_doorbell();
+  role_wait_done();
+  for (uint32_t i = 0; i < words; ++i)
+    out[i] = mmio_read32(AX_ROLE_LOOP_BUF + 4u * (words + i));
+}

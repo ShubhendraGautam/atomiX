@@ -35,3 +35,8 @@ uint32_t role_discover(void);       /* ROLE_ID; 0 means no role present */
 uint32_t role_version(void);
 const char *role_name(uint32_t role_id);
 int role_loopback_selftest(void);   /* 0 = copy verified, -1 = mismatch */
+
+/* Drive one loopback copy over caller-supplied data: write `words` inputs into
+ * the role buffer, run the copy, and read the results back.  Used by the
+ * host-link service to run a job on behalf of a remote request. */
+void role_loopback_copy(const uint32_t *in, uint32_t *out, uint32_t words);

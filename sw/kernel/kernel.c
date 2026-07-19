@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#include "hostlink.h"
 #include "page.h"
 #include "platform.h"
 #include "scheduler.h"
@@ -339,5 +340,11 @@ void kernel_fork_demo(void) {
 void kmain(void) {
   page_init();
   page_allocator_self_test();
+#ifdef AXOS_HOSTLINK
+  /* Host-managed personality: the console byte pipe carries the host-link
+   * protocol instead of the interactive shell (DESIGN.md §3.3). */
+  host_service();
+#else
   shell_run();
+#endif
 }

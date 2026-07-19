@@ -91,10 +91,17 @@ Use this for a substantive implementation or interface change:
 - [ ] Partial reconfiguration of the role region on a live bitstream —
   research staged in [partial-reconfig.md](partial-reconfig.md); no
   capability claim before its stage-4 board evidence.
-- [ ] Host-link control plane, in order: an aXos host-link service that reads
-  framed requests and dispatches them to the in-kernel role driver above; a
-  transport (virtual pipe in simulation, USB-serial on hardware); the framing
-  protocol; and the host-side `axhost`.
+- [x] Host-link control plane (base): a framed request/response protocol
+  ([host-protocol.md](host-protocol.md)), an aXos host-link service that
+  dispatches frames to the in-kernel role driver above, and the host-side
+  `axhost` driver — a host PC discovers the role and runs a job on it over the
+  link, end-to-end in simulation through the virtual-pipe (console byte-pipe)
+  transport.  Evidence: `make -C sw/kernel check-hostlink`.
+- [ ] Host-link enhancements: a dedicated USB-serial channel (a second
+  byte-pipe peripheral, so console and host-link coexist — lands with the board
+  gate); per-role job opcodes (a GEMM descriptor for TPU-lite, a SIMT kernel
+  for GPU-compute) on the same frame format; and buffer/stream and asynchronous
+  completion ops.
 - [ ] Add PLIC/role interrupt integration when a second interrupt source
   exists.
 - [ ] Evaluate A or C ISA extensions only when their enabling need is explicit;

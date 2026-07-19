@@ -29,7 +29,13 @@ STORAGE ?= 0
 SD_IMAGE ?=
 FS_BLOCK ?= 0
 
+HOSTLINK ?= 0
 CPPFLAGS := -Iinclude -DAXOS_SD=$(STORAGE) -DAXFS_BLOCK=$(FS_BLOCK)
+# Host-managed personality: the console byte pipe carries the host-link
+# protocol (docs/host-protocol.md) instead of the interactive shell.
+ifeq ($(HOSTLINK),1)
+CPPFLAGS += -DAXOS_HOSTLINK
+endif
 # GCC 10's ISA parser accepts rv32im (which includes CSR instructions) but
 # rejects the newer explicit _zicsr spelling. Newer toolchains may override
 # RISCV_ARCH without changing the source.
@@ -45,11 +51,14 @@ SOURCES := boot.S trap.S user.S kernel.c role.c \
            $(COMPONENT_ALLOCATOR_SOURCES) $(COMPONENT_SHELL_SOURCES) \
            $(COMPONENT_FILESYSTEM_SOURCES) $(COMPONENT_BLOCK_SOURCES) \
            $(COMPONENT_SCHEDULER_SOURCES) $(COMPONENT_VM_SOURCES)
+ifeq ($(HOSTLINK),1)
+SOURCES += hostlink.c
+endif
 
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h include/role.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h include/role.h include/hostlink.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)
@@ -84,6 +93,15 @@ check-boot: images
 check-role-driver: images
 	$(MAKE) -B images STORAGE=0
 	python3 check_role_driver.py
+
+# RTL-only: build the host-managed personality and drive it with axhost over
+# the simulated console byte pipe (the virtual-pipe transport), against
+# role.loopback.  Proves the whole host -> shell -> role control plane.
+check-hostlink:
+	$(MAKE) -B images HOSTLINK=1
+	python3 ../host/axhost.py --demo \
+	  --image $(abspath build/axos_boot.hex) \
+	  --config $(abspath ../../configs/sim-role-loopback.json)
 
 check-memory: images
 	$(MAKE) -B images STORAGE=0
@@ -139,4 +157,4 @@ kernel-component-test: kernel-config-check-all
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-boot check-role-driver check-memory check-storage check-storage-write boot-disk check-sdboot kernel-config kernel-config-check kernel-config-check-all kernel-component-test clean
+.PHONY: all images run-iss run-qemu run-rtl check-boot check-role-driver check-hostlink check-memory check-storage check-storage-write boot-disk check-sdboot kernel-config kernel-config-check kernel-config-check-all kernel-component-test clean

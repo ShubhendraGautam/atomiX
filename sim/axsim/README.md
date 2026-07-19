@@ -19,4 +19,4 @@ Interfaces it must expose:
   testbench.
 
 Run `make -C sim/axsim test` for directed evidence.  The wider verification
-matrix is in [docs/build.md](../../docs/build.md).
+matrix is in [docs/workflow.md](../../docs/workflow.md).

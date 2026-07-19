@@ -289,7 +289,7 @@ slave  → master: ready, rdata[31:0], err
 
 The recommended automation policy is to run simulation legs on every relevant
 change and formal jobs on core/RVFI changes.  The reproducible commands and
-current evidence are in [docs/build.md](docs/build.md) and
+current evidence are in [docs/workflow.md](docs/workflow.md) and
 [docs/design-checklist.md](docs/design-checklist.md).
 
 ## 7. Software stack

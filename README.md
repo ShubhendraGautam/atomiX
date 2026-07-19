@@ -10,7 +10,7 @@
 **Status:** simulation-verified reference system · component-first builds ·
 physical ULX3S validation is the final evidence gate.
 
-[Architecture](DESIGN.md) · [Build guide](docs/build.md) ·
+[Architecture](DESIGN.md) · [Build/test/deploy](docs/workflow.md) ·
 [Dependencies](docs/dependencies.md) ·
 [Live checklist](docs/design-checklist.md) ·
 [Components](components/README.md)
@@ -51,9 +51,10 @@ make sim CONFIG=configs/sim-bram.json \
 ```
 
 That path builds the golden ISS, creates a target image, and runs it on the
-selected Verilated SoC.  Continue with the [build guide](docs/build.md) for
-three-platform checks, randomized cosimulation, aXos, formal verification,
-and FPGA synthesis.
+selected Verilated SoC.  Continue with the
+[build/test/deploy reference](docs/workflow.md) for three-platform checks,
+randomized cosimulation, aXos, host-link, formal verification, and FPGA
+synthesis — it is the single, maintained list of every command.
 
 ## Build it your way
 
@@ -77,7 +78,7 @@ and verification claim.  Read the [component catalog](components/README.md),
 | I want to… | Start here |
 |---|---|
 | Understand the machine | [DESIGN.md](DESIGN.md) |
-| Build, test, or synthesize | [docs/build.md](docs/build.md) |
+| Build, test, or synthesize | [docs/workflow.md](docs/workflow.md) |
 | Set up a host or FPGA toolchain | [docs/dependencies.md](docs/dependencies.md) |
 | Change an implementation | [components/README.md](components/README.md) |
 | Inspect current evidence and open work | [docs/design-checklist.md](docs/design-checklist.md) |

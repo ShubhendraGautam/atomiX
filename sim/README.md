@@ -16,5 +16,5 @@ Three-platform rule: all software must run unchanged on aXsim, QEMU
 (`-machine virt`), and the Verilated RTL — that's how "software bug" is
 isolated from "hardware bug".
 
-Use [docs/build.md](../docs/build.md) for the recommended test order and
+Use [docs/workflow.md](../docs/workflow.md) for the recommended test order and
 [docs/design-checklist.md](../docs/design-checklist.md) for current evidence.

@@ -117,7 +117,7 @@ These headers intentionally expose no trap or syscall internals.
 The repository-wide selection policy and its intentional private boundaries
 are in [docs/component-map.md](../docs/component-map.md).
 The shortest profile-to-verification path is in
-[docs/build.md](../docs/build.md).
+[docs/workflow.md](../docs/workflow.md).
 
 ## External component example
 

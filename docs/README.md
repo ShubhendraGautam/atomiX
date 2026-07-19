@@ -6,8 +6,8 @@ verifiable, and replaceable.
 
 ## Start with these guides
 
-- [build.md](build.md) — profile selection, builds, verification, formal, and
-  FPGA flow.
+- [workflow.md](workflow.md) — the single, maintained build, test, and deploy
+  command reference (profile selection, all checks, formal, and the FPGA flow).
 - [dependencies.md](dependencies.md) — dependency tiers and compatibility
   baseline.
 - [design-checklist.md](design-checklist.md) — live, evidence-based status and
@@ -23,13 +23,14 @@ verifiable, and replaceable.
 - [components.md](components.md) — component model and extension boundary.
 - [component-map.md](component-map.md) — which repository areas are selectable
   and where their sources live.
+- [host-protocol.md](host-protocol.md) — host-link framing between `axhost` and
+  the shell control plane.
 
 ## Planned specifications
 
 The following documents are intentionally absent until their interface is
 designed and an implementation is ready to consume it:
 
-- `host-protocol.md` — host-link framing between `axhost` and the shell.
 - `role-interface.md` — role MMIO, descriptors, discovery, and interrupts.
 
 Keep a specification and its implementation change together whenever a

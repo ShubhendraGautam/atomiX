@@ -7,7 +7,7 @@ riscv-formal, and a current Yosys are installed from upstream because Ubuntu
 22.04's Yosys 0.9 cannot parse the SystemVerilog packages used by aXcore.
 
 For a dependency-tier overview and a short build path, see
-[dependencies.md](dependencies.md) and [build.md](build.md).  This document
+[dependencies.md](dependencies.md) and [workflow.md](workflow.md).  This document
 keeps the detailed commands and compatibility workarounds.
 
 ## Core packages (Ubuntu/Debian)

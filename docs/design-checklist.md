@@ -62,6 +62,8 @@ Use this for a substantive implementation or interface change:
   check; run formal after core/RVFI changes.
 - [ ] Record any new tool, timing, capacity, or hardware assumption in
   [dependencies.md](dependencies.md) or the appropriate board guide.
+- [ ] Update [workflow.md](workflow.md) when a milestone adds or changes a
+  build, test, or deploy command, or a build knob or profile users run.
 - [ ] Keep physical claims separate from simulation and synthesis claims.
 
 ## Platform expansion

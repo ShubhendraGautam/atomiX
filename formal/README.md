@@ -56,4 +56,4 @@ The generated check and its solver log are below `formal/build/sat/`.
 Recommended gate policy: run formal jobs for changes touching
 `components/core/pipeline5/` and run the relevant simulation legs for every
 behavioral change.  The project-wide command matrix is in
-[docs/build.md](../docs/build.md).
+[docs/workflow.md](../docs/workflow.md).

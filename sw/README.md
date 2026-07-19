@@ -18,4 +18,4 @@ Three-platform rule (DESIGN.md §3.1): target software must run unchanged on
 aXsim, QEMU `-machine virt`, and the RTL — never `#ifdef` per platform; if it
 behaves differently somewhere, that's a bug in one of the platforms.
 
-Build and verification commands are in [docs/build.md](../docs/build.md).
+Build and verification commands are in [docs/workflow.md](../docs/workflow.md).

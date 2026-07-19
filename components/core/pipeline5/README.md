@@ -40,7 +40,7 @@ implementation needs no core change.
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
 **and** riscv-formal — all three.  Run the current evidence commands from
-[docs/build.md](../../../docs/build.md).
+[docs/workflow.md](../../../docs/workflow.md).
 
 `axcore.sv` also exposes a non-invasive `trace_*` commit-observation port.
 It is sampled by `sim/cosim/` immediately before the committing clock edge;

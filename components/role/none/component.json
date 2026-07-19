@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "role.none",
+  "kind": "role",
+  "title": "Empty role window (ROLE_ID reads as zero)",
+  "sources": ["components/role/none/axrole.sv"],
+  "stock_soc_module": "axrole",
+  "capabilities": ["role-window", "discovery-id-zero"]
+}

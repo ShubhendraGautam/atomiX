@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt fencei spi sd
+PROGRAMS := hello timer preempt fencei spi sd role
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -19,7 +19,7 @@ HEXS     := $(ELFS:.elf=.hex)
 all: $(ELFS)
 images: $(BINS) $(HEXS)
 
-build/%.elf: crt0.S traps.S runtime.c examples/%.c link.ld include/platform.h include/csr.h include/clint.h | build
+build/%.elf: crt0.S traps.S runtime.c examples/%.c link.ld include/platform.h include/csr.h include/clint.h include/role.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ crt0.S traps.S runtime.c examples/$*.c
 
 build/%.bin: build/%.elf
@@ -63,7 +63,15 @@ check-spi: images
 check-sd: images
 	python3 check_sd.py
 
+# RTL-only: the ISS does not model the role window.  The profile selects
+# role.loopback; the program exits through the finisher, so a wrong result
+# fails this target.
+check-role: build/role.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-role-loopback.json \
+	  RAM_INIT_FILE=$(abspath build/role.hex) RESET_PC=0x80000000
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role clean

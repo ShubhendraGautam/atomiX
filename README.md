@@ -5,7 +5,7 @@
 
 | Reference machine | Evidence | Platform direction |
 |---|---|---|
-| RV32IM, five stages, M/S/U + Sv32 | ISS · lock-step RTL · ISA tests · formal | ULX3S shell + future accelerator roles |
+| RV32IM, five stages, M/S/U + Sv32 | ISS · lock-step RTL · ISA tests · formal | ULX3S shell + swappable accelerator roles |
 
 **Status:** simulation-verified reference system · component-first builds ·
 physical ULX3S validation is the final evidence gate.
@@ -22,7 +22,9 @@ physical ULX3S validation is the final evidence gate.
 atomiX is a from-scratch RISC-V computer that grows into a reconfigurable FPGA
 platform.  The reference build includes a five-stage CPU, SoC, bare-metal
 runtime, and the aXos kernel.  The longer-term platform keeps that computer as
-the management shell while accelerator roles attach at a defined boundary.
+the management shell while accelerator roles attach at a defined boundary —
+the role window is live today (`role.loopback` proves it), with TPU-lite and
+GPU-compute engines as the next roles.
 
 It is designed to be modified.  A user can substitute the CPU, memory,
 interconnect, peripherals, board, simulation harness, or aXos service policy
@@ -33,7 +35,7 @@ without forking the rest of the project.
        │             │          │
        └──── selectable components ────┐
                                         ▼
-                    FPGA shell + future accelerator roles
+                    FPGA shell + swappable accelerator roles
 ```
 
 ## Start in three commands

@@ -42,6 +42,7 @@ custom component may define its own knobs without changing the common resolver.
 |---|---|
 | `sim-bram.json` | reference CPU and SoC with 128 KiB BRAM |
 | `sim-fastmul.json` | the BRAM machine with one line changed: `muldiv.fast-mul` replaces the core's default mul/div unit |
+| `sim-role-loopback.json` | the BRAM machine with `role.loopback` in the accelerator window instead of the default `role.none` |
 | `sim-delayed.json` | 32 MiB delayed backing store plus I/D caches |
 | `sim-delayed-passthrough-cache.json` | delayed memory with the transparent cache implementation |
 | `sim-sdram.json` | x16 SDRAM controller against the behavioral SDRAM model |

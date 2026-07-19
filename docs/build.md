@@ -43,6 +43,13 @@ make -C sw/baremetal check-timer
 make -C sw/baremetal check-preempt
 ```
 
+The accelerator-role contract has its own RTL-only gate (the ISS does not
+model the role window):
+
+```bash
+make -C sw/baremetal check-role
+```
+
 ## 3. Simulation and composition checks
 
 Use the narrowest check that covers a change, then run the composition suite

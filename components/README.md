@@ -64,6 +64,7 @@ module is plugged in:
 | `uart` | `uart` | UART0 aXbus device and byte-level RX/TX sideband |
 | `clint` | `clint` | CLINT aXbus device plus software/timer IRQs |
 | `spi` | `axspi` | SPI0 aXbus device and four SPI pins |
+| `role` | `axrole` | accelerator in the fixed 64 KiB window at `0x4000_0000`: `ROLE_ID`/`VERSION`/`DOORBELL`/`STATUS` header, then role-defined registers and windows |
 | `soc` | `soc_top` | complete-SoC simulation/board shell |
 | `software` | its own Make target and produced image(s) | payload built independently, then supplied to the selected hardware profile |
 | `harness` | selected simulation top + C++ testbench | simulation environment kept separate from board RTL |
@@ -85,7 +86,10 @@ functional units (`alu.single-cycle`, `muldiv.iterative32`,
 `regfile.flipflop`, `mmu.sv32`), so existing profiles select a complete CPU
 with one line while a one-line addition swaps a single unit —
 `configs/sim-fastmul.json` does exactly that, selecting the
-single-cycle-multiply `muldiv.fast-mul` unit. An explicit
+single-cycle-multiply `muldiv.fast-mul` unit. `soc.reference` likewise
+defaults `role` to `role.none` (the role window reads `ROLE_ID` = 0), and
+`configs/sim-role-loopback.json` swaps in `role.loopback`, the accelerator
+contract proof driven by `make -C sw/baremetal check-role`. An explicit
 selection always wins over a default, and if two selected components default
 the same kind differently the resolver requires the profile to choose.
 A swapped functional unit re-runs through the same lock-step cosimulation,

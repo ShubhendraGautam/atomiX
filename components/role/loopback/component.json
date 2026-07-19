@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "role.loopback",
+  "kind": "role",
+  "title": "Loopback role proving the shell + role contract",
+  "sources": ["components/role/loopback/axrole.sv"],
+  "stock_soc_module": "axrole",
+  "capabilities": ["role-window", "doorbell", "status-poll", "buffer-4k", "loopback-copy"]
+}

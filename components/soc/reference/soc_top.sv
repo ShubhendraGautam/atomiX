@@ -58,16 +58,17 @@ module soc_top #(
 
   logic i_rom_valid, i_ram_valid, i_test_valid, i_clint_valid, i_uart_valid, i_spi_valid;
   logic d_rom_valid, d_ram_valid, d_test_valid, d_clint_valid, d_uart_valid, d_spi_valid;
+  logic i_role_valid, d_role_valid;
   logic i_rom_ready, i_rom_err, i_ram_ready, i_ram_err, i_test_ready, i_test_err;
   logic i_clint_ready, i_clint_err, i_uart_ready, i_uart_err;
-  logic i_spi_ready, i_spi_err;
+  logic i_spi_ready, i_spi_err, i_role_ready, i_role_err;
   logic d_rom_ready, d_rom_err, d_ram_ready, d_ram_err, d_test_ready, d_test_err;
   logic d_clint_ready, d_clint_err, d_uart_ready, d_uart_err;
-  logic d_spi_ready, d_spi_err;
+  logic d_spi_ready, d_spi_err, d_role_ready, d_role_err;
   logic [31:0] i_rom_rdata, i_ram_rdata, i_test_rdata, i_clint_rdata, i_uart_rdata;
-  logic [31:0] i_spi_rdata;
+  logic [31:0] i_spi_rdata, i_role_rdata;
   logic [31:0] d_rom_rdata, d_ram_rdata, d_test_rdata, d_clint_rdata, d_uart_rdata;
-  logic [31:0] d_spi_rdata;
+  logic [31:0] d_spi_rdata, d_role_rdata;
   logic irq_software, irq_timer;
   logic core_trace_valid, core_trace_trap;
   logic [31:0] core_trace_insn;
@@ -152,7 +153,8 @@ module soc_top #(
     .test_valid(i_test_valid), .test_ready(i_test_ready), .test_rdata(i_test_rdata), .test_err(i_test_err),
     .clint_valid(i_clint_valid), .clint_ready(i_clint_ready), .clint_rdata(i_clint_rdata), .clint_err(i_clint_err),
     .uart_valid(i_uart_valid), .uart_ready(i_uart_ready), .uart_rdata(i_uart_rdata), .uart_err(i_uart_err),
-    .spi_valid(i_spi_valid), .spi_ready(i_spi_ready), .spi_rdata(i_spi_rdata), .spi_err(i_spi_err)
+    .spi_valid(i_spi_valid), .spi_ready(i_spi_ready), .spi_rdata(i_spi_rdata), .spi_err(i_spi_err),
+    .role_valid(i_role_valid), .role_ready(i_role_ready), .role_rdata(i_role_rdata), .role_err(i_role_err)
   );
 
   axbus_mux #(.RAM_SIZE(RAM_BYTES)) u_dbus_mux (
@@ -163,7 +165,8 @@ module soc_top #(
     .test_valid(d_test_valid), .test_ready(d_test_ready), .test_rdata(d_test_rdata), .test_err(d_test_err),
     .clint_valid(d_clint_valid), .clint_ready(d_clint_ready), .clint_rdata(d_clint_rdata), .clint_err(d_clint_err),
     .uart_valid(d_uart_valid), .uart_ready(d_uart_ready), .uart_rdata(d_uart_rdata), .uart_err(d_uart_err),
-    .spi_valid(d_spi_valid), .spi_ready(d_spi_ready), .spi_rdata(d_spi_rdata), .spi_err(d_spi_err)
+    .spi_valid(d_spi_valid), .spi_ready(d_spi_ready), .spi_rdata(d_spi_rdata), .spi_err(d_spi_err),
+    .role_valid(d_role_valid), .role_ready(d_role_ready), .role_rdata(d_role_rdata), .role_err(d_role_err)
   );
 
   axrom #(.INIT_FILE(ROM_INIT_FILE)) u_rom (
@@ -216,6 +219,16 @@ module soc_top #(
     .d_ready(d_uart_ready), .d_rdata(d_uart_rdata), .d_err(d_uart_err),
     .tx_valid(uart_tx_valid), .tx_data(uart_tx_data), .tx_ready(uart_tx_ready),
     .rx_valid(uart_rx_valid), .rx_data(uart_rx_data), .rx_ready(uart_rx_ready)
+  );
+
+  // The selected role component fills the fixed 0x4000_0000 window.  The
+  // shell is identical whichever role (or role.none) a profile selects; a
+  // role only sees its window and never replaces shell devices.
+  axrole u_role (
+    .clk(clk), .rst(rst), .i_valid(i_role_valid), .i_addr(i_bus_addr), .i_wdata(i_bus_wdata),
+    .i_wstrb(i_bus_wstrb), .i_ready(i_role_ready), .i_rdata(i_role_rdata), .i_err(i_role_err),
+    .d_valid(d_role_valid), .d_addr(d_bus_addr), .d_wdata(d_bus_wdata), .d_wstrb(d_bus_wstrb),
+    .d_ready(d_role_ready), .d_rdata(d_role_rdata), .d_err(d_role_err)
   );
 
   axspi u_spi (

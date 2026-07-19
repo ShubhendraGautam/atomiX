@@ -11,6 +11,8 @@ module axbus_mux #(
   parameter logic [31:0] UART_SIZE  = 32'h0000_1000,
   parameter logic [31:0] SPI_BASE   = 32'h1001_0000,
   parameter logic [31:0] SPI_SIZE   = 32'h0000_1000,
+  parameter logic [31:0] ROLE_BASE  = 32'h4000_0000,
+  parameter logic [31:0] ROLE_SIZE  = 32'h0001_0000,
   parameter logic [31:0] RAM_BASE   = 32'h8000_0000,
   parameter logic [31:0] RAM_SIZE   = 32'h0002_0000
 ) (
@@ -43,7 +45,11 @@ module axbus_mux #(
   output logic        spi_valid,
   input  logic        spi_ready,
   input  logic [31:0] spi_rdata,
-  input  logic        spi_err
+  input  logic        spi_err,
+  output logic        role_valid,
+  input  logic        role_ready,
+  input  logic [31:0] role_rdata,
+  input  logic        role_err
 );
   wire hit_rom   = m_addr >= ROM_BASE   && m_addr - ROM_BASE   < ROM_SIZE;
   wire hit_ram   = m_addr >= RAM_BASE   && m_addr - RAM_BASE   < RAM_SIZE;
@@ -51,6 +57,7 @@ module axbus_mux #(
   wire hit_clint = m_addr >= CLINT_BASE && m_addr - CLINT_BASE < CLINT_SIZE;
   wire hit_uart  = m_addr >= UART_BASE  && m_addr - UART_BASE  < UART_SIZE;
   wire hit_spi   = m_addr >= SPI_BASE   && m_addr - SPI_BASE   < SPI_SIZE;
+  wire hit_role  = m_addr >= ROLE_BASE  && m_addr - ROLE_BASE  < ROLE_SIZE;
 
   always_comb begin
     rom_valid   = m_valid && hit_rom;
@@ -59,6 +66,7 @@ module axbus_mux #(
     clint_valid = m_valid && hit_clint;
     uart_valid  = m_valid && hit_uart;
     spi_valid   = m_valid && hit_spi;
+    role_valid  = m_valid && hit_role;
     m_ready     = 1'b0;
     m_rdata     = 32'b0;
     m_err       = 1'b0;
@@ -75,6 +83,8 @@ module axbus_mux #(
         m_ready = uart_ready; m_rdata = uart_rdata; m_err = uart_err;
       end else if (hit_spi) begin
         m_ready = spi_ready; m_rdata = spi_rdata; m_err = spi_err;
+      end else if (hit_role) begin
+        m_ready = role_ready; m_rdata = role_rdata; m_err = role_err;
       end else begin
         // Decode misses complete with an error; masters must never hang.
         m_ready = 1'b1; m_err = 1'b1;

@@ -17,6 +17,7 @@ alternative has the reference ISA, timing, filesystem, or verification status.
 | CPU | `core`, `alu`, `muldiv`, `regfile`, `mmu` | five-stage `core.pipeline5`; executable finisher-only smoke core; single-cycle ALU, 32-cycle mul/div (plus the verified single-cycle-multiply `muldiv.fast-mul` alternative), flip-flop register file, Sv32 MMU selected through the core's defaults |
 | SoC fabric | `interconnect`, `cache`, `memory`, `rom`, `finisher`, `soc` | aXbus mux, direct-mapped or transparent cache, BRAM/delayed/SDRAM memory, boot ROM, SiFive-test finisher |
 | Peripherals | `uart`, `clint`, `spi` | QEMU-virt-aligned UART/CLINT and polling SPI |
+| Accelerator role | `role` | `role.none` shell default; `role.loopback` doorbell/descriptor contract proof; TPU-lite and GPU-compute roles are the planned real accelerators |
 | Build environments | `board`, `harness` | ULX3S board top; normal and physical-SDRAM Verilator harnesses |
 | Payload | `software` | bare-metal hello or SD-boot aXos; an external software manifest may build any kernel/monitor |
 | aXos policy/services | `scheduler`, `vm`, `allocator`, `shell`, `filesystem`, `block` | round-robin or cooperative scheduler; Sv32 VM; free-list allocator; AX shell/AXFS/SPI-SD services |
@@ -43,8 +44,12 @@ harnesses, and aXos services are
 The following items are not missing components; they are future systems that
 will introduce their own coherent boundaries when they exist:
 
-- Host-link transports and accelerator roles will be `host_link` and `role`
-  components, with a virtual-pipe simulation implementation first.
+- Accelerator roles are `role` components behind the fixed shell window at
+  `0x4000_0000`; `role.loopback` proves the contract, and the TPU-lite and
+  GPU-compute engines will be further `role` implementations.  Host-link
+  transports will be `host_link` components, with a virtual-pipe simulation
+  implementation first.  Rewriting the role region of a live bitstream is
+  tracked in [partial-reconfig.md](partial-reconfig.md).
 - Userland, bootloader, and alternate operating systems are `software`
   components today. A project that wants a distinct boot chain owns it through
   its software manifest instead of being forced into aXos internals.

@@ -103,13 +103,14 @@ bug" from "hardware bug".
 | `0x0C00_0000` | 4 MB | PLIC (reserved; implemented when we have >1 interrupt source) |
 | `0x1000_0000` | 4 KB | UART0 (16550-compatible subset) |
 | `0x1001_0000` | 4 KB | SPI0 (polling mode-0 controller for SD card) |
+| `0x4000_0000` | 64 KB | Role window (`ROLE_ID`/`VERSION`/`DOORBELL`/`STATUS` header, then role-defined; `ROLE_ID` reads zero when no role is selected) |
 | `0x8000_0000` | 128 KB → 32 MB | RAM (BRAM in v1; 32 MiB x16 SDRAM on ULX3S). Kernel loads at `0x8000_0000` |
 
 Misaligned or unmapped accesses raise the appropriate precise exception; the
 bus returns an error response rather than hanging.
 
-Role MMIO and role-visible RAM windows will be assigned from unused space
-(candidate: `0x4000_0000` region) when the role framework is specified.
+Role-visible RAM windows (for descriptor rings in main memory) will be
+assigned from remaining unused space when a role needs bus mastering.
 
 ### 3.3 Shell + role platform model
 
@@ -141,13 +142,23 @@ The endgame architecture. The FPGA design is split into two parts:
   and "the kernel is common" are literally true: aXos always runs on the
   shell's RISC-V core, in every mode.
 - **Role** = the mode-specific accelerator, attached to aXbus as an MMIO
-  device: a doorbell register, a descriptor ring in RAM, an interrupt line
-  (via PLIC when it exists). aXos discovers the role via an ID register,
-  feeds it work, and exposes it over the host link. A role does **not**
-  execute RISC-V; it consumes descriptors.
-- **Mode switch** = the host uploads a different full bitstream and the FPGA
-  reboots (~1 s on ECP5). "Shell is fixed" means fixed at the source level —
-  one build per role, same shell RTL in each.
+  device in the fixed 64 KiB window at `0x4000_0000`: an ID register, a
+  doorbell, a status register, and role-defined descriptor registers and
+  windows, plus an interrupt line via PLIC when it exists. aXos discovers
+  the role via `ROLE_ID`, feeds it work, and exposes it over the host link.
+  A role does **not** execute RISC-V; it consumes descriptors.  Roles are
+  selectable `role` components; `role.none` (the default) makes discovery
+  read zero, and `role.loopback` is the executable contract proof.
+- **Mode switch** = three tiers.  (1) In simulation and at build time, a
+  profile selects a different role component.  (2) On a live system, a
+  role's *function* changes by loading new programs/descriptors through its
+  window — the way real GPUs and TPUs change behavior; a full SRAM
+  bitstream reload (~1 s on ECP5, no flash wear) remains the fallback and
+  restarts the FPGA side. (3) Rewriting only the role region of a running
+  bitstream — shell and aXos never stopping — is the
+  partial-reconfiguration research track in
+  [docs/partial-reconfig.md](docs/partial-reconfig.md). "Shell is fixed"
+  means fixed at the source level — the same shell RTL in every build.
 - **Host driver (`axhost`)** = userspace tool/daemon on the host PC speaking a
   small framed protocol over USB: bitstream upload, buffer read/write, work
   submission, completion events. It knows the shell protocol, never the role
@@ -283,8 +294,10 @@ current contracts.  The live, command-backed status is maintained in
 [docs/design-checklist.md](docs/design-checklist.md), rather than duplicating
 a phase ledger here.
 
-The next platform work is the host-link/role contract and its loopback proof,
-followed by the TPU-lite role.  ECP5 place-and-route and physical ULX3S
+The role contract and its loopback proof are in place (`role` components,
+`make -C sw/baremetal check-role`).  The next platform work is the TPU-lite
+role, then a GPU-compute role sharing the same descriptor driver model, and
+the host-link protocol.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 

@@ -66,9 +66,18 @@ Use this for a substantive implementation or interface change:
 
 ## Platform expansion
 
+- [x] Role-MMIO contract: fixed 64 KiB window at `0x4000_0000` with
+  `ROLE_ID`/`VERSION`/`DOORBELL`/`STATUS` header, selectable `role`
+  components (`role.none` shell default, `role.loopback` proof), and a
+  bare-metal driver path.  Evidence: `make -C sw/baremetal check-role` and
+  `make component-test`.
+- [ ] Implement the first real accelerator role, TPU-lite (int8 systolic
+  GEMM on ECP5 DSP blocks), then a GPU-compute role sharing the descriptor
+  driver model.
+- [ ] Partial reconfiguration of the role region on a live bitstream —
+  research staged in [partial-reconfig.md](partial-reconfig.md); no
+  capability claim before its stage-4 board evidence.
 - [ ] Define and implement the host-link framing protocol and `axhost`.
-- [ ] Define the role-MMIO/descriptor contract, then implement the first
-  accelerator role (TPU-lite).
 - [ ] Add PLIC/role interrupt integration when a second interrupt source
   exists.
 - [ ] Evaluate A or C ISA extensions only when their enabling need is explicit;

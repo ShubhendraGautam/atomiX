@@ -21,6 +21,7 @@ verdicts).  The device budget is roughly:
 | `configs/tangnano20k-gpu-lite.json` — **CPU + GPU (4-lane)** | ~18.9k | ~6.2k | 32 DPB | 4× MULT36X36 | ✅ **yes** (16 KB RAM; the fitting GPU build) |
 | `configs/tangnano20k-gpu.json` — **CPU + GPU (8-lane)** | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4× LUT4) |
 | `configs/tangnano20k-tpu.json` — **CPU+TPU** | — | ~69.5k | 32 DPB | 64× MULT9X9 | ❌ FF overflow (~4.5×) |
+| `configs/tangnano20k-mini-gpu6.json` — **minimal CPU + GPU (6-lane)** | ~20.2k | ~2k | 32 DPB | 6× MULT36X36 | ✅ yes, **tight** (97% LUT4) |
 | CPU + GPU + TPU (all three) | — | — | — | — | ❌ impossible — a single accelerator already overflows, and the shell has one role window |
 
 **The GPU now fits** at 4 lanes.  The engine is parameterized by `NLANES`
@@ -40,10 +41,10 @@ by `make -C sw/baremetal check-gpu` (4-lane sim) and the `check-gpu-perf` /
 32 KB main memory that maps to 32 `DPB` block-RAM cells (the registered-read
 `SYNC_READ=1` path — see [workflow.md](workflow.md#42-synthesis-only-gate-no-pr-tools-needed)).
 
-**GPU is genuinely too much logic.**  The `role.gpu-compute` engine is an 8-lane
-SIMT machine with a full 32-bit, multiply-capable ISA.  Eight lanes are hard-
-coded (there is no `NLANES` parameter), so the ~29k LUT4 is intrinsic.  Fitting
-it needs fewer/narrower lanes (an RTL refactor) or a larger FPGA.
+**GPU (8-lane) is genuinely too much logic.**  The `role.gpu-compute` engine is
+an 8-lane SIMT machine with a full 32-bit, multiply-capable ISA — ~29k LUT4 in
+system.  It is now parameterized by `NLANES` (gpu_engine.sv), so the fix is to
+build fewer lanes: the 4-lane and 6-lane variants above fit.
 
 **TPU is a fixable block-RAM gap, not raw size.**  The `role.tpu-lite` C
 accumulator (`cbuf`, 2048×32) falls back to 65,536 flip-flops instead of block
@@ -53,6 +54,33 @@ RAM-friendly drops the flip-flop count ~20×; after that the fit hinges on the
 64 `MULT9X9` multipliers versus ~48 DSP blocks (so the 8×8 array may also need
 to shrink).  This is the same class of issue that the main memory had before the
 `SYNC_READ` fix.
+
+## Accelerator-first: a minimal host to buy more GPU
+
+The intuition is right — spend the fabric on the accelerator, not on a heavy
+application CPU — but the measured lever is smaller than it looks.  `core.minimal`
+is a compact multi-cycle RV32IM machine-mode core (no MMU, no S/U mode, no
+pipeline/forwarding; it reuses the same decoder, ALU, mul/div, and register file
+as the reference core).  Standalone on the Tang Nano it is **9.8k LUT4 versus
+the 5-stage core's 11.3k — only ~14% smaller**, not the ~2× one might expect.
+
+Why so little?  The Sv32 MMU is just ~1.2k LUT4 (two instances) and the pipeline
+registers/forwarding are cheap; the real weight is the RV32IM **decode + CSR +
+load/store and writeback muxing**, which a multi-cycle core still pays in full
+(note the large `MUX2_LUT*` counts).  So the minimal host frees enough to move
+the GPU from 4 lanes to 6, but the result (`tangnano20k-mini-gpu6`) lands at
+**20.2k of 20,736 LUT4 (97%)** — it synthesises and maps (32 DPB, 6 DSP), but
+place-and-route would be tight and is unconfirmed without the apicula tools.
+
+What the swap *does* deliver is a better compute machine and a sharper
+offload case: on the leaner (slower) host the on-core loop costs more, so GPU
+offload wins by more — the `saxpy` benchmark speedup rises from ~1.4× (5-stage
+host) to **~2.5×** (minimal host), and `poly` stays ~11×.  `core.minimal` hosts
+the full accelerator flow: `make -C sw/baremetal check-gpu` and the
+`check-gpu-perf` regressions pass on the `sim-minimal*` profiles.
+
+For a comfortable margin, pair `core.minimal` with the 4-lane GPU; for maximum
+GPU width on this part, the 6-lane pairing fits but leaves little headroom.
 
 ## Paths to make it "do tricks"
 

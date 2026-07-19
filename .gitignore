@@ -7,6 +7,8 @@
 *.map
 obj_dir*/
 build/
+# isolated FPGA synth trees from `make -C rtl/fpga ... BUILD=build-<tag>`
+build-*/
 
 # aXsim binary
 sim/axsim/axsim

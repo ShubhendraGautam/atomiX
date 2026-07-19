@@ -50,6 +50,13 @@ contracts and selections are in [components/](../components/).
   overrides.  Evidence: `make -C sim/unit run-muldiv-fastmul` and
   `make -C sim/cosim test rv32um
   MULDIV_SV=../../components/muldiv/fast-mul/muldiv.sv`.
+- [~] A whole-CPU swap demonstrates the same seam at core granularity:
+  `core.minimal` is a compact multi-cycle RV32IM machine-mode core (no MMU/S/U,
+  reusing the reference decoder/ALU/mul-div/regfile) built as an accelerator
+  host.  It runs the bare-metal suite and hosts the GPU role.  Evidence:
+  `make -C sim/soc run CONFIG=configs/sim-minimal.json` (hello) and the
+  `sim-minimal-gpu`/`sim-minimal-gpu6` profiles pass `gpu.c`/`gpu_perf.c`.
+  It does not yet carry the reference core's cosim/riscv-formal evidence.
 
 ## Change-ready checklist
 

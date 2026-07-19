@@ -37,8 +37,8 @@ module gpu_engine #(
   output logic [31:0] d_rdata,
   output logic        d_err
 );
-  // NLANES must be a power of two in [1, 256] so tid = NLANES*wave + lane is a
-  // simple concatenation and the lane index has a clean width.
+  // NLANES may be any value in [1, 256]; the thread id is formed by addition
+  // (tid = NLANES*wave + lane), so a non-power-of-two lane count (e.g. 6) works.
   localparam int unsigned LANE_BITS = (NLANES <= 1) ? 1 : $clog2(NLANES);
 
   localparam logic [31:0] ROLE_ID      = 32'h4750_5543;  // "GPUC"

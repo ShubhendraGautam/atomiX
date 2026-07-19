@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "core.minimal",
+  "kind": "core",
+  "title": "aXcore minimal multi-cycle RV32IM machine-mode CPU (accelerator host)",
+  "sources": [
+    "components/core/pipeline5/axcore_pkg.sv",
+    "components/core/pipeline5/immdec.sv",
+    "components/core/pipeline5/decoder.sv",
+    "components/core/pipeline5/branch_cmp.sv",
+    "components/core/minimal/axcore.sv"
+  ],
+  "defaults": {
+    "alu": "alu.single-cycle",
+    "muldiv": "muldiv.iterative32",
+    "regfile": "regfile.flipflop"
+  },
+  "stock_soc_module": "axcore",
+  "capabilities": ["rv32im", "zicsr", "m-mode", "multi-cycle", "no-mmu", "small"]
+}

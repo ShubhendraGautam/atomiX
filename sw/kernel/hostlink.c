@@ -15,9 +15,13 @@
 
 /* Frame payload staging.  Static rather than on-stack so the service keeps a
  * small, predictable footprint in the kernel's S-mode context. */
-static uint8_t payload[4u + 4u * HOSTLINK_MAX_WORDS];
+static uint8_t payload[HOSTLINK_MAX_PAYLOAD];
 static uint32_t job_in[HOSTLINK_MAX_WORDS];
 static uint32_t job_out[HOSTLINK_MAX_WORDS];
+static int32_t  tpu_c[HOSTLINK_TPU_MAX_M * 8u];
+static uint32_t gpu_prog[HOSTLINK_GPU_MAX_INSN];
+static uint32_t gpu_data[HOSTLINK_GPU_MAX_DATA];
+static uint32_t gpu_out[HOSTLINK_GPU_MAX_DATA];
 
 static uint8_t get_byte(void) { return (uint8_t)uart_getchar(); }
 static void put_byte(uint8_t b) { uart_putchar((char)b); }
@@ -96,6 +100,58 @@ void host_service(void) {
         for (uint16_t i = 0; i < words; ++i)
           put_u32(&payload[4u * i], job_out[i]);
         put_frame(HOSTLINK_ST_OK, payload, (uint16_t)(4u * words));
+        break;
+      }
+      case HOSTLINK_OP_TPU_GEMM: {
+        /* payload = m(1) | ctrl(1) | W[64] | A[8*m]; response = C[m*8] int32 */
+        if (role_discover() != AX_ROLE_ID_TPU) {
+          put_frame(HOSTLINK_ST_NO_ROLE, 0, 0);
+          break;
+        }
+        if (len < 66u) {
+          put_frame(HOSTLINK_ST_BAD_LEN, 0, 0);
+          break;
+        }
+        const uint32_t m = payload[0];
+        const uint32_t ctrl = payload[1];
+        if (m == 0u || m > HOSTLINK_TPU_MAX_M || len != (uint16_t)(66u + 8u * m)) {
+          put_frame(HOSTLINK_ST_BAD_LEN, 0, 0);
+          break;
+        }
+        role_tpu_gemm((const int8_t *)&payload[2], (const int8_t *)&payload[66],
+                      m, ctrl, tpu_c);
+        for (uint32_t i = 0; i < m * 8u; ++i)
+          put_u32(&payload[4u * i], (uint32_t)tpu_c[i]);
+        put_frame(HOSTLINK_ST_OK, payload, (uint16_t)(4u * m * 8u));
+        break;
+      }
+      case HOSTLINK_OP_GPU_RUN: {
+        /* payload = nthreads(2) | ninsn(2) | ndata(2) | prog[ninsn] | data[ndata]
+         * response = the data buffer read back (ndata words). */
+        if (role_discover() != AX_ROLE_ID_GPU) {
+          put_frame(HOSTLINK_ST_NO_ROLE, 0, 0);
+          break;
+        }
+        if (len < 6u) {
+          put_frame(HOSTLINK_ST_BAD_LEN, 0, 0);
+          break;
+        }
+        const uint32_t nthreads = payload[0] | ((uint32_t)payload[1] << 8);
+        const uint32_t ninsn = payload[2] | ((uint32_t)payload[3] << 8);
+        const uint32_t ndata = payload[4] | ((uint32_t)payload[5] << 8);
+        if (ninsn > HOSTLINK_GPU_MAX_INSN || ndata > HOSTLINK_GPU_MAX_DATA ||
+            len != (uint16_t)(6u + 4u * ninsn + 4u * ndata)) {
+          put_frame(HOSTLINK_ST_BAD_LEN, 0, 0);
+          break;
+        }
+        for (uint32_t i = 0; i < ninsn; ++i)
+          gpu_prog[i] = get_u32(&payload[6u + 4u * i]);
+        for (uint32_t i = 0; i < ndata; ++i)
+          gpu_data[i] = get_u32(&payload[6u + 4u * ninsn + 4u * i]);
+        role_gpu_run(gpu_prog, ninsn, gpu_data, ndata, nthreads, gpu_out);
+        for (uint32_t i = 0; i < ndata; ++i)
+          put_u32(&payload[4u * i], gpu_out[i]);
+        put_frame(HOSTLINK_ST_OK, payload, (uint16_t)(4u * ndata));
         break;
       }
       case HOSTLINK_OP_BYE:

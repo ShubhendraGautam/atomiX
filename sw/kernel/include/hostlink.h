@@ -9,7 +9,9 @@
 
 #define HOSTLINK_OP_PING     0x01u
 #define HOSTLINK_OP_INFO     0x02u
-#define HOSTLINK_OP_ROLE_RUN 0x10u
+#define HOSTLINK_OP_ROLE_RUN 0x10u  /* loopback copy */
+#define HOSTLINK_OP_TPU_GEMM 0x11u  /* tpu-lite GEMM */
+#define HOSTLINK_OP_GPU_RUN  0x12u  /* gpu-compute kernel */
 #define HOSTLINK_OP_BYE      0x7fu
 
 #define HOSTLINK_ST_OK      0x00u
@@ -17,8 +19,13 @@
 #define HOSTLINK_ST_BAD_LEN 0x02u
 #define HOSTLINK_ST_NO_ROLE 0x03u
 
-/* ROLE_RUN payload cap for the base (keeps the frame buffers small). */
-#define HOSTLINK_MAX_WORDS 62u
+/* Frame and per-op payload caps.  MAX_PAYLOAD bounds the staging buffer; the
+ * per-role caps bound the job dimensions so a request cannot overrun it. */
+#define HOSTLINK_MAX_PAYLOAD  1280u
+#define HOSTLINK_MAX_WORDS    62u   /* loopback ROLE_RUN */
+#define HOSTLINK_TPU_MAX_M    32u   /* tpu-lite activation rows */
+#define HOSTLINK_GPU_MAX_INSN 64u   /* gpu-compute kernel length */
+#define HOSTLINK_GPU_MAX_DATA 200u  /* gpu-compute data words */
 
 /* Run the host-link service over the console byte pipe: read framed requests,
  * dispatch them to the in-kernel role driver, and write framed responses.

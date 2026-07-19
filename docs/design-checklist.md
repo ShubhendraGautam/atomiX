@@ -97,11 +97,16 @@ Use this for a substantive implementation or interface change:
   `axhost` driver — a host PC discovers the role and runs a job on it over the
   link, end-to-end in simulation through the virtual-pipe (console byte-pipe)
   transport.  Evidence: `make -C sw/kernel check-hostlink`.
-- [ ] Host-link enhancements: a dedicated USB-serial channel (a second
-  byte-pipe peripheral, so console and host-link coexist — lands with the board
-  gate); per-role job opcodes (a GEMM descriptor for TPU-lite, a SIMT kernel
-  for GPU-compute) on the same frame format; and buffer/stream and asynchronous
-  completion ops.
+- [x] Per-role host-link job opcodes: `TPU_GEMM` (int8 systolic GEMM) and
+  `GPU_RUN` (an uploaded SIMT kernel over a flat data buffer) on the same frame
+  format, backed by in-kernel TPU-lite and GPU-compute drivers.  A host PC drives
+  all three real accelerators over the link, each checked against a host-side
+  reference.  Evidence: `make -C sw/kernel check-hostlink` (loopback, TPU-lite,
+  and GPU-compute profiles).
+- [ ] Remaining host-link enhancements: a dedicated USB-serial channel (a
+  second byte-pipe peripheral, so console and host-link coexist — lands with the
+  board gate); buffer/stream and asynchronous-completion ops; and bitstream-
+  upload mode switching.
 - [ ] Add PLIC/role interrupt integration when a second interrupt source
   exists.
 - [ ] Evaluate A or C ISA extensions only when their enabling need is explicit;

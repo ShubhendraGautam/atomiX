@@ -326,12 +326,14 @@ that driver sits the **host plane**, now working end-to-end in simulation: a
 framed request/response protocol ([docs/host-protocol.md](docs/host-protocol.md)),
 an aXos host-link service that dispatches host requests to the role driver, and
 the host-side `axhost` — a host PC discovers the role and runs a job on it over
-the link (`make -C sw/kernel check-hostlink`), through a virtual-pipe transport
-that models the console byte pipe.  The remaining platform work enhances this
-base: a dedicated USB-serial channel so a console and the host daemon coexist
-(with the board gate), per-role job opcodes (a GEMM descriptor for TPU-lite, a
-SIMT kernel for GPU-compute) on the same frame format, and bitstream-upload mode
-switching.  ECP5 place-and-route and physical ULX3S
+the link, through a virtual-pipe transport that models the console byte pipe.
+The host plane now drives **all three real accelerators** with per-role opcodes
+on that same frame format — `TPU_GEMM` and `GPU_RUN` alongside the loopback
+`ROLE_RUN`, backed by in-kernel TPU-lite and GPU-compute drivers, each checked
+against a host-side reference (`make -C sw/kernel check-hostlink`).  The
+remaining platform work enhances this base: a dedicated USB-serial channel so a
+console and the host daemon coexist (with the board gate), buffer/stream and
+asynchronous-completion ops, and bitstream-upload mode switching.  ECP5 place-and-route and physical ULX3S
 bring-up remain the final gate: they do not block simulation or component work,
 but no physical-hardware claim is made before their evidence is recorded.
 

@@ -31,6 +31,23 @@
 #define AX_ROLE_LOOP_LEN (AX_ROLE_BASE + 0x0018u)
 #define AX_ROLE_LOOP_BUF (AX_ROLE_BASE + 0x1000u)
 
+/* tpu-lite descriptor registers: C[M*8] = A[M*8] x W[8*8], int8 in, int32 out.
+ * W and A pack one int8 per byte, little-endian, two words per 8-wide row. */
+#define AX_ROLE_TPU_CTRL  (AX_ROLE_BASE + 0x0010u)
+#define AX_ROLE_TPU_M     (AX_ROLE_BASE + 0x0014u)
+#define AX_ROLE_TPU_W     (AX_ROLE_BASE + 0x0100u)
+#define AX_ROLE_TPU_A     (AX_ROLE_BASE + 0x1000u)
+#define AX_ROLE_TPU_C     (AX_ROLE_BASE + 0x2000u)
+#define AX_ROLE_TPU_CTRL_RELU 0x1u
+#define AX_ROLE_TPU_CTRL_ACC  0x2u
+
+/* gpu-compute descriptor registers: an uploaded straight-line kernel over a
+ * flat global data buffer, run across NTHREADS lanes. */
+#define AX_ROLE_GPU_NTHREADS (AX_ROLE_BASE + 0x0010u)
+#define AX_ROLE_GPU_NINSN    (AX_ROLE_BASE + 0x0014u)
+#define AX_ROLE_GPU_PROG     (AX_ROLE_BASE + 0x0100u)
+#define AX_ROLE_GPU_DATA     (AX_ROLE_BASE + 0x1000u)
+
 uint32_t role_discover(void);       /* ROLE_ID; 0 means no role present */
 uint32_t role_version(void);
 const char *role_name(uint32_t role_id);
@@ -40,3 +57,12 @@ int role_loopback_selftest(void);   /* 0 = copy verified, -1 = mismatch */
  * the role buffer, run the copy, and read the results back.  Used by the
  * host-link service to run a job on behalf of a remote request. */
 void role_loopback_copy(const uint32_t *in, uint32_t *out, uint32_t words);
+
+/* Per-role job drivers used by the host-link service to run real accelerator
+ * work on behalf of a host request.  Each marshals caller data into the role,
+ * runs one job through the shared doorbell/status cycle, and reads results. */
+void role_tpu_gemm(const int8_t *w, const int8_t *a, uint32_t m,
+                   uint32_t ctrl, int32_t *c_out);
+void role_gpu_run(const uint32_t *prog, uint32_t ninsn,
+                  const uint32_t *data_in, uint32_t ndata,
+                  uint32_t nthreads, uint32_t *data_out);

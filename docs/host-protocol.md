@@ -41,23 +41,34 @@ Response  5A | status(1) | len(2) | payload(len)
 
 ## Opcodes (v0)
 
-| op   | name       | request payload                     | ok response payload            |
-|------|------------|-------------------------------------|--------------------------------|
-| 0x01 | `PING`     | none                                | 4 bytes: `61 58 48 4C` (`aXHL`) |
-| 0x02 | `INFO`     | none                                | `role_id`(u32) · `version`(u32) |
-| 0x10 | `ROLE_RUN` | `words`(u16) · `words`×u32 input    | `words`×u32 result             |
-| 0x7F | `BYE`      | none                                | none (then the session ends)   |
+| op   | name       | request payload                                   | ok response payload             |
+|------|------------|---------------------------------------------------|---------------------------------|
+| 0x01 | `PING`     | none                                              | 4 bytes: `61 58 48 4C` (`aXHL`)  |
+| 0x02 | `INFO`     | none                                              | `role_id`(u32) · `version`(u32)  |
+| 0x10 | `ROLE_RUN` | `words`(u16) · `words`×u32 input                  | `words`×u32 result              |
+| 0x11 | `TPU_GEMM` | `m`(u8) · `ctrl`(u8) · `W`[64 i8] · `A`[8·m i8]   | `C`[m·8 i32]                    |
+| 0x12 | `GPU_RUN`  | `nthreads`(u16) · `ninsn`(u16) · `ndata`(u16) · `prog`[ninsn u32] · `data`[ndata u32] | `data`[ndata u32] |
+| 0x7F | `BYE`      | none                                              | none (then the session ends)    |
 
 - `PING` proves the transport and framing round-trip.
 - `INFO` returns what `ROLE_ID`/`VERSION` read through the role window
-  (`role_id == 0` means no role is present).
-- `ROLE_RUN` is the base's proof that the host can drive the accelerator: aXos
-  loads the input words into the role and returns the result.  In v0 the target
-  is `role.loopback` (the universal contract-proof role), so the result is the
-  input copied through the engine.  Per-role job ops (a GEMM descriptor for
-  TPU-lite, a SIMT kernel for GPU-compute) are added as new opcodes on this
-  same frame format.
+  (`role_id == 0` means no role is present).  It tells the host which of the
+  role-specific ops below apply.
+- `ROLE_RUN` targets `role.loopback` (the contract-proof role): aXos copies the
+  input words through the engine and returns them.  Its role in the base is to
+  exercise the whole path with a trivially checkable result.
+- `TPU_GEMM` targets `role.tpu-lite`: aXos loads the stationary weight tile and
+  `m` activation rows, latches `ctrl` (`0x1` ReLU, `0x2` accumulate), runs the
+  systolic GEMM, and returns the `m × 8` int32 result tile.
+- `GPU_RUN` targets `role.gpu-compute`: aXos uploads a straight-line kernel and
+  a flat data buffer, launches `nthreads` SIMT lanes over the program, and
+  returns the data buffer read back.
+- Each role op returns `NO_ROLE` if the shell does not currently hold that role.
 - `BYE` lets the host end the session cleanly; aXos acknowledges, then halts.
+
+Per-role ops keep the accelerator's job encoding on the host side (`axhost` and
+its role libraries); aXos only marshals the described buffers into the role
+window and runs the shared doorbell/status cycle.
 
 ## Status codes
 

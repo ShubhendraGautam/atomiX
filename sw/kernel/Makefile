@@ -99,9 +99,15 @@ check-role-driver: images
 # role.loopback.  Proves the whole host -> shell -> role control plane.
 check-hostlink:
 	$(MAKE) -B images HOSTLINK=1
-	python3 ../host/axhost.py --demo \
+	python3 ../host/axhost.py --demo --role loopback \
 	  --image $(abspath build/axos_boot.hex) \
 	  --config $(abspath ../../configs/sim-role-loopback.json)
+	python3 ../host/axhost.py --demo --role tpu \
+	  --image $(abspath build/axos_boot.hex) \
+	  --config $(abspath ../../configs/sim-tpu-lite.json)
+	python3 ../host/axhost.py --demo --role gpu \
+	  --image $(abspath build/axos_boot.hex) \
+	  --config $(abspath ../../configs/sim-gpu-compute.json)
 
 check-memory: images
 	$(MAKE) -B images STORAGE=0

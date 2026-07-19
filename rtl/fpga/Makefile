@@ -82,8 +82,13 @@ PROGRAM_HEX := ../../sw/baremetal/build/hello.hex
 $(PROGRAM_HEX):
 	$(MAKE) -C ../../sw/baremetal images
 
+# The board top's RAM_BYTES follows the selected profile so a role-heavy
+# profile can trade main memory for the block RAM its accelerator needs.
+RAM_BYTES ?= $(COMPONENT_RAM_BYTES)
+RAM_BYTES_CHPARAM := $(if $(RAM_BYTES),chparam -set RAM_BYTES $(RAM_BYTES) $(TOP);,)
+
 $(JSON): $(SYNTH_SV) $(PROGRAM_HEX) Makefile | $(BUILD)
-	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_SV); synth_gowin -noabc9 -top $(TOP) -json $@'
+	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_SV); $(RAM_BYTES_CHPARAM) synth_gowin -noabc9 -top $(TOP) -json $@'
 
 $(PNR_JSON): $(JSON) $(CST) | check-tools
 	$(NEXTPNR_HIMBAECHEL) --device $(DEVICE) --vopt family=$(FAMILY) --vopt cst=$(CST) --json $(JSON) --write $@

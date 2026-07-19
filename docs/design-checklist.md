@@ -131,11 +131,14 @@ component work above.  It is the final platform-evidence gate.
   CONFIG=configs/sim-bram.json SYNC_READ=1` (hello prints, one wait state per
   access).  Fit on the GW2A-18C: 32 DPB, ~2.7k FF, ~11k LUT4.  P&R and
   bitstream await the apicula tools (`nextpnr-himbaechel`, `gowin_pack`).
-- [ ] Attach an accelerator role on the Tang Nano.  Measured fit study in
-  [tangnano-capacity.md](tangnano-capacity.md): CPU+GPU (`role.gpu-compute`)
-  overflows LUT4 (~29k of 20.7k) and CPU+TPU (`role.tpu-lite`) overflows
-  flip-flops (the `cbuf` accumulator does not infer block RAM); all three do not
-  fit.  Requires shrinking an engine or a larger FPGA before this can pass.
+- [~] Attach an accelerator role on the Tang Nano.  The parameterized SIMT
+  engine (gpu_engine.sv, `NLANES`) fits at 4 lanes: `role.gpu-compute-lite` via
+  `configs/tangnano20k-gpu-lite.json` synthesises to ~18.9k LUT4, 32 DPB,
+  4 DSP — inside the GW2A-18C.  Functional equivalence to the 8-lane reference
+  is checked by `make -C sw/baremetal check-gpu` on the 4-lane sim profile, and
+  throughput by `check-gpu-perf` / `check-gpu-perf-lite` (poly kernel 12.9× /
+  8.9× vs on-core).  Fit study and the still-open TPU/all-three cases:
+  [tangnano-capacity.md](tangnano-capacity.md).
 - [ ] Run ECP5 / Gowin place-and-route, generate the bitstream, and record
   timing and resource reports.
 - [ ] Program SRAM only for the first board test; confirm serial output and

@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt fencei spi sd role tpu gpu
+PROGRAMS := hello timer preempt fencei spi sd role tpu gpu gpu_perf
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -85,7 +85,22 @@ check-gpu: build/gpu.hex
 	  COMPONENT_CONFIG=../../configs/sim-gpu-compute.json \
 	  RAM_INIT_FILE=$(abspath build/gpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
 
+# GPU performance regression: sweeps thread counts over two kernels, times the
+# SIMT engine against on-core loops, and fails if the measured speedup drops
+# below the bar.  check-gpu-perf runs the 8-lane role; -lite runs the 4-lane
+# small-FPGA role (same kernels, more waves, still must clear the bar).  The
+# raised cycle budget covers the sweep plus the per-thread MMIO uploads.
+check-gpu-perf: build/gpu_perf.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-gpu-compute.json \
+	  RAM_INIT_FILE=$(abspath build/gpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=4000000
+
+check-gpu-perf-lite: build/gpu_perf.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-gpu-compute-lite.json \
+	  RAM_INIT_FILE=$(abspath build/gpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=4000000
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf check-gpu-perf-lite clean

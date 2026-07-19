@@ -13,7 +13,11 @@
 // and I/O-primitive work, and BRAM-only proves the core + SoC + UART + role
 // path on real silicon first.
 module tangnano20k_top #(
-  parameter RAM_INIT_FILE = "../../sw/baremetal/build/hello.hex"
+  parameter RAM_INIT_FILE = "../../sw/baremetal/build/hello.hex",
+  // On-chip main memory size.  The FPGA flow overrides this from the selected
+  // profile's `ram_bytes` (rtl/fpga/Makefile chparam), so a role-heavy profile
+  // can trade main RAM for the block RAM its accelerator needs.
+  parameter int unsigned RAM_BYTES = 32 * 1024
 ) (
   input  logic       clk_27mhz,
   output logic       uart_tx,     // FPGA -> BL616 USB-serial (pin 69)
@@ -42,7 +46,7 @@ module tangnano20k_top #(
 
   soc_top #(
     .RESET_PC(32'h8000_0000),
-    .RAM_BYTES(32 * 1024),
+    .RAM_BYTES(RAM_BYTES),
     .USE_DRAM_MODEL(0),
     .USE_SDRAM(0),
     .USE_CACHES(0),

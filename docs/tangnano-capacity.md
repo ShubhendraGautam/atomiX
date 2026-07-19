@@ -18,9 +18,21 @@ verdicts).  The device budget is roughly:
 | Profile | LUT4 | Flip-flops | Block RAM | DSP | Fits? |
 |---|---|---|---|---|---|
 | `configs/tangnano20k.json` — **CPU** | ~11.3k | ~2.8k | 32 DPB | 0 | ✅ yes (synthesises; 32 KB RAM in BSRAM) |
-| `configs/tangnano20k-gpu.json` — **CPU+GPU** | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4× LUT4) |
+| `configs/tangnano20k-gpu-lite.json` — **CPU + GPU (4-lane)** | ~18.9k | ~6.2k | 32 DPB | 4× MULT36X36 | ✅ **yes** (16 KB RAM; the fitting GPU build) |
+| `configs/tangnano20k-gpu.json` — **CPU + GPU (8-lane)** | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4× LUT4) |
 | `configs/tangnano20k-tpu.json` — **CPU+TPU** | — | ~69.5k | 32 DPB | 64× MULT9X9 | ❌ FF overflow (~4.5×) |
 | CPU + GPU + TPU (all three) | — | — | — | — | ❌ impossible — a single accelerator already overflows, and the shell has one role window |
+
+**The GPU now fits** at 4 lanes.  The engine is parameterized by `NLANES`
+(gpu_engine.sv); `role.gpu-compute` is the reference 8-lane wrapper and
+`role.gpu-compute-lite` is the 4-lane variant for small parts.  Standalone
+engine cost scales cleanly with lanes: 8-lane 12.6k LUT4 / 8 DSP, 4-lane 6.6k /
+4, 2-lane 3.7k / 2.  The `tangnano20k-gpu-lite` profile also drops main memory
+to 16 KB (`ram_bytes`, honoured on the FPGA build via the board top's `RAM_BYTES`
+parameter) so main RAM (16 DPB) + the engine's 16 KB global buffer (16 DPB) sit
+inside the ~46-block BSRAM budget.  Functional equivalence and speed are covered
+by `make -C sw/baremetal check-gpu` (4-lane sim) and the `check-gpu-perf` /
+`check-gpu-perf-lite` performance regressions.
 
 ## Why each fails — they are different problems
 
@@ -44,11 +56,10 @@ to shrink).  This is the same class of issue that the main memory had before the
 
 ## Paths to make it "do tricks"
 
+- **CPU + GPU (4-lane)** — ✅ done: `configs/tangnano20k-gpu-lite.json`
+  (role.gpu-compute-lite).  A programmable SIMT engine that fits with headroom.
 - **CPU + TPU on the 20K** — fix `cbuf` to infer BSRAM, then shrink the systolic
-  array if the DSP count overflows.  Smallest change to a genuinely-fitting
-  accelerator on this board.
-- **CPU + a shrunk GPU** — parameterise the SIMT engine to `NLANES` and drop to
-  2–4 lanes so it fits ~20.7k LUT4.  Keeps a programmable engine, narrower.
+  array if the DSP count overflows.  Still open.
 - **All three** — needs a larger part (e.g. ULX3S-85F or a bigger Gowin) plus a
   new composite role that hosts both engines behind the single role window.
 

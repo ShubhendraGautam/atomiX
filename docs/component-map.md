@@ -14,7 +14,7 @@ alternative has the reference ISA, timing, filesystem, or verification status.
 
 | Layer | Selected kinds | Stock implementation choices |
 |---|---|---|
-| CPU | `core` | five-stage `core.pipeline5`; executable finisher-only smoke core |
+| CPU | `core`, `alu`, `muldiv`, `regfile`, `mmu` | five-stage `core.pipeline5`; executable finisher-only smoke core; single-cycle ALU, 32-cycle mul/div, flip-flop register file, Sv32 MMU selected through the core's defaults |
 | SoC fabric | `interconnect`, `cache`, `memory`, `rom`, `finisher`, `soc` | aXbus mux, direct-mapped or transparent cache, BRAM/delayed/SDRAM memory, boot ROM, SiFive-test finisher |
 | Peripherals | `uart`, `clint`, `spi` | QEMU-virt-aligned UART/CLINT and polling SPI |
 | Build environments | `board`, `harness` | ULX3S board top; normal and physical-SDRAM Verilator harnesses |

@@ -59,6 +59,13 @@ def validate_manifest(path: Path, value: dict[str, Any]) -> dict[str, Any]:
         raise ConfigError(f"{path}: sources must be a list of strings")
     if "make" in value and not isinstance(value["make"], dict):
         raise ConfigError(f"{path}: make must be an object")
+    if "defaults" in value:
+        defaults = value["defaults"]
+        if (not isinstance(defaults, dict) or
+                not all(isinstance(kind, str) and SAFE_COMPONENT_KIND.fullmatch(kind) and
+                        isinstance(default, str) and default
+                        for kind, default in defaults.items())):
+            raise ConfigError(f"{path}: defaults must map component kinds to component ids")
     value = dict(value)
     value["_path"] = path.resolve()
     return value
@@ -141,6 +148,32 @@ def resolved_config(path: Path) -> dict[str, Any]:
             raise ConfigError(
                 f"{path}: selected {component['id']!r} for {kind}, but it is a {component['kind']}")
         selected[kind] = component
+    # Fill unselected kinds from the selected components' declared defaults
+    # (the reference core defaults its ALU, mul/div, register file, and MMU),
+    # so a profile only names the units it overrides.  Explicit selections
+    # always win, a defaulted component's own defaults apply too, and two
+    # components disagreeing about an unselected kind is an error the profile
+    # must settle by selecting that kind explicitly.
+    while True:
+        wanted: dict[str, str] = {}
+        for component in selected.values():
+            for kind, default_id in component.get("defaults", {}).items():
+                if kind in selected:
+                    continue
+                if kind in wanted and wanted[kind] != default_id:
+                    raise ConfigError(
+                        f"{path}: selected components default {kind!r} to both "
+                        f"{wanted[kind]!r} and {default_id!r}; select one explicitly")
+                wanted[kind] = default_id
+        if not wanted:
+            break
+        for kind, default_id in wanted.items():
+            component = component_from_selection(default_id, known, path)
+            if component["kind"] != kind:
+                raise ConfigError(
+                    f"{path}: default {default_id!r} for {kind} is a "
+                    f"{component['kind']}")
+            selected[kind] = component
     settings = config.get("settings", {})
     if not isinstance(settings, dict):
         raise ConfigError(f"{path}: settings must be an object")

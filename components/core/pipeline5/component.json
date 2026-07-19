@@ -5,16 +5,18 @@
   "title": "aXcore five-stage RV32IM/Sv32 reference CPU",
   "sources": [
     "components/core/pipeline5/axcore_pkg.sv",
-    "components/core/pipeline5/regfile.sv",
-    "components/core/pipeline5/alu.sv",
     "components/core/pipeline5/immdec.sv",
     "components/core/pipeline5/decoder.sv",
     "components/core/pipeline5/branch_cmp.sv",
-    "components/core/pipeline5/muldiv.sv",
     "components/core/pipeline5/csr_file.sv",
-    "components/core/pipeline5/sv32_mmu.sv",
     "components/core/pipeline5/axcore.sv"
   ],
+  "defaults": {
+    "alu": "alu.single-cycle",
+    "muldiv": "muldiv.iterative32",
+    "regfile": "regfile.flipflop",
+    "mmu": "mmu.sv32"
+  },
   "stock_soc_module": "axcore",
   "capabilities": ["rv32im", "zicsr", "m/s/u", "sv32", "rvfi", "trace"]
 }

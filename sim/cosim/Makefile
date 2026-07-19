@@ -5,9 +5,17 @@ VERILATOR ?= verilator
 VFLAGS    := -Wall --cc -O2
 
 CORE_COMPONENT := ../../components/core/pipeline5
+COMPONENTS := ../../components
 AXSIM     := ../axsim/src
-CORE_SVS  := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
-CORE_SOURCES := $(CORE_SVS:%=$(CORE_COMPONENT)/%.sv)
+CORE_SOURCES := $(CORE_COMPONENT)/axcore_pkg.sv \
+  $(COMPONENTS)/regfile/flipflop/regfile.sv \
+  $(COMPONENTS)/alu/single-cycle/alu.sv \
+  $(CORE_COMPONENT)/immdec.sv $(CORE_COMPONENT)/decoder.sv \
+  $(CORE_COMPONENT)/branch_cmp.sv \
+  $(COMPONENTS)/muldiv/iterative32/muldiv.sv \
+  $(CORE_COMPONENT)/csr_file.sv \
+  $(COMPONENTS)/mmu/sv32/sv32_mmu.sv \
+  $(CORE_COMPONENT)/axcore.sv
 
 axcosim: $(CORE_SOURCES) tb_cosim.cpp $(AXSIM)/bus.h \
          $(AXSIM)/cpu.h $(AXSIM)/cpu.cpp $(AXSIM)/elf.h $(AXSIM)/elf.cpp

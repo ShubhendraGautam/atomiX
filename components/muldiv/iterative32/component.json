@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "muldiv.iterative32",
+  "kind": "muldiv",
+  "title": "Fixed-32-cycle iterative RV32M multiply/divide unit",
+  "sources": ["components/muldiv/iterative32/muldiv.sv"],
+  "stock_core_module": "muldiv",
+  "capabilities": ["rv32m", "fixed-latency-32", "start-busy-done"]
+}

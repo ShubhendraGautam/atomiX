@@ -17,8 +17,9 @@ Load-bearing properties (do not regress):
   a single commit point in WB; interrupts inject there too.
 - **Serialized irregular instructions**: CSR writes, `mret`, `fence.i` flush
   younger instructions and execute alone — no CSR forwarding network exists.
-  RV32M operations also execute alone through the fixed-32-cycle iterative
-  `muldiv.sv` unit, then resume fetch at the following instruction.
+  RV32M operations also execute alone through the selected `muldiv` component
+  (default: the fixed-32-cycle iterative `muldiv.iterative32`), then resume
+  fetch at the following instruction.
 - **Register file**: 32×32 flip-flops, x0 hardwired, 2R1W, internal
   write-before-read bypass.
 
@@ -26,8 +27,16 @@ Structure: `axcore.sv` is the pipeline — the five stages and the hazard/
 forwarding/flush control live there, clearly sectioned, because the pipeline
 registers are the boundaries that matter and module ports between stages
 would only add noise. Functional units are separate, individually-tested
-modules: `axcore_pkg.sv` (shared types), `regfile.sv`, `alu.sv`, `immdec.sv`,
-`decoder.sv`, `branch_cmp.sv`, `muldiv.sv`, `csr_file.sv`, and `sv32_mmu.sv`.
+modules. Four of them are selectable components in their own right, pulled in
+through this manifest's `defaults` and swappable per profile: the `alu`,
+`muldiv`, `regfile`, and `mmu` kinds (`components/alu/single-cycle/`,
+`components/muldiv/iterative32/`, `components/regfile/flipflop/`,
+`components/mmu/sv32/`). The units entangled with pipeline and privilege
+semantics stay here: `axcore_pkg.sv` (shared types — including `alu_op_t`,
+part of the ALU contract), `immdec.sv`, `decoder.sv`, `branch_cmp.sv`, and
+`csr_file.sv`. The module port list of each unit is its contract; `muldiv`'s
+`start/busy/done` handshake tolerates any latency, so an alternative
+implementation needs no core change.
 
 Correctness bar (DESIGN.md §4.3): riscv-tests **and** lock-step ISS cosim
 **and** riscv-formal — all three.  Run the current evidence commands from

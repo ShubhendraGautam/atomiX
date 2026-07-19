@@ -52,6 +52,10 @@ module is plugged in:
 | Selection | Stock integration module | Purpose |
 |---|---|---|
 | `core` | `axcore` | instruction/data aXbus masters, interrupt inputs, and the small commit signal set used for `fence.i` |
+| `alu` | `alu` | combinational RV32I integer operations inside the reference core's EX stage |
+| `muldiv` | `muldiv` | RV32M execution unit behind a latency-tolerant `start/busy/done` handshake |
+| `regfile` | `regfile` | 2R1W register file, x0 hardwired, write-before-read bypass |
+| `mmu` | `sv32_mmu` | per-port translation with the aXbus completion protocol plus a page-fault flavor |
 | `memory` | `axmem` | independent instruction/data aXbus RAM ports plus optional SDRAM pins |
 | `interconnect` | `axbus_mux` | one aXbus master decode and response selection |
 | `cache` | `axcache` | optional core-port cache or transparent forwarding policy |
@@ -74,6 +78,18 @@ The real SystemVerilog instantiation is the authoritative port list; no second
 hand-maintained IDL can drift from it. A user who wants a different boundary
 can select a custom `soc` component, use a custom test harness, or build their
 own board top. The component system deliberately does not fence them in.
+
+A manifest may declare `defaults`, naming the implementation it expects for
+kinds a profile leaves unselected. `core.pipeline5` defaults its four
+functional units (`alu.single-cycle`, `muldiv.iterative32`,
+`regfile.flipflop`, `mmu.sv32`), so existing profiles select a complete CPU
+with one line while a one-line addition swaps a single unit. An explicit
+selection always wins over a default, and if two selected components default
+the same kind differently the resolver requires the profile to choose.
+A swapped functional unit re-runs through the same lock-step cosimulation,
+ISA suite, and riscv-formal gates as the reference core — stronger evidence
+than any coarser replacement gets — but the swap must still earn that
+evidence itself; selection alone claims nothing.
 
 Software has no source-level ABI requirement. A manifest names its own Make
 directory/target and whether it produces a RAM hex image or an SD-boot payload.

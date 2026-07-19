@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "mmu.sv32",
+  "kind": "mmu",
+  "title": "Sv32 hardware page-table walker with fully-associative TLB",
+  "sources": ["components/mmu/sv32/sv32_mmu.sv"],
+  "stock_core_module": "sv32_mmu",
+  "capabilities": ["sv32", "hardware-ad-update", "per-port", "bare-passthrough"]
+}

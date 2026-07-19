@@ -1,4 +1,4 @@
-// Unit smoke test for components/core/pipeline5/regfile.sv.
+// Unit smoke test for components/regfile/flipflop/regfile.sv.
 #include <cstdio>
 #include <cstdlib>
 #include "Vregfile.h"

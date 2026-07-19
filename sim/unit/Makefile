@@ -5,6 +5,10 @@ VFLAGS    := -Wall --cc -O2
 
 CORE_COMPONENT := ../../components/core/pipeline5
 COMPONENTS := ../../components
+ALU_REFERENCE := $(COMPONENTS)/alu/single-cycle
+MULDIV_REFERENCE := $(COMPONENTS)/muldiv/iterative32
+REGFILE_REFERENCE := $(COMPONENTS)/regfile/flipflop
+MMU_REFERENCE := $(COMPONENTS)/mmu/sv32
 MEMORY_REFERENCE := $(COMPONENTS)/memory/reference
 INTERCONNECT_REFERENCE := $(COMPONENTS)/interconnect/axbus-reference
 CACHE_REFERENCE := $(COMPONENTS)/cache/direct-mapped
@@ -19,8 +23,19 @@ BOARD_ULX3S := $(COMPONENTS)/board/ulx3s_85f
 
 MODULES := regfile alu immdec decoder branch_cmp muldiv
 
-CORE_SVS := axcore_pkg regfile alu immdec decoder branch_cmp muldiv csr_file sv32_mmu axcore
-CORE_SOURCES := $(CORE_SVS:%=$(CORE_COMPONENT)/%.sv)
+# Functional units selected out of the core live in their own components;
+# each unit testbench builds the one source named here.
+UNIT_SV_regfile    := $(REGFILE_REFERENCE)/regfile.sv
+UNIT_SV_alu        := $(ALU_REFERENCE)/alu.sv
+UNIT_SV_immdec     := $(CORE_COMPONENT)/immdec.sv
+UNIT_SV_decoder    := $(CORE_COMPONENT)/decoder.sv
+UNIT_SV_branch_cmp := $(CORE_COMPONENT)/branch_cmp.sv
+UNIT_SV_muldiv     := $(MULDIV_REFERENCE)/muldiv.sv
+
+CORE_SOURCES := $(CORE_COMPONENT)/axcore_pkg.sv $(UNIT_SV_regfile) \
+  $(UNIT_SV_alu) $(UNIT_SV_immdec) $(UNIT_SV_decoder) $(UNIT_SV_branch_cmp) \
+  $(UNIT_SV_muldiv) $(CORE_COMPONENT)/csr_file.sv $(MMU_REFERENCE)/sv32_mmu.sv \
+  $(CORE_COMPONENT)/axcore.sv
 MEMORY_SOURCES := $(MEMORY_REFERENCE)/axram.sv $(MEMORY_REFERENCE)/axdram_model.sv \
   $(MEMORY_REFERENCE)/axsdram.sv $(MEMORY_REFERENCE)/axmem_reference.sv \
   $(MEMORY_REFERENCE)/axmem.sv
@@ -33,9 +48,9 @@ SOC_SVS := $(CORE_SOURCES) \
 
 test: $(MODULES:%=run-%) run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
 
-run-%: $(CORE_COMPONENT)/%.sv tb_%.cpp
+run-%: tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
-	  -o tb_$* $(CORE_COMPONENT)/axcore_pkg.sv $< $(CURDIR)/tb_$*.cpp >/dev/null
+	  -o tb_$* $(CORE_COMPONENT)/axcore_pkg.sv $(UNIT_SV_$*) $(CURDIR)/tb_$*.cpp >/dev/null
 	./obj_dir_$*/tb_$*
 
 # Core-level: run the directed test binaries on the RTL, with and without

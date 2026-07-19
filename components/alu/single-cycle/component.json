@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "alu.single-cycle",
+  "kind": "alu",
+  "title": "Single-cycle combinational RV32I ALU",
+  "sources": ["components/alu/single-cycle/alu.sv"],
+  "stock_core_module": "alu",
+  "capabilities": ["rv32i-ops", "combinational"]
+}

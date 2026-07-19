@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "regfile.flipflop",
+  "kind": "regfile",
+  "title": "Flip-flop 32x32 2R1W register file with write-before-read bypass",
+  "sources": ["components/regfile/flipflop/regfile.sv"],
+  "stock_core_module": "regfile",
+  "capabilities": ["2r1w", "x0-hardwired", "internal-bypass"]
+}

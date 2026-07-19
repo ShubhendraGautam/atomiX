@@ -40,6 +40,9 @@ RESET_PC ?= $(COMPONENT_RESET_PC)
 RAM_BYTES ?= $(COMPONENT_RAM_BYTES)
 EXTERNAL_MEMORY ?= $(COMPONENT_USE_DRAM_MODEL)
 CACHES ?= $(COMPONENT_CACHES)
+# Registered-read (block-RAM) main memory.  Off by default so the async
+# single-cycle model stays the reference; FPGA BRAM bring-up sets it to 1.
+SYNC_READ ?= 0
 MAX_CYCLES ?= 100000
 SD_IMAGE ?=
 BUILD_ID ?= default
@@ -52,7 +55,7 @@ UART_INPUT_FILE ?=
 # an external manifest) without reusing a generated Makefile that names the
 # old C++ harness path.
 SOURCE_LAYOUT_TAG := $(shell printf '%s' '$(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)' | cksum | awk '{print $$1}')
-BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)-src$(SOURCE_LAYOUT_TAG)-$(BUILD_ID)
+BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)-sync$(SYNC_READ)-src$(SOURCE_LAYOUT_TAG)-$(BUILD_ID)
 MDIR := obj_dir_$(BUILD_TAG)
 
 config: $(COMPONENT_MK)
@@ -78,6 +81,7 @@ run: $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)
 	@test -n "$(SIM_TOP)" || (echo "simulation profile must select a harness"; exit 2)
 	$(VERILATOR) $(VFLAGS) --top-module $(SIM_TOP) --Mdir $(MDIR) --exe --build \
 	  -GRESET_PC=$(RESET_PC) -GRAM_BYTES=$(RAM_BYTES) -GUSE_DRAM_MODEL=$(EXTERNAL_MEMORY) -GUSE_CACHES=$(CACHES) \
+	  -GSYNC_READ=$(SYNC_READ) \
 	  -GRAM_INIT_FILE=\"$(RAM_INIT_FILE)\" -GROM_INIT_FILE=\"$(ROM_INIT_FILE)\" \
 	  -o axsoc $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP) >/dev/null
 	./$(MDIR)/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)

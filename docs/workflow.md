@@ -24,7 +24,12 @@ Install only the tier you need; details in [dependencies.md](dependencies.md).
 | Core | `riscv64-unknown-elf-gcc` (rv32 multilib), Verilator, Python 3, GNU make | build + simulation + component tests |
 | Kernel | `qemu-system-riscv32` **≥ 7** | aXos S/U-mode boot checks |
 | Formal | current Yosys, SymbiYosys, riscv-formal | `make -C formal check` |
-| FPGA | OSS CAD Suite (Yosys, nextpnr-ecp5, ecppack, openFPGALoader) | synthesis + board deploy |
+| FPGA | OSS CAD Suite (Yosys, board flow tools, openFPGALoader) | synthesis + board deploy |
+
+The board component selects the flow: ULX3S uses ECP5 (`nextpnr-ecp5`, `ecppack`),
+Tang Nano 20K uses Gowin (`nextpnr-himbaechel`, `gowin_pack`).  Both ship in the
+OSS CAD Suite; `make -C rtl/fpga check-tools` verifies the ones the selected
+board needs.
 
 Pass a non-default QEMU as `QEMU=/abs/path/to/qemu-system-riscv32`.  Load the
 FPGA environment once per shell: `source "$HOME/opt/oss-cad-suite/environment"`.
@@ -153,40 +158,58 @@ make -C formal check          # after core/RVFI changes
 
 ---
 
-## 4. Deploy (FPGA synthesis → physical ULX3S)
+## 4. Deploy (FPGA synthesis → physical board)
 
 Physical deployment is the **final evidence gate**.  Simulation passing is not
-board proof.  Full procedure and safety notes: [ulx3s-bringup.md](ulx3s-bringup.md).
+board proof.  The board component selects the flow; two boards are supported:
+
+| Board | Profile | Flow | Main memory |
+|---|---|---|---|
+| ULX3S-85F (Lattice ECP5) | `configs/ulx3s-85f.json` | ECP5 | external SDRAM + fabric ROM |
+| Tang Nano 20K (Gowin GW2A-18C) | `configs/tangnano20k.json` | Gowin | 32 KB on-chip block RAM (BSRAM) |
+
+Full ULX3S procedure and safety notes: [ulx3s-bringup.md](ulx3s-bringup.md).
 
 ### 4.1 Tool check
 ```bash
 source "$HOME/opt/oss-cad-suite/environment"
-make -C rtl/fpga check-tools        # yosys, nextpnr-ecp5, ecppack present
-make -C rtl/fpga toolchain-report   # record versions with the build
+make -C rtl/fpga check-tools  COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # flow-specific tools
+make -C rtl/fpga toolchain-report COMPONENT_CONFIG=$PWD/configs/tangnano20k.json
 ```
 
-### 4.2 Synthesis, place-and-route, bitstream
+### 4.2 Synthesis-only gate (no P&R tools needed)
 ```bash
-make fpga CONFIG=configs/ulx3s-85f.json     # top-level wrapper, or:
-make -C rtl/fpga                            # equivalent; add COMPONENT_CONFIG=... to override
-make -C rtl/fpga config                     # print the resolved component selection
+make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangnano20k.json   # yosys netlist only
 ```
-`nextpnr-ecp5` prints utilisation and timing at the end; the 25 MHz
-`clk_25mhz` constraint must pass.  Do not program a bitstream from a failed or
-unconstrained P&R run.
+`synth` is the "does the design map for this board" check: it runs Yosys alone,
+so it passes with only `yosys` installed.  For the Tang Nano it must map the
+32 KB RAM to block RAM (`DPB` cells), not flip-flops — the memory uses
+registered reads (`axram` `SYNC_READ=1`) precisely so it infers BSRAM.
 
-### 4.3 Program the board
+### 4.3 Synthesis, place-and-route, bitstream
 ```bash
-make -C rtl/fpga program     # reversible SRAM configuration (a power-cycle restores flash)
+make fpga CONFIG=configs/ulx3s-85f.json     # top-level wrapper (ECP5), or:
+make fpga CONFIG=configs/tangnano20k.json   # Gowin/Tang Nano
+make -C rtl/fpga config COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # print resolved selection
 ```
-Then open the console (`picocom -b 115200 /dev/ttyUSB0`) and follow the board
-proof in [ulx3s-bringup.md](ulx3s-bringup.md) (SD-image `dd`, serial transcript,
-persistence check).
+The P&R tool (`nextpnr-ecp5` / `nextpnr-himbaechel`) prints utilisation and
+timing at the end; the board clock constraint (25 MHz ULX3S, 27 MHz Tang Nano)
+must pass.  Do not program a bitstream from a failed or unconstrained P&R run.
 
-### 4.4 Persistent flash — only after a passing board proof
+### 4.4 Program the board
 ```bash
-make -C rtl/fpga flash       # writes configuration flash; program is the normal dev path
+make -C rtl/fpga program COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # reversible SRAM config
 ```
+`program` targets the board named in the manifest (`ulx3s` / `tangnano20k`).
+Then open the console (`picocom -b 115200 /dev/ttyUSB0`) and confirm the UART
+transcript; for the Tang Nano the BL616 exposes the USB serial and LED5 shows a
+~0.5 s heartbeat.
+
+### 4.5 Persistent flash — only after a passing board proof
+```bash
+make -C rtl/fpga flash COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # writes config flash
+```
+`program` is the normal dev path; flash is persistent.
 
 ---
 

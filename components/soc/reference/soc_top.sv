@@ -6,6 +6,7 @@ module soc_top #(
   parameter int unsigned USE_DRAM_MODEL = 0,
   parameter int unsigned USE_SDRAM = 0,
   parameter int unsigned USE_CACHES = 0,
+  parameter int unsigned SYNC_READ = 0,
   parameter ROM_INIT_FILE = "",
   parameter RAM_INIT_FILE = ""
 ) (
@@ -181,7 +182,7 @@ module soc_top #(
   // only needs to implement this dual-aXbus/pin-level boundary.
   axmem #(
     .RAM_BYTES(RAM_BYTES), .USE_DRAM_MODEL(USE_DRAM_MODEL),
-    .USE_SDRAM(USE_SDRAM), .RAM_INIT_FILE(RAM_INIT_FILE)
+    .USE_SDRAM(USE_SDRAM), .SYNC_READ(SYNC_READ), .RAM_INIT_FILE(RAM_INIT_FILE)
   ) u_ram (
     .clk(clk), .rst(rst), .i_valid(i_ram_valid), .i_addr(i_bus_addr),
     .i_wdata(i_bus_wdata), .i_wstrb(i_bus_wstrb), .i_ready(i_ram_ready),

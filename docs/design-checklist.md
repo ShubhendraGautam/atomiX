@@ -122,8 +122,22 @@ component work above.  It is the final platform-evidence gate.
 - [~] ULX3S-85F board component, constraints, SDRAM/UART RTL, and synthesis
   preflight exist.  Evidence: `make fpga CONFIG=configs/ulx3s-85f.json` with
   the matched OSS CAD Suite environment.
-- [ ] Run ECP5 place-and-route, generate the bitstream, and record timing and
-  resource reports.
+- [~] Tang Nano 20K (Gowin GW2A-18C) board component, constraints, and Gowin
+  flow exist; the design synthesises and fits.  Evidence:
+  `make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangnano20k.json`
+  produces a Yosys netlist in which the 32 KB main memory maps to 32 `DPB`
+  block-RAM cells (not flip-flops) — the BRAM-only bring-up needs registered
+  reads (`axram` `SYNC_READ=1`), verified functionally by `make -C sim/soc run
+  CONFIG=configs/sim-bram.json SYNC_READ=1` (hello prints, one wait state per
+  access).  Fit on the GW2A-18C: 32 DPB, ~2.7k FF, ~11k LUT4.  P&R and
+  bitstream await the apicula tools (`nextpnr-himbaechel`, `gowin_pack`).
+- [ ] Attach an accelerator role on the Tang Nano.  Measured fit study in
+  [tangnano-capacity.md](tangnano-capacity.md): CPU+GPU (`role.gpu-compute`)
+  overflows LUT4 (~29k of 20.7k) and CPU+TPU (`role.tpu-lite`) overflows
+  flip-flops (the `cbuf` accumulator does not infer block RAM); all three do not
+  fit.  Requires shrinking an engine or a larger FPGA before this can pass.
+- [ ] Run ECP5 / Gowin place-and-route, generate the bitstream, and record
+  timing and resource reports.
 - [ ] Program SRAM only for the first board test; confirm serial output and
   reset/reload behavior.
 - [ ] Validate external SDRAM and SD read/write persistence on the physical

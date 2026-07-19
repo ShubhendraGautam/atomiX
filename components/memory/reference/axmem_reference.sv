@@ -9,6 +9,7 @@ module axmem_reference #(
   parameter int unsigned RAM_BYTES = 128 * 1024,
   parameter int unsigned USE_DRAM_MODEL = 0,
   parameter int unsigned USE_SDRAM = 0,
+  parameter int unsigned SYNC_READ = 0,
   parameter RAM_INIT_FILE = ""
 ) (
   input  logic        clk,
@@ -66,7 +67,7 @@ module axmem_reference #(
         .d_ready(d_ready), .d_rdata(d_rdata), .d_err(d_err)
       );
     end else begin : g_bram
-      axram #(.BYTES(RAM_BYTES), .INIT_FILE(RAM_INIT_FILE)) u_ram (
+      axram #(.BYTES(RAM_BYTES), .SYNC_READ(SYNC_READ), .INIT_FILE(RAM_INIT_FILE)) u_ram (
         .clk(clk), .rst(rst), .i_valid(i_valid), .i_addr(i_addr),
         .i_wdata(i_wdata), .i_wstrb(i_wstrb), .i_ready(i_ready),
         .i_rdata(i_rdata), .i_err(i_err), .d_valid(d_valid),

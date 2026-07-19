@@ -55,10 +55,19 @@ make -C formal check
 
 ## FPGA synthesis, place-and-route, and programming
 
-The ULX3S ECP5 target needs a matched `yosys`, `nextpnr-ecp5`, and `ecppack`.
-Use the prebuilt [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases)
-rather than compiling the complete FPGA stack locally.  It keeps the tools
-matched and avoids a long one-off build.
+A board component selects one of two open flows through its manifest, and both
+ship in the prebuilt [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases).
+Use it rather than compiling the FPGA stack locally: it keeps the tools matched
+and avoids a long one-off build.
+
+| Board | Flow | Tools |
+|---|---|---|
+| ULX3S-85F (Lattice ECP5) | `ecp5` | `yosys` (`synth_ecp5`), `nextpnr-ecp5`, `ecppack` |
+| Tang Nano 20K (Gowin GW2A-18C) | `gowin` | `yosys` (`synth_gowin`), `nextpnr-himbaechel` (apicula), `gowin_pack` (apicula) |
+
+`make -C rtl/fpga check-tools` verifies exactly the tools the selected flow
+needs, and `make -C rtl/fpga synth` is a yosys-only "does it synthesise for this
+board" gate that needs no place-and-route tools installed.
 
 `openFPGALoader` and `picocom` are only needed for physical-board work.  The
 setup, tool verification, and safe SRAM-versus-flash distinction are in

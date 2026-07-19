@@ -4,6 +4,7 @@ module axmem #(
   parameter int unsigned RAM_BYTES = 128 * 1024,
   parameter int unsigned USE_DRAM_MODEL = 0,
   parameter int unsigned USE_SDRAM = 0,
+  parameter int unsigned SYNC_READ = 0,
   parameter RAM_INIT_FILE = ""
 ) (
   input  logic        clk,
@@ -37,6 +38,6 @@ module axmem #(
 );
   axmem_reference #(
     .RAM_BYTES(RAM_BYTES), .USE_DRAM_MODEL(USE_DRAM_MODEL),
-    .USE_SDRAM(USE_SDRAM), .RAM_INIT_FILE(RAM_INIT_FILE)
+    .USE_SDRAM(USE_SDRAM), .SYNC_READ(SYNC_READ), .RAM_INIT_FILE(RAM_INIT_FILE)
   ) u_reference (.*);
 endmodule

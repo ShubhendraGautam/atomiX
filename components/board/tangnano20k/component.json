@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "board.tangnano20k",
+  "kind": "board",
+  "title": "Sipeed Tang Nano 20K (Gowin GW2AR-18C) board target — BRAM-only bring-up",
+  "sources": [
+    "components/board/tangnano20k/axuart_phy.sv",
+    "components/board/tangnano20k/tangnano20k_top.sv"
+  ],
+  "make": {
+    "FPGA_FLOW": "gowin",
+    "FPGA_TOP": "tangnano20k_top",
+    "FPGA_CST": "components/board/tangnano20k/tangnano20k.cst",
+    "FPGA_DEVICE": "GW2AR-LV18QN88C8/I7",
+    "FPGA_FAMILY": "GW2A-18C",
+    "FPGA_PROG_BOARD": "tangnano20k"
+  },
+  "capabilities": ["gowin", "gw2ar-18c", "open-flow", "bram-only", "usb-uart"]
+}

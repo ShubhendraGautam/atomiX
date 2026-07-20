@@ -173,7 +173,9 @@ board proof.  The board component selects the flow; two boards are supported:
 | ULX3S-85F (Lattice ECP5) | `configs/ulx3s-85f.json` | ECP5 | external SDRAM + fabric ROM |
 | Tang Nano 20K (Gowin GW2A-18C) | `configs/tangnano20k.json` | Gowin | 32 KB on-chip block RAM (BSRAM) |
 
-Full ULX3S procedure and safety notes: [ulx3s-bringup.md](ulx3s-bringup.md).
+What each board can actually run, per configuration, backed by real synth/sim
+runs: [hardware-capabilities.md](hardware-capabilities.md).  Full ULX3S
+procedure and safety notes: [ulx3s-bringup.md](ulx3s-bringup.md).
 
 ### 4.1 Tool check
 ```bash

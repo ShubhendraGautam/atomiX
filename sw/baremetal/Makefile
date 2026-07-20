@@ -96,7 +96,24 @@ check-gpu-perf: build/gpu_perf.hex
 	  COMPONENT_CONFIG=../../configs/sim-gpu-compute.json \
 	  RAM_INIT_FILE=$(abspath build/gpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=4000000
 
+# Component test SUITE, not a per-hardware check: one target exercises the whole
+# minimal-host family — core.minimal driving the CPU (hello), the GPU role, and
+# the TPU role — so a lean-component variant is covered without a separate check
+# and profile per combination.  Add a suite (and its sim-<name>-* fixtures) when
+# a family of components warrants coverage together.
+check-suite-minimal: build/hello.hex build/gpu.hex build/tpu.hex
+	@echo "== suite/minimal: core.minimal + CPU (hello) =="
+	$(MAKE) -C ../../sim/soc run COMPONENT_CONFIG=../../configs/sim-minimal.json \
+	  RAM_INIT_FILE=$(abspath build/hello.hex) RESET_PC=0x80000000 MAX_CYCLES=200000
+	@echo "== suite/minimal: core.minimal + GPU (gpu-compute-6) =="
+	$(MAKE) -C ../../sim/soc run COMPONENT_CONFIG=../../configs/sim-minimal-gpu.json \
+	  RAM_INIT_FILE=$(abspath build/gpu.hex) RESET_PC=0x80000000 MAX_CYCLES=600000
+	@echo "== suite/minimal: core.minimal + TPU (tpu-lite) =="
+	$(MAKE) -C ../../sim/soc run COMPONENT_CONFIG=../../configs/sim-minimal-tpu.json \
+	  RAM_INIT_FILE=$(abspath build/tpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
+	@echo "suite/minimal: PASS"
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf check-suite-minimal clean

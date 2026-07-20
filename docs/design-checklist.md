@@ -50,15 +50,14 @@ contracts and selections are in [components/](../components/).
   overrides.  Evidence: `make -C sim/unit run-muldiv-fastmul` and
   `make -C sim/cosim test rv32um
   MULDIV_SV=../../components/muldiv/fast-mul/muldiv.sv`.
-- [~] A whole-CPU swap demonstrates the same seam at core granularity:
+- [x] A whole-CPU swap demonstrates the same seam at core granularity:
   `core.minimal` is a compact multi-cycle RV32IM machine-mode core (no MMU/S/U,
   reusing the reference decoder/ALU/mul-div/regfile) built as an accelerator
-  host.  It runs the bare-metal suite and hosts the GPU role — demonstrated in
-  sim during development (hello, and `gpu.c`/`gpu_perf.c` PASS).  Reproduce by
-  composing a `board.sim` profile with `core.minimal` and a GPU role and running
-  it through `sim/soc`.  It ships in the shipped `tangnano20k-gpu` profile
-  (minimal host + 6-lane GPU) and does not yet carry the reference core's
-  cosim/riscv-formal evidence.
+  host.  Evidence: `make -C sw/baremetal check-suite-minimal` — one suite that
+  runs `core.minimal` driving the CPU (hello), the GPU role, and the TPU role.
+  It ships in the `tangnano20k-gpu` and `ulx3s-85f-gpu` profiles (minimal host +
+  GPU).  It does not yet carry the reference core's cosim/riscv-formal evidence,
+  so architectural equivalence at ISA granularity is still open.
 
 ## Change-ready checklist
 

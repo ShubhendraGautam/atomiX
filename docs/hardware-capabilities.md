@@ -60,11 +60,13 @@ core), and `role.gpu-compute-6` (used here).  Deep analysis:
 | Configuration | Profile | LUT4 | Flip-flops | Block RAM | DSP | Verdict |
 |---|---|---|---|---|---|---|
 | CPU (5-stage RV32IM/Sv32) | `ulx3s-85f` | 10.6k (13%) | 3.1k | — | 0 | ✅ **SYNTH** + **SIM** |
-| CPU + GPU (8-lane SIMT) | `ulx3s-85f-gpu` | 23.8k (28%) | 5.5k | 18 EBR | 24 | ✅ **SYNTH** + **SIM** (gpu, perf) |
+| minimal host + GPU (8-lane SIMT) | `ulx3s-85f-gpu` | 22.2k (26%) | 3.8k | 18 EBR | 24 | ✅ **SYNTH** + **SIM** (suite) |
 | CPU + TPU (8×8 int8 GEMM) | `ulx3s-85f-tpu` | (large) | 71.5k (85%) | 2 EBR | 64 | ✅ **SYNTH** (fits; FF-bound) + **SIM** |
 
 **Possible on the ULX3S-85F:** the CPU plus the **full 8-lane GPU** with room to
-spare (28% LUT4), and the **TPU** as well (FF-bound at ~85% because its `cbuf`
+spare (26% LUT4 — the GPU profile pairs the 8-lane engine with the minimal host,
+same accelerator-first pattern as the Tang Nano), and the **TPU** as well
+(FF-bound at ~85% because its `cbuf`
 accumulator still maps to flip-flops rather than block RAM — a role bug, not a
 board limit; fixing it would free most of that).  The part has headroom that the
 single-role shell does not yet exploit: hosting GPU **and** TPU together needs a
@@ -78,6 +80,8 @@ These prove the RTL that every fitting configuration above inherits:
   check-fencei check-spi check-sd`
 - Accelerator roles: `check-role` (loopback), `check-tpu`, `check-gpu`,
   `check-gpu-perf`
+- Lean-component suite: `check-suite-minimal` — `core.minimal` (the accelerator
+  host in the GPU profiles) driving the CPU, GPU, and TPU in one run
 - Lock-step cosimulation vs the golden ISS: `make -C sim/cosim test`
 - aXos kernel: `make -C sw/kernel check-role-driver check-hostlink`
 

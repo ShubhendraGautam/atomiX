@@ -124,7 +124,13 @@ The GPU engine is parameterized by lane count (gpu_engine.sv `NLANES`):
 ```bash
 make config-check-all              # all profiles resolve
 make component-test                # runs the supplied composition matrix (slower)
+make -C sw/baremetal check-suite-minimal   # lean-component family in one suite
 ```
+Prefer **suites** over a check-plus-profile per hardware combination: a suite
+exercises a family of components together.  `check-suite-minimal` runs
+`core.minimal` driving the CPU (hello), the GPU role, and the TPU role from the
+`sim-minimal*` fixtures.  Add a suite when a family of components (a new core,
+an accelerator variant) warrants coverage without one-off profiles.
 
 ### 3.5 Kernel (aXos) — needs `qemu-system-riscv32` ≥ 7
 ```bash

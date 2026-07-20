@@ -113,11 +113,12 @@ make -C sw/baremetal check-role     # role.loopback contract proof
 make -C sw/baremetal check-tpu      # TPU-lite int8 systolic GEMM vs on-core reference
 make -C sw/baremetal check-gpu      # GPU-compute SIMT engine vs on-core reference (8-lane)
 make -C sw/baremetal check-gpu-perf # GPU throughput regression vs on-core (8-lane)
-make -C sw/baremetal check-gpu-perf-lite  # same, on the 4-lane small-FPGA role
 ```
 The GPU engine is parameterized by lane count (gpu_engine.sv `NLANES`):
-`role.gpu-compute` is the 8-lane reference, `role.gpu-compute-lite` the 4-lane
-variant that fits the Tang Nano 20K (see [tangnano-capacity.md](tangnano-capacity.md)).
+`role.gpu-compute` is the 8-lane reference, with `role.gpu-compute-lite` (4) and
+`role.gpu-compute-6` (6) as smaller variants for the Tang Nano 20K (see
+[hardware-capabilities.md](hardware-capabilities.md)).  `check-gpu-perf` runs the
+8-lane role; point `COMPONENT_CONFIG` at a composed profile to time another.
 
 ### 3.4 Components / composition
 ```bash

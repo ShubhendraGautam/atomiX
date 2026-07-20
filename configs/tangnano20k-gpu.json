@@ -2,10 +2,10 @@
   "schema": 1,
   "name": "tangnano20k-gpu",
   "components": {
-    "core": "core.pipeline5",
+    "core": "core.minimal",
     "soc": "soc.reference",
     "memory": "memory.bram",
-    "role": "role.gpu-compute",
+    "role": "role.gpu-compute-6",
     "uart": "uart.mmio16550",
     "clint": "clint.qemu-virt",
     "spi": "spi.polling-mode0",
@@ -15,5 +15,9 @@
     "rom": "rom.axrom",
     "finisher": "finisher.sifive-test"
   },
-  "settings": {"ram_bytes": 32768, "caches": false, "reset_pc": "0x80000000"}
+  "settings": {
+    "ram_bytes": 16384,
+    "caches": false,
+    "reset_pc": "0x80000000"
+  }
 }

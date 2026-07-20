@@ -15,25 +15,29 @@ verdicts).  The device budget is roughly:
 
 ## The verdict
 
-| Profile | LUT4 | Flip-flops | Block RAM | DSP | Fits? |
-|---|---|---|---|---|---|
-| `configs/tangnano20k.json` — **CPU** | ~11.3k | ~2.8k | 32 DPB | 0 | ✅ yes (synthesises; 32 KB RAM in BSRAM) |
-| `configs/tangnano20k-gpu-lite.json` — **CPU + GPU (4-lane)** | ~18.9k | ~6.2k | 32 DPB | 4× MULT36X36 | ✅ **yes** (16 KB RAM; the fitting GPU build) |
-| `configs/tangnano20k-gpu.json` — **CPU + GPU (8-lane)** | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4× LUT4) |
-| `configs/tangnano20k-tpu.json` — **CPU+TPU** | — | ~69.5k | 32 DPB | 64× MULT9X9 | ❌ FF overflow (~4.5×) |
-| `configs/tangnano20k-mini-gpu6.json` — **minimal CPU + GPU (6-lane)** | ~20.2k | ~2k | 32 DPB | 6× MULT36X36 | ✅ yes, **tight** (97% LUT4) |
-| CPU + GPU + TPU (all three) | — | — | — | — | ❌ impossible — a single accelerator already overflows, and the shell has one role window |
+The three shipped profiles are the CPU, the peaked GPU, and the TPU; the other
+rows are measured points reachable by composing catalog components into a
+profile.
 
-**The GPU now fits** at 4 lanes.  The engine is parameterized by `NLANES`
-(gpu_engine.sv); `role.gpu-compute` is the reference 8-lane wrapper and
-`role.gpu-compute-lite` is the 4-lane variant for small parts.  Standalone
-engine cost scales cleanly with lanes: 8-lane 12.6k LUT4 / 8 DSP, 4-lane 6.6k /
-4, 2-lane 3.7k / 2.  The `tangnano20k-gpu-lite` profile also drops main memory
-to 16 KB (`ram_bytes`, honoured on the FPGA build via the board top's `RAM_BYTES`
-parameter) so main RAM (16 DPB) + the engine's 16 KB global buffer (16 DPB) sit
-inside the ~46-block BSRAM budget.  Functional equivalence and speed are covered
-by `make -C sw/baremetal check-gpu` (4-lane sim) and the `check-gpu-perf` /
-`check-gpu-perf-lite` performance regressions.
+| Configuration | LUT4 | Flip-flops | Block RAM | DSP | Fits? |
+|---|---|---|---|---|---|
+| **CPU** — `configs/tangnano20k.json` | ~11.3k | ~2.8k | 32 DPB | 0 | ✅ yes (32 KB RAM in BSRAM) |
+| **GPU (peaked)** — `configs/tangnano20k-gpu.json` (minimal host + 6-lane) | ~20.2k | ~2k | 32 DPB | 6× MULT36X36 | ✅ yes, **tight** (97% LUT4) |
+| **TPU** — `configs/tangnano20k-tpu.json` | — | ~69.5k | 32 DPB | 64× MULT9X9 | ❌ FF overflow (~4.5×) |
+| 5-stage CPU + GPU 4-lane (`role.gpu-compute-lite`) | ~18.9k | ~6.2k | 32 DPB | 4× MULT36X36 | ✅ yes, comfortable |
+| 5-stage CPU + GPU 8-lane (`role.gpu-compute`) | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4×) |
+| CPU + GPU + TPU (all three) | — | — | — | — | ❌ impossible — one accelerator overflows, one role window |
+
+**The GPU fits** because the engine is parameterized by `NLANES` (gpu_engine.sv):
+`role.gpu-compute` is the 8-lane reference, `role.gpu-compute-lite` (4) and
+`role.gpu-compute-6` (6) are the smaller variants.  Standalone engine cost scales
+cleanly: 8-lane 12.6k LUT4 / 8 DSP, 6-lane ~9.5k / 6, 4-lane 6.6k / 4, 2-lane
+3.7k / 2.  The GPU profile also drops main memory to 16 KB (`ram_bytes`, honoured
+on the FPGA build via the board top's `RAM_BYTES` parameter) so main RAM (16 DPB)
++ the engine's 16 KB global buffer (16 DPB) sit inside the ~46-block BSRAM budget.
+Functional equivalence and speed are covered by `make -C sw/baremetal check-gpu`
+and `check-gpu-perf` (point `COMPONENT_CONFIG` at a composed profile to measure a
+specific core/lane pairing).
 
 ## Why each fails — they are different problems
 
@@ -68,24 +72,26 @@ Why so little?  The Sv32 MMU is just ~1.2k LUT4 (two instances) and the pipeline
 registers/forwarding are cheap; the real weight is the RV32IM **decode + CSR +
 load/store and writeback muxing**, which a multi-cycle core still pays in full
 (note the large `MUX2_LUT*` counts).  So the minimal host frees enough to move
-the GPU from 4 lanes to 6, but the result (`tangnano20k-mini-gpu6`) lands at
-**20.2k of 20,736 LUT4 (97%)** — it synthesises and maps (32 DPB, 6 DSP), but
-place-and-route would be tight and is unconfirmed without the apicula tools.
+the GPU from 4 lanes to 6, which is what the shipped `tangnano20k-gpu` profile
+does — it lands at **20.2k of 20,736 LUT4 (97%)** — it synthesises and maps
+(32 DPB, 6 DSP), but place-and-route would be tight and is unconfirmed without
+the apicula tools.
 
 What the swap *does* deliver is a better compute machine and a sharper
 offload case: on the leaner (slower) host the on-core loop costs more, so GPU
 offload wins by more — the `saxpy` benchmark speedup rises from ~1.4× (5-stage
 host) to **~2.5×** (minimal host), and `poly` stays ~11×.  `core.minimal` hosts
-the full accelerator flow: `make -C sw/baremetal check-gpu` and the
-`check-gpu-perf` regressions pass on the `sim-minimal*` profiles.
+the full accelerator flow; compose a `board.sim` profile with `core.minimal` and
+a GPU role to run `check-gpu` / `check-gpu-perf` against it.
 
-For a comfortable margin, pair `core.minimal` with the 4-lane GPU; for maximum
-GPU width on this part, the 6-lane pairing fits but leaves little headroom.
+For a comfortable margin, pair `core.minimal` with the 4-lane GPU
+(`role.gpu-compute-lite`); the shipped profile takes maximum GPU width (6 lanes),
+which fits but leaves little headroom.
 
 ## Paths to make it "do tricks"
 
-- **CPU + GPU (4-lane)** — ✅ done: `configs/tangnano20k-gpu-lite.json`
-  (role.gpu-compute-lite).  A programmable SIMT engine that fits with headroom.
+- **CPU + GPU** — ✅ done: `configs/tangnano20k-gpu.json` (minimal host + 6-lane),
+  or `role.gpu-compute-lite` (4-lane) for a comfortable margin.
 - **CPU + TPU on the 20K** — fix `cbuf` to infer BSRAM, then shrink the systolic
   array if the DSP count overflows.  Still open.
 - **All three** — needs a larger part (e.g. ULX3S-85F or a bigger Gowin) plus a

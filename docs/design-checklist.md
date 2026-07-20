@@ -53,10 +53,12 @@ contracts and selections are in [components/](../components/).
 - [~] A whole-CPU swap demonstrates the same seam at core granularity:
   `core.minimal` is a compact multi-cycle RV32IM machine-mode core (no MMU/S/U,
   reusing the reference decoder/ALU/mul-div/regfile) built as an accelerator
-  host.  It runs the bare-metal suite and hosts the GPU role.  Evidence:
-  `make -C sim/soc run CONFIG=configs/sim-minimal.json` (hello) and the
-  `sim-minimal-gpu`/`sim-minimal-gpu6` profiles pass `gpu.c`/`gpu_perf.c`.
-  It does not yet carry the reference core's cosim/riscv-formal evidence.
+  host.  It runs the bare-metal suite and hosts the GPU role — demonstrated in
+  sim during development (hello, and `gpu.c`/`gpu_perf.c` PASS).  Reproduce by
+  composing a `board.sim` profile with `core.minimal` and a GPU role and running
+  it through `sim/soc`.  It ships in the shipped `tangnano20k-gpu` profile
+  (minimal host + 6-lane GPU) and does not yet carry the reference core's
+  cosim/riscv-formal evidence.
 
 ## Change-ready checklist
 
@@ -139,13 +141,14 @@ component work above.  It is the final platform-evidence gate.
   access).  Fit on the GW2A-18C: 32 DPB, ~2.7k FF, ~11k LUT4.  P&R and
   bitstream await the apicula tools (`nextpnr-himbaechel`, `gowin_pack`).
 - [~] Attach an accelerator role on the Tang Nano.  The parameterized SIMT
-  engine (gpu_engine.sv, `NLANES`) fits at 4 lanes: `role.gpu-compute-lite` via
-  `configs/tangnano20k-gpu-lite.json` synthesises to ~18.9k LUT4, 32 DPB,
-  4 DSP — inside the GW2A-18C.  Functional equivalence to the 8-lane reference
-  is checked by `make -C sw/baremetal check-gpu` on the 4-lane sim profile, and
-  throughput by `check-gpu-perf` / `check-gpu-perf-lite` (poly kernel 12.9× /
-  8.9× vs on-core).  Fit study and the still-open TPU/all-three cases:
-  [tangnano-capacity.md](tangnano-capacity.md).
+  engine (gpu_engine.sv, `NLANES`) fits: the shipped `configs/tangnano20k-gpu.json`
+  (minimal host + 6-lane) synthesises to ~20.2k LUT4, 32 DPB, 6 DSP — inside the
+  GW2A-18C at 97% (tight); the 4-lane `role.gpu-compute-lite` fits comfortably
+  (~18.9k).  Functional equivalence to the 8-lane reference is checked by
+  `make -C sw/baremetal check-gpu`, and throughput by `check-gpu-perf` (poly
+  kernel ~12.9× vs on-core).  Per-hardware fit:
+  [hardware-capabilities.md](hardware-capabilities.md); still-open TPU/all-three
+  cases: [tangnano-capacity.md](tangnano-capacity.md).
 - [ ] Run ECP5 / Gowin place-and-route, generate the bitstream, and record
   timing and resource reports.
 - [ ] Program SRAM only for the first board test; confirm serial output and

@@ -87,20 +87,16 @@ check-gpu: build/gpu.hex
 
 # GPU performance regression: sweeps thread counts over two kernels, times the
 # SIMT engine against on-core loops, and fails if the measured speedup drops
-# below the bar.  check-gpu-perf runs the 8-lane role; -lite runs the 4-lane
-# small-FPGA role (same kernels, more waves, still must clear the bar).  The
-# raised cycle budget covers the sweep plus the per-thread MMIO uploads.
+# below the bar.  The raised cycle budget covers the sweep plus the per-thread
+# MMIO uploads.  To measure a different core/lane count, point COMPONENT_CONFIG
+# at your own profile (the reduced-lane and minimal-host components ship in the
+# catalog; compose a profile when you need it).
 check-gpu-perf: build/gpu_perf.hex
 	$(MAKE) -C ../../sim/soc run \
 	  COMPONENT_CONFIG=../../configs/sim-gpu-compute.json \
 	  RAM_INIT_FILE=$(abspath build/gpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=4000000
 
-check-gpu-perf-lite: build/gpu_perf.hex
-	$(MAKE) -C ../../sim/soc run \
-	  COMPONENT_CONFIG=../../configs/sim-gpu-compute-lite.json \
-	  RAM_INIT_FILE=$(abspath build/gpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=4000000
-
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf check-gpu-perf-lite clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf clean

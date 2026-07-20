@@ -36,20 +36,24 @@ SDRAM** with caches (fabric holds only a small ROM, leaving block RAM free).
 
 ## Tang Nano 20K (Gowin GW2AR-18C) — the small part
 
-| Configuration | Profile | LUT4 | Block RAM | DSP | Verdict |
-|---|---|---|---|---|---|
-| CPU (5-stage RV32IM/Sv32) | `tangnano20k` | 11.3k | 32 DPB | 0 | ✅ **SYNTH** + **SIM** (hello) |
-| CPU + GPU (4-lane SIMT) | `tangnano20k-gpu-lite` | 18.9k | 32 DPB | 16 | ✅ **SYNTH** + **SIM** (gpu, perf) |
-| minimal CPU (multi-cycle) | `tangnano20k-mini` | 9.8k | 16 DPB | 0 | ✅ **SYNTH** + **SIM** (hello) |
-| minimal CPU + GPU (6-lane) | `tangnano20k-mini-gpu6` | 20.2k (97%) | 32 DPB | 24 | ⚠️ **SYNTH** (fits, tight) + **SIM** |
-| CPU + GPU (8-lane SIMT) | `tangnano20k-gpu` | 29.3k | 48 DPB | 32 | ❌ overflow — LUT4 ~1.4× the part |
-| CPU + TPU (8×8 int8 GEMM) | `tangnano20k-tpu` | — | — | 64 | ❌ overflow — ~69.5k FF (`cbuf` in flip-flops) |
-| CPU + GPU + TPU | — | — | — | — | ❌ impossible — one accelerator already overflows |
+Three profiles, each peaked for the part — the CPU, the biggest GPU that fits,
+and the TPU:
 
-**Possible on the Tang Nano 20K:** a CPU plus **one** modest accelerator — the
-4-lane GPU (comfortable), or the 6-lane GPU on the minimal host (tight).  The
-full 8-lane GPU and the TPU each exceed the part, and all-three is out.  Deep
-analysis: [tangnano-capacity.md](tangnano-capacity.md).
+| Capability | Profile | Config | LUT4 | Block RAM | DSP | Verdict |
+|---|---|---|---|---|---|---|
+| **CPU** | `tangnano20k` | 5-stage RV32IM/Sv32 | 11.3k | 32 DPB | 0 | ✅ **SYNTH** + **SIM** (hello) |
+| **GPU** | `tangnano20k-gpu` | minimal host + 6-lane SIMT | 20.2k (97%) | 32 DPB | 24 | ⚠️ **SYNTH** (fits, tight) + **SIM** (gpu, perf) |
+| **TPU** | `tangnano20k-tpu` | 8×8 int8 GEMM | — | — | 64 | ❌ overflow — ~69.5k FF (`cbuf` in flip-flops) |
+
+**Possible on the Tang Nano 20K:** a CPU plus **one** modest accelerator.  The
+GPU is peaked at 6 lanes by pairing the wide engine with the minimal host core
+(the 5-stage core + 8-lane GPU overflows at ~29k LUT4; the minimal core frees
+enough to reach 6 lanes, at 97% — tight).  The TPU does not fit at all, and
+all-three is out (the shell also has only one role window).  Other lane counts
+are a config away — the catalog ships `role.gpu-compute` (8-lane, overflows
+this part), `role.gpu-compute-lite` (4-lane, fits comfortably with the 5-stage
+core), and `role.gpu-compute-6` (used here).  Deep analysis:
+[tangnano-capacity.md](tangnano-capacity.md).
 
 ## ULX3S-85F (Lattice ECP5) — the large part
 
@@ -73,7 +77,7 @@ These prove the RTL that every fitting configuration above inherits:
 - Bare-metal: `make -C sw/baremetal check-hello check-timer check-preempt
   check-fencei check-spi check-sd`
 - Accelerator roles: `check-role` (loopback), `check-tpu`, `check-gpu`,
-  `check-gpu-perf`, `check-gpu-perf-lite`
+  `check-gpu-perf`
 - Lock-step cosimulation vs the golden ISS: `make -C sim/cosim test`
 - aXos kernel: `make -C sw/kernel check-role-driver check-hostlink`
 
@@ -81,7 +85,7 @@ These prove the RTL that every fitting configuration above inherits:
 
 ```bash
 # Tang Nano (Gowin flow); BUILD=<dir> keeps trees separate.
-make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangnano20k-gpu-lite.json BUILD=build-tn
+make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangnano20k-gpu.json BUILD=build-tn
 yosys -p "read_json build-tn/tangnano20k_top.json; stat -top tangnano20k_top"
 
 # ULX3S (ECP5 flow).

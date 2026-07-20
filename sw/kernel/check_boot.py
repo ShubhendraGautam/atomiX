@@ -9,11 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SHELL_INPUT = ROOT / "sw/kernel/shell_input.txt"
 FORK_INPUT = ROOT / "sw/kernel/fork_input.txt"
+EXEC_INPUT = ROOT / "sw/kernel/exec_input.txt"
 STORAGE_WRITE_INPUT = ROOT / "sw/kernel/storage_write_input.txt"
 SHELL_OUTPUT = (
     "aXos: shell online\n"
     "aXos> help\n"
-    "commands: help ls cat write echo fork role exit\n"
+    "commands: help ls cat write echo fork exec role exit\n"
     "aXos> ls\n"
     "motd\n"
     "readme\n"
@@ -28,6 +29,11 @@ SHELL_OUTPUT_SD = SHELL_OUTPUT.replace(
     "aXos SD disk: help, ls, cat, echo, exit.\n")
 BOOT_PREFIX = "aXboot\n"
 FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
+# The loaded program prints exactly this and then exits 0.  Anything else -- a
+# different string, a non-zero exit -- means the loader mapped something wrong,
+# and the program's exit code says which check failed (see userprog/hello.c).
+EXEC_OUTPUT = ("aXos: shell online\naXos> exec\n"
+               "exec: axlibc: pid=1 n=42 hex=beef str=reused\n")
 STORAGE_WRITE_OUTPUT = (
     "aXos: shell online\n"
     "aXos> write note phase6-persistent\n"
@@ -140,12 +146,32 @@ def main() -> None:
                                   else ["--uart-input-file", str(FORK_INPUT)] if label == "ISS"
                                   else [])
         run(f"{label} fork", fork_command, FORK_INPUT, None)
+        # Loading an ELF is real work -- parsing headers, copying segments into
+        # a fresh address space, then running a program that allocates -- so the
+        # exec run needs a budget matched to it rather than the shell's.
+        #
+        # External memory needs an order of magnitude more than on-chip RAM:
+        # ~10M cycles for ~110k instructions, because the default cache is 16
+        # lines of 4 words (256 bytes) and thrashes on a working set this size.
+        # That is a real property of the default profile, not slack in the test
+        # -- see docs/hardware-capabilities.md, where the same cache costs the
+        # render workload a 2.9x slowdown.  Sizing the cache is a profile
+        # decision; this budget only has to not hide it.
+        exec_cycles = "15000000" if "external memory" in label else "1500000"
+        exec_command = command + (
+            [f"UART_INPUT_FILE={EXEC_INPUT}", f"MAX_CYCLES={exec_cycles}"]
+            if label.startswith("RTL")
+            else ["--uart-input-file", str(EXEC_INPUT)] if label == "ISS"
+            else [])
+        expected_exec = EXEC_OUTPUT
+        if label == "RTL SD boot": expected_exec = BOOT_PREFIX + EXEC_OUTPUT
+        run(f"{label} exec", exec_command, EXEC_INPUT, expected_exec)
     if sys.argv[1:] == ["--external-memory"]:
         print("[kernel] shell + fork/wait: PASS on 32 MiB cached external-memory RTL")
     elif sys.argv[1:] == ["--sd-boot"]:
         print("[kernel] SD boot + AXFS shell: PASS through the physical-SDRAM RTL path")
     else:
-        print("[kernel] shell + fork/wait: PASS on ISS, QEMU, and RTL")
+        print("[kernel] shell + fork/wait + ELF exec: PASS on ISS, QEMU, and RTL")
 
 
 if __name__ == "__main__":

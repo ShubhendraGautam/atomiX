@@ -243,7 +243,7 @@ def to_make(resolved: dict[str, Any]) -> str:
             path_value_keys = {
                 "FPGA_LPF", "FPGA_CST", "SOFTWARE_MAKE_DIR", "SOFTWARE_RAM_HEX",
                 "SOFTWARE_ROM_HEX", "SOFTWARE_SD_IMAGE", "SOFTWARE_UART_INPUT",
-                "KERNEL_CONFIG",
+                "KERNEL_CONFIG", "LIBC_INCLUDE",
             }
             if upper in path_value_keys:
                 if not isinstance(value, str):
@@ -255,6 +255,8 @@ def to_make(resolved: dict[str, Any]) -> str:
                     raise ConfigError(f"{component['_path']}: software directory does not exist: {asset}")
                 if upper == "KERNEL_CONFIG" and not asset.is_file():
                     raise ConfigError(f"{component['_path']}: kernel configuration does not exist: {asset}")
+                if upper == "LIBC_INCLUDE" and not asset.is_dir():
+                    raise ConfigError(f"{component['_path']}: libc include directory does not exist: {asset}")
                 value = str(asset)
             full_key = f"COMPONENT_{upper}"
             if full_key in make_values and make_values[full_key] != value:

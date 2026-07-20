@@ -102,30 +102,76 @@ real program" and "the system can host one".  Two findings from the render
 benchmark make the gap concrete: the bare-metal link has no libgcc (so a 64-bit
 divide is an undefined `__udivdi3`), and `link.ld` hardcodes a 128 KiB image.
 
+**Decision: follow the RISC-V Linux ABI where one exists, and make every layer
+of it replaceable.**  Standard numbers and a standard ELF entry contract mean an
+unmodified newlib or picolibc can be retargeted onto it and a program written
+for it is not written for atomiX alone; inventing our own would cost a libc port
+and buy nothing.  Tweakability comes from the seams rather than from the
+numbering: the syscall table is a selectable component, sizes on it are
+parameters, and `0x1000+` is a reserved private range for calls with no Linux
+equivalent (the accelerator role driver being the first).  The full contract is
+[abi.md](abi.md).
+
 Staged so each step has its own evidence rather than landing as one large jump:
 
-- [ ] **Syscall ABI.** Define and document the M/U boundary: the `ecall`
-  convention (which register carries the number, which carry arguments, how a
-  negative return encodes an error), the initial set — `exit`, `write`, `read`,
-  `open`, `close`, `lseek`, `brk`/`sbrk`, `fstat` — and the guarantees each
-  makes.  This is a contract document plus a kernel trap handler, testable with
-  a hand-written assembly program before any libc exists.
-- [ ] **Program loader.** Load a flat or ELF image into a user address space and
-  enter U-mode with a defined initial stack, argv/envp layout, and entry
-  contract.  Needs the reference core's S/U modes, so it pins the pairing:
-  `core.pipeline5` for the hosted profile, not `core.ax2`.
-- [ ] **C library.** Retarget a small libc (newlib or picolibc) onto the
-  syscalls, with `malloc` over `brk` backed by `allocator.free-list` and file
-  I/O backed by `filesystem.axfs`.  Link libgcc so 64-bit arithmetic works.
-- [ ] **Evidence.** A compiled, unmodified C program — one that allocates,
-  reads a file, and prints — runs on aXos through the loader.  Then raise the
-  image ceiling and run something substantial enough to be a real test of the
-  ABI rather than a demonstration of it.
+- [x] **ABI contract documented.** [abi.md](abi.md) fixes the calling
+  convention (`a7` number, `a0`–`a5` arguments, `a0` return, `-errno` on
+  failure), the asm-generic syscall numbers, the ELF entry contract and initial
+  stack layout, the errno subset, the private range, and what is deliberately
+  omitted (signals, `mmap`, threads, `ioctl`).  It also records two corrections
+  the current kernel needs: `SYS_FORK`/`SYS_WAIT` are neither Linux numbers nor
+  Linux semantics (RISC-V has `clone` and `wait4`), and `SYS_CONSOLE_PUTC` is
+  just `write(1, &c, 1)`.
+- [x] **Syscall component and dispatch.** `syscall.linux-compat` implements the
+  asm-generic table behind a `syscall` component seam, so what an `ecall` means
+  is selectable while the kernel keeps owning the trap.  The component decides
+  numbers and error convention; how a task forks, how the console is driven, and
+  how a user pointer is validated arrive through `struct syscall_ops`, so
+  replacing the ABI does not mean reimplementing the kernel.  `sstatus.SUM` is
+  left clear and every syscall pointer goes through the new
+  `vm_translate_user` seam, which is what makes `-EFAULT` real rather than
+  hoped-for.  `sw/kernel/user.S` is now a hand-written conformance test
+  (`-ENOSYS` for an unknown number, `getpid`, `-EFAULT` on a bad pointer,
+  `-EBADF` on a bad descriptor, then fork/wait through `clone`/`wait4`).
+  Evidence: `make -C sw/kernel check-boot` — passes on the ISS, QEMU, and the
+  RTL — plus `check-role-driver`, `check-hostlink`, and
+  `kernel-component-test`.
+- [x] **ELF loader.** `loader.elf32` behind a `loader` component seam: parses
+  ET_EXEC ELF32 RISC-V, maps each `PT_LOAD` segment with its own `p_flags`
+  permissions, zero-fills the `.bss` tail, builds the System V initial stack
+  (argc/argv/envp/auxv), and enters at `e_entry`.  Static executables only —
+  `PT_INTERP` and relocations are rejected rather than half-handled.  It needed
+  two supporting changes: `vm_map_user_page` for arbitrary user mappings, and
+  page-ownership tracking in the Sv32 PTE software bit, because the previous
+  fixed teardown leaked every page a loader mapped.  Evidence:
+  `make -C sw/kernel check-boot` runs `sw/kernel/userprog/hello.c` — built as
+  its own freestanding ELF and reaching the kernel only as a byte array — on the
+  ISS, QEMU, and the RTL; it verifies `.data`, `.bss`, `.rodata`, and segment
+  writability, and the exit path asserts every page is returned.  The pairing is
+  confirmed as predicted: this runs on `core.pipeline5`, since `core.ax2` has no
+  S/U or Sv32.
+- [x] **C library.** `libc.axlibc`, behind a `libc` component seam: `crt0`
+  reading the System V frame, syscall wrappers with errno, string/memory
+  primitives, a first-fit `malloc` over `sbrk`, and a console `printf` subset
+  (no floating point — there is no FPU).  libgcc is linked, so 64-bit
+  arithmetic resolves; that was the undefined `__udivdi3` the render benchmark
+  tripped over.  `brk` became real to back it: the kernel maps heap pages
+  between the image and a one-page guard below the stack.  File I/O is still
+  `-ENOSYS` pending the filesystem binding.  Evidence:
+  `make -C sw/kernel check-boot` runs `sw/kernel/userprog/hello.c` — an
+  ordinary C `main()` using malloc/free/calloc/realloc, strings, 64-bit
+  division, and `printf` — on the ISS, QEMU, and the RTL.
+- [~] **Evidence.** A compiled C program that allocates and prints runs on aXos
+  through the loader, on all three engines.  What is still missing from the
+  original bar is *reads a file*: `openat`/`read`/`close` need the filesystem
+  bound to descriptors.  After that, raise the 128 KiB image ceiling and run
+  something substantial enough to be a real test of the ABI rather than a
+  demonstration of it.
 
-Open questions to settle first: whether the ABI targets a subset of the Linux
-RISC-V calling convention (portable, familiar, larger) or a deliberately small
-atomiX-specific one (smaller, needs its own libc port); and whether the loader
-takes ELF directly or a pre-flattened image.
+Both opening questions are settled in [abi.md](abi.md): the ABI is the RISC-V
+Linux subset, and the loader takes ELF directly rather than a pre-flattened
+image — in both cases because it is what the toolchain already produces, and
+deviating would cost work without buying capability.
 
 ## Change-ready checklist
 

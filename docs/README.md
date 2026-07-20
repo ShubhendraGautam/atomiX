@@ -24,6 +24,8 @@ verifiable, and replaceable.
 - [component-map.md](component-map.md) — which repository areas are selectable
   and where their sources live.
 - [host-protocol.md](host-protocol.md) — host-link framing between `axhost` and
+- [abi.md](abi.md) — the aXos userspace ABI: syscall convention and numbers,
+  ELF entry contract, initial process state, and what is tweakable.
   the shell control plane.
 
 ## Planned specifications

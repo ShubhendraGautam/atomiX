@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "syscall.linux-compat",
+  "kind": "syscall",
+  "title": "RISC-V Linux syscall subset (asm-generic numbers, -errno returns)",
+  "sources": ["components/syscall/linux-compat/syscall.c"],
+  "parameters": {
+    "max_fds": {
+      "default": 8,
+      "define": "AXOS_MAX_FDS",
+      "doc": "Per-process file descriptors. Only the console three are bound today; this sizes the table the filesystem binding will fill."
+    },
+    "write_max": {
+      "default": 1024,
+      "define": "AXOS_WRITE_MAX",
+      "doc": "Largest single write() serviced. A longer request returns a short count, which is legal and is what Linux does."
+    }
+  },
+  "capabilities": ["riscv-linux-abi", "asm-generic-numbers", "errno-returns", "private-range-0x1000", "clone-fork", "wait4", "write-console", "brk", "getpid"]
+}

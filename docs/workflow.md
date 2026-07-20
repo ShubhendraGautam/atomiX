@@ -196,6 +196,17 @@ which is the point: the numbers show what each knob is worth instead of
 asserting that several near-identical components differ.
 
 ### 3.5 Kernel (aXos) — needs `qemu-system-riscv32` ≥ 7
+
+`check-boot` covers three things on the ISS, QEMU, and the RTL: the interactive
+shell, the fork/wait demo, and `exec` — which loads `sw/kernel/userprog/hello.c`
+as an ELF the kernel has never linked against.  The userspace ABI it targets is
+[abi.md](abi.md); the syscall table (`syscall.linux-compat`) and the image
+format (`loader.elf32`) are both selectable components, as is the C library
+(`libc.axlibc`) that user programs link against.
+
+Write a user program in `sw/kernel/userprog/` as ordinary C: it gets a `main()`,
+malloc, printf, string functions and 64-bit arithmetic, and is built and linked
+entirely separately from the kernel, reaching it only as an embedded image.
 ```bash
 make -C sw/kernel check-boot QEMU=/path/to/qemu-system-riscv32   # shell + fork/wait on ISS, QEMU, RTL
 make -C sw/kernel kernel-component-test QEMU=/path/to/...        # default + cooperative scheduler

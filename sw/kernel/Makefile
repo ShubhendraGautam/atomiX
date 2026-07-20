@@ -30,7 +30,7 @@ SD_IMAGE ?=
 FS_BLOCK ?= 0
 
 HOSTLINK ?= 0
-CPPFLAGS := -Iinclude -DAXOS_SD=$(STORAGE) -DAXFS_BLOCK=$(FS_BLOCK)
+CPPFLAGS := -Iinclude -Ibuild -DAXOS_SD=$(STORAGE) -DAXFS_BLOCK=$(FS_BLOCK)
 # Host-managed personality: the console byte pipe carries the host-link
 # protocol (docs/host-protocol.md) instead of the interactive shell.
 ifeq ($(HOSTLINK),1)
@@ -44,10 +44,31 @@ CFLAGS := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
           -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
+USER_ELF := build/userprog/hello.elf
+USER_IMAGE := build/userprog_image.h
+# User programs are built against the selected libc component, and with libgcc
+# linked so 64-bit arithmetic resolves (-lgcc after the objects, since it only
+# needs to satisfy references they leave behind).
+USER_CFLAGS := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
+               -msmall-data-limit=0 -ffreestanding -fno-builtin -fno-pic \
+               -fno-stack-protector -Wall -Wextra -Werror -O2 -nostdlib \
+               -I$(COMPONENT_LIBC_INCLUDE)
+
+$(USER_ELF): userprog/hello.c userprog/user.ld $(COMPONENT_LIBC_SOURCES)
+	mkdir -p $(@D)
+	$(CC) $(USER_CFLAGS) -Wl,-T,userprog/user.ld -o $@ \
+	  userprog/hello.c $(COMPONENT_LIBC_SOURCES) -lgcc
+	$(RISCV_PREFIX)strip -s -R .comment $@
+
+$(USER_IMAGE): $(USER_ELF) embed_image.py
+	mkdir -p $(@D)
+	$(PYTHON) embed_image.py $(USER_ELF) $@ axos_user_image
+
 ELF := build/axos_boot.elf
 BIN := $(ELF:.elf=.bin)
 HEX := $(ELF:.elf=.hex)
-SOURCES := boot.S trap.S user.S kernel.c role.c \
+SOURCES := boot.S trap.S user.S kernel.c role.c $(COMPONENT_SYSCALL_SOURCES) \
+           $(COMPONENT_LOADER_SOURCES) \
            $(COMPONENT_ALLOCATOR_SOURCES) $(COMPONENT_SHELL_SOURCES) \
            $(COMPONENT_FILESYSTEM_SOURCES) $(COMPONENT_BLOCK_SOURCES) \
            $(COMPONENT_SCHEDULER_SOURCES) $(COMPONENT_VM_SOURCES)
@@ -58,7 +79,7 @@ endif
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/fs.h include/sd.h include/role.h include/hostlink.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) $(USER_IMAGE) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/syscall.h include/loader.h include/fs.h include/sd.h include/role.h include/hostlink.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)

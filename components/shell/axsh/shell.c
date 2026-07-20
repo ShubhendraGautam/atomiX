@@ -5,6 +5,7 @@
 #include "role.h"
 
 extern void kernel_fork_demo(void);
+extern void kernel_exec_demo(void);
 
 struct ram_file {
   const char *name;
@@ -101,7 +102,7 @@ void shell_run(void) {
     readline(line, sizeof(line));
     if (streq(line, "")) continue;
     if (streq(line, "help")) {
-      uart_puts("commands: help ls cat write echo fork role exit\n");
+      uart_puts("commands: help ls cat write echo fork exec role exit\n");
     } else if (streq(line, "ls")) {
       shell_ls();
     } else if (starts_with(line, "cat ")) {
@@ -124,6 +125,11 @@ void shell_run(void) {
     } else if (streq(line, "fork")) {
       uart_puts("fork demo: ");
       kernel_fork_demo();
+    } else if (streq(line, "exec")) {
+      /* Load and run the embedded ELF.  Nothing about the program is known at
+       * kernel link time, so its output is the loader's evidence. */
+      uart_puts("exec: ");
+      kernel_exec_demo();
     } else if (streq(line, "role")) {
       shell_role();
     } else if (streq(line, "exit")) {

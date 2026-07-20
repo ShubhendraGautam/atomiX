@@ -1,10 +1,13 @@
 #include <stdint.h>
 
 #include "hostlink.h"
+#include "loader.h"
 #include "page.h"
 #include "platform.h"
 #include "scheduler.h"
+#include "syscall.h"
 #include "task.h"
+#include "userprog_image.h"
 #include "vm.h"
 
 enum {
@@ -12,15 +15,8 @@ enum {
   MSTATUS_MPP_S = 1u << 11,
   SSTATUS_SPIE = 1u << 5,
   TRAP_FRAME_BYTES = 128,
-  TRAP_FRAME_A0 = 8,
-  TRAP_FRAME_A7 = 15,
-  TRAP_FRAME_SP = 30,
   SCAUSE_USER_ECALL = 8,
   SCAUSE_SUPERVISOR_SOFTWARE = 0x80000001u,
-  SYS_FORK = 1,
-  SYS_CONSOLE_PUTC = 2,
-  SYS_EXIT = 3,
-  SYS_WAIT = 4,
   USER_CODE_VA = 0x40000000u,
   USER_STACK_VA = USER_CODE_VA + PAGE_SIZE,
 };
@@ -38,6 +34,10 @@ static volatile uint32_t scheduler_running;
 static volatile uint32_t scheduled_ticks;
 static uint32_t next_pid = 1;
 static volatile uint32_t console_mask;
+/* The fork demo verifies itself through three console markers; a loaded program
+ * reports through its exit code instead.  Without this the exit path would
+ * apply the fork demo's assertion to every program that ever runs. */
+static volatile uint32_t expect_fork_markers;
 static uint32_t scheduler_free_pages;
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
@@ -148,8 +148,9 @@ void m_setup(void) {
 }
 
 static uint32_t *sys_fork(uint32_t *trap_frame);
-static uint32_t *sys_wait(uint32_t *trap_frame);
-static uint32_t *sys_exit(uint32_t *trap_frame);
+static uint32_t *sys_wait(uint32_t *trap_frame, uint32_t status_va);
+static uint32_t *sys_exit(uint32_t *trap_frame, uint32_t code);
+static const struct syscall_ops kernel_ops;
 
 static uint32_t *schedule(uint32_t *trap_frame) {
   if (!scheduler_running) return trap_frame;
@@ -183,21 +184,7 @@ uint32_t *supervisor_trap(uint32_t *trap_frame) {
     return schedule(trap_frame);
   }
 
-  if (cause == SCAUSE_USER_ECALL) {
-    const uint32_t syscall = trap_frame[TRAP_FRAME_A7];
-    if (syscall == SYS_FORK) return sys_fork(trap_frame);
-    if (syscall == SYS_WAIT) return sys_wait(trap_frame);
-    if (syscall == SYS_EXIT) return sys_exit(trap_frame);
-    if (syscall == SYS_CONSOLE_PUTC) {
-      const uint32_t c = trap_frame[TRAP_FRAME_A0];
-      if (c != 'P' && c != 'C' && c != 'W') test_finish(1);
-      uart_putchar((char)c);
-      console_mask |= c == 'P' ? 1u : c == 'C' ? 2u : 4u;
-      csr_write_sepc(csr_read_sepc() + 4u);
-      return trap_frame;
-    }
-    test_finish(1);
-  }
+  if (cause == SCAUSE_USER_ECALL) return syscall_dispatch(trap_frame, &kernel_ops);
 
   test_finish(1);
 }
@@ -225,6 +212,46 @@ static void task_release(struct task *task) {
   task->state = TASK_UNUSED;
 }
 
+/* Create a task from a loaded ELF rather than from the built-in payload.
+ *
+ * The difference from scheduler_make_user_task is entirely in where the code,
+ * the entry point, and the stack come from: this one has no compiled-in
+ * knowledge of the program at all, which is what makes it a loader test.  The
+ * exit status the program chooses becomes the test's verdict. */
+static void scheduler_make_loaded_task(uint32_t slot, const uint8_t *image,
+                                       uint32_t size) {
+  if (vm_create_empty_user_space(&tasks[slot], root_pt)) test_finish(1);
+
+  uint32_t entry = 0;
+  uint32_t sp = 0;
+  const int rc = loader_load(&tasks[slot], image, size, &entry, &sp);
+  if (rc != 0) {
+    /* Distinct codes so a failure says whether the image was rejected or
+     * simply did not fit, rather than only that loading failed. */
+    uart_puts("[kernel] load failed\n");
+    test_finish(rc == LOADER_EBADIMAGE ? 20 : 21);
+  }
+
+  uint32_t *const kernel_stack = page_alloc();
+  if (kernel_stack == 0) {
+    vm_destroy_user_space(&tasks[slot]);
+    test_finish(1);
+  }
+  uint32_t *const frame =
+      (uint32_t *)((uintptr_t)kernel_stack + PAGE_SIZE - TRAP_FRAME_BYTES);
+  for (uint32_t i = 0; i < TRAP_FRAME_BYTES / sizeof(*frame); ++i) frame[i] = 0;
+  tasks[slot].trap_frame = frame;
+  tasks[slot].kernel_stack = kernel_stack;
+  tasks[slot].state = TASK_RUNNABLE;
+  tasks[slot].pid = next_pid++;
+  tasks[slot].parent_pid = 0;
+  tasks[slot].sepc = entry;
+  /* Nothing is passed in registers: docs/abi.md puts everything on the stack,
+   * so a program must not read a0 at entry. */
+  frame[TRAP_FRAME_SP] = sp;
+  tasks[slot].sstatus = SSTATUS_SPIE;
+}
+
 static void scheduler_make_user_task(uint32_t slot) {
   if (vm_create_user_space(&tasks[slot], root_pt)) test_finish(1);
   uint32_t *const kernel_stack = page_alloc();
@@ -247,6 +274,87 @@ static void scheduler_make_user_task(uint32_t slot) {
   /* SRET returns to U mode with supervisor interrupts enabled. */
   tasks[slot].sstatus = SSTATUS_SPIE;
 }
+
+/* --- services the syscall component calls back into -------------------------
+ * These are kernel policy: how a task is duplicated, how the console is driven,
+ * how a user pointer is validated.  The ABI component decides which syscall
+ * number reaches which of them, and nothing here knows a syscall number. */
+
+static uint32_t k_getpid(void) {
+  return current_task == TASK_NONE ? 0u : tasks[current_task].pid;
+}
+
+/* brk(addr): move the program break, returning the resulting break.
+ *
+ * The kernel-level contract is not the libc one: brk reports failure by
+ * returning the break *unchanged*, never by an errno, and brk(0) is the query.
+ * A libc's sbrk is written against exactly that.
+ *
+ * Growing maps zero-filled pages; shrinking unmaps and frees whole pages that
+ * fall entirely above the new break.  Pages are the granularity, so a break in
+ * the middle of a page keeps that page mapped -- shrinking below it later frees
+ * it, and a partial page is never handed back while any of it is still in
+ * use. */
+static uint32_t k_brk(uint32_t addr) {
+  if (current_task == TASK_NONE) return 0u;
+  struct task *const task = &tasks[current_task];
+  if (addr == 0u) return task->brk;
+  if (addr < task->brk) {
+    /* Shrink: free every page wholly above the new break. */
+    const uint32_t first = (addr + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+    for (uint32_t va = first; va < task->brk; va += PAGE_SIZE)
+      vm_unmap_user_page(task, va);
+    task->brk = addr;
+    return task->brk;
+  }
+  if (addr > task->brk_limit) return task->brk;   /* would meet the stack */
+
+  for (uint32_t va = (task->brk + PAGE_SIZE - 1u) & ~(PAGE_SIZE - 1u);
+       va < addr; va += PAGE_SIZE) {
+    if (vm_translate_user(task, va, 0) != 0) continue;   /* already mapped */
+    uint32_t *const page = page_alloc();
+    if (page == 0) return task->brk;                     /* out of memory */
+    for (uint32_t i = 0; i < PAGE_SIZE / sizeof(*page); ++i) page[i] = 0;
+    if (vm_map_user_page(task, va, page, VM_R | VM_W) != 0) {
+      page_free(page);
+      return task->brk;
+    }
+  }
+  task->brk = addr;
+  return task->brk;
+}
+
+static void k_console_putc(char c) {
+  uart_putchar(c);
+  /* The fork demo's completion check watches for its three markers. */
+  if (c == 'P') console_mask |= 1u;
+  else if (c == 'C') console_mask |= 2u;
+  else if (c == 'W') console_mask |= 4u;
+}
+
+/* Byte-at-a-time so a buffer spanning a page boundary is handled without the
+ * caller knowing, and so a partial copy stops exactly at the first bad page
+ * rather than being all-or-nothing. */
+static int k_copy_from_user(void *dst, uint32_t user_va, uint32_t len) {
+  if (current_task == TASK_NONE) return 0;
+  uint8_t *out = dst;
+  for (uint32_t i = 0; i < len; ++i) {
+    const uint8_t *src = vm_translate_user(&tasks[current_task], user_va + i, 0);
+    if (src == 0) return 0;
+    out[i] = *src;
+  }
+  return 1;
+}
+
+static const struct syscall_ops kernel_ops = {
+    .fork = sys_fork,
+    .wait = sys_wait,
+    .exit = sys_exit,
+    .getpid = k_getpid,
+    .brk = k_brk,
+    .console_putc = k_console_putc,
+    .copy_from_user = k_copy_from_user,
+};
 
 static uint32_t *sys_fork(uint32_t *trap_frame) {
   if (current_task == TASK_NONE || tasks[current_task].state != TASK_RUNNING)
@@ -282,7 +390,11 @@ static uint32_t *sys_fork(uint32_t *trap_frame) {
   return trap_frame;
 }
 
-static uint32_t *sys_wait(uint32_t *trap_frame) {
+static uint32_t *sys_wait(uint32_t *trap_frame, uint32_t status_va) {
+  /* wait4's status-out pointer is accepted and unused: no exit status is
+   * recorded yet, and writing a fabricated one would be worse than not
+   * writing.  A libc treats a null status as "do not report". */
+  (void)status_va;
   if (current_task == TASK_NONE) test_finish(1);
   struct task *const parent = &tasks[current_task];
   for (uint32_t i = 0; i < TASK_SLOTS; ++i) {
@@ -303,9 +415,12 @@ static uint32_t *sys_wait(uint32_t *trap_frame) {
   test_finish(1);
 }
 
-static uint32_t *sys_exit(uint32_t *trap_frame) {
-  if (current_task == TASK_NONE || trap_frame[TRAP_FRAME_A0] != 0u)
-    test_finish(1);
+static uint32_t *sys_exit(uint32_t *trap_frame, uint32_t code) {
+  if (current_task == TASK_NONE) test_finish(1);
+  /* A loaded program reports its own verdict through the exit code; the
+   * built-in fork demo only ever exits zero and is checked by its console
+   * markers instead. */
+  if (code != 0u) test_finish((int)code);
   struct task *const task = &tasks[current_task];
   task->state = TASK_ZOMBIE;
   for (uint32_t i = 0; i < TASK_SLOTS; ++i) {
@@ -321,7 +436,10 @@ static uint32_t *sys_exit(uint32_t *trap_frame) {
   csr_write_satp(vm_root_satp(root_pt));
   __asm__ volatile("sfence.vma zero, zero");
   task_release(task);
-  if (console_mask != 7u || page_free_count() != scheduler_free_pages) test_finish(1);
+  if (expect_fork_markers && console_mask != 7u) test_finish(1);
+  /* Every page the task used must come back, for either demo: a loader that
+   * leaks a segment page fails here rather than silently. */
+  if (page_free_count() != scheduler_free_pages) test_finish(1);
   test_finish(0);
 }
 
@@ -333,7 +451,20 @@ static void scheduler_start(void) {
 }
 
 void kernel_fork_demo(void) {
+  expect_fork_markers = 1;
   scheduler_start();
+  for (;;) __asm__ volatile("wfi");
+}
+
+/* Load and run the embedded ELF.  The program's own exit code is the verdict:
+ * it checks its .data, .bss, and .rodata before printing, so a clean exit means
+ * the loader mapped every segment correctly and with the right permissions. */
+void kernel_exec_demo(void) {
+  expect_fork_markers = 0;
+  scheduler_free_pages = page_free_count();
+  scheduler_make_loaded_task(0, axos_user_image, axos_user_image_size);
+  scheduler_running = 1;
+  clint_arm_timer(2000);
   for (;;) __asm__ volatile("wfi");
 }
 

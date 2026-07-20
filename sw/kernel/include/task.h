@@ -24,6 +24,11 @@ struct task {
   uint32_t *user_pt;
   uint32_t *user_stack;
   uint32_t *kernel_stack;
+  /* Program break: the top of the heap brk()/sbrk() move.  Set by the loader
+   * to the page after the highest loaded segment, so the heap grows into the
+   * gap between the program image and the stack. */
+  uint32_t brk;
+  uint32_t brk_limit;
   uint32_t state;
   uint32_t pid;
   uint32_t parent_pid;

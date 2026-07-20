@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "libc.axlibc",
+  "kind": "libc",
+  "title": "Small freestanding C library for aXos programs (crt0, syscalls, string, malloc, stdio)",
+  "sources": [
+    "components/libc/axlibc/crt0.S",
+    "components/libc/axlibc/syscall.c",
+    "components/libc/axlibc/string.c",
+    "components/libc/axlibc/malloc.c",
+    "components/libc/axlibc/stdio.c"
+  ],
+  "make": {"libc_include": "components/libc/axlibc/include"},
+  "capabilities": ["crt0", "sysv-entry", "errno", "syscall-wrappers", "string", "malloc-over-sbrk", "printf-subset", "no-float", "no-stdio-streams"]
+}

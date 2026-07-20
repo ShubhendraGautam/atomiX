@@ -67,8 +67,8 @@ module gpu_engine #(
 
   // Engine sequencer states.
   localparam logic [2:0] E_IDLE  = 3'd0, E_FETCH = 3'd1, E_DECODE = 3'd2,
-                         E_EXEC  = 3'd3, E_LDX_I = 3'd4, E_LDX_C  = 3'd5,
-                         E_STX   = 3'd6, E_WAVE  = 3'd7;
+                         E_EXEC  = 3'd3, E_LDX   = 3'd4, E_STX    = 3'd5,
+                         E_WAVE  = 3'd6;
 
   logic [31:0] prog [0:PROG_WORDS-1];
   logic [31:0] gmem [0:DATA_WORDS-1];
@@ -82,6 +82,7 @@ module gpu_engine #(
   logic [15:0] tid_base_q;      // NLANES*wave
   logic [6:0]  pc_q;
   logic [LANE_BITS-1:0] mem_lane_q;
+  logic [LANE_BITS:0]   ldx_ph_q;   // LDX pipeline phase, 0..NLANES
 
   logic [31:0] prog_mmio_rdata_q, data_mmio_rdata_q;
   logic [31:0] prog_eng_rdata_q, data_eng_rdata_q;
@@ -198,11 +199,28 @@ module gpu_engine #(
   endfunction
   wire op_writes_rd = op != OP_HALT && op != OP_STX && op != OP_LDX;
 
-  // Active mask for the current mem lane (predicated tail handling).
+  // Active mask for the store lane (predicated tail handling); STX walks
+  // mem_lane_q one lane per cycle.
   wire [15:0] mem_tid    = tid_base_q + 16'(mem_lane_q);
   wire        mem_active = mem_tid < job_threads_q;
-  wire [11:0] mem_addr   = regs[mem_lane_q][ra][11:0];
   wire        last_lane  = mem_lane_q == LANE_BITS'(NLANES - 1);
+
+  // Pipelined LDX: phase p presents lane p's address to the (registered) block
+  // RAM read while capturing the previous lane's data, so N lane-loads take
+  // N+1 cycles instead of 2N.  `ldx_ph_q` runs 0..NLANES; capture is valid from
+  // phase 1 on, for lane ldx_ph_q-1.
+  wire ldx_presenting = (state_q == E_LDX) &&
+                        (ldx_ph_q < (LANE_BITS+1)'(NLANES));
+  wire [LANE_BITS-1:0] ldx_present = ldx_presenting ? ldx_ph_q[LANE_BITS-1:0]
+                                                    : '0;
+  wire [LANE_BITS-1:0] ldx_cap     = ldx_ph_q[LANE_BITS-1:0] - 1'b1;
+  wire [15:0] ldx_cap_tid    = tid_base_q + 16'(ldx_cap);
+  wire        ldx_cap_active = ldx_cap_tid < job_threads_q;
+
+  // The engine buffer address: the LDX pipeline lane while loading, else the
+  // store lane.
+  wire [LANE_BITS-1:0] acc_lane = (state_q == E_LDX) ? ldx_present : mem_lane_q;
+  wire [11:0] mem_addr = regs[acc_lane][ra][11:0];
 
   // Program memory: port A data-port MMIO, port B engine fetch.
   always_ff @(posedge clk) begin
@@ -265,6 +283,7 @@ module gpu_engine #(
       tid_base_q    <= 16'b0;
       pc_q          <= 7'b0;
       mem_lane_q    <= '0;
+      ldx_ph_q      <= '0;
       buf_pending_q <= 1'b0;
       insn_q        <= 32'b0;
     end else begin
@@ -290,8 +309,8 @@ module gpu_engine #(
             if (prog_eng_rdata_q[31:26] == OP_HALT || pc_q >= job_ninsn_q)
               state_q <= E_WAVE;
             else if (prog_eng_rdata_q[31:26] == OP_LDX) begin
-              mem_lane_q <= '0;
-              state_q    <= E_LDX_I;
+              ldx_ph_q <= '0;
+              state_q  <= E_LDX;
             end else if (prog_eng_rdata_q[31:26] == OP_STX) begin
               mem_lane_q <= '0;
               state_q    <= E_STX;
@@ -306,16 +325,15 @@ module gpu_engine #(
             pc_q    <= pc_q + 7'd1;
             state_q <= E_FETCH;
           end
-          E_LDX_I: state_q <= E_LDX_C;  // data_eng_rdata_q settles this cycle
-          E_LDX_C: begin
-            regs[mem_lane_q][rd] <= mem_active ? data_eng_rdata_q : 32'b0;
-            if (last_lane) begin
+          E_LDX: begin
+            // Capture the previous lane's registered read (valid from phase 1).
+            if (ldx_ph_q != '0)
+              regs[ldx_cap][rd] <= ldx_cap_active ? data_eng_rdata_q : 32'b0;
+            if (ldx_ph_q == (LANE_BITS+1)'(NLANES)) begin
               pc_q    <= pc_q + 7'd1;
               state_q <= E_FETCH;
-            end else begin
-              mem_lane_q <= mem_lane_q + 1'b1;
-              state_q    <= E_LDX_I;
-            end
+            end else
+              ldx_ph_q <= ldx_ph_q + 1'b1;
           end
           E_STX: begin
             // The store itself happens in the gmem port-B always_ff.

@@ -73,23 +73,45 @@ composite role, which does not exist yet.
 
 ### Lane scaling has diminishing returns (measured)
 
-More lanes fit easily here, but they do not buy proportional speed.  Doubling
-8 → 16 lanes doubles the silicon (22.2k → 35.4k LUT4, 24 → 48 DSP) yet only
-speeds the kernels ~1.3×:
+The engine has **one global-buffer port**, so the memory throughput — not the
+lane count — sets the ceiling.  Two things follow.
 
-| kernel (N=256, GPU cycles) | 8-lane | 16-lane | speedup |
+**Optimisation delivered — pipelined loads.**  The block-RAM read is registered,
+and `LDX` used to spend 2 cycles per lane (present address, then capture).  It is
+now pipelined: address `p` is presented while lane `p-1`'s data is captured, so
+N lane-loads cost N+1 cycles instead of 2N — single-port optimal.  This is a
+flat ~1.35× at every lane count (16-lane `poly` 1827 → 1350 GPU cycles, `saxpy`
+1683 → 1206 at N=256), verified against the on-core oracle at 6/8/16 lanes.
+
+**Still bottlenecked past ~8 lanes.**  Even with pipelined loads the single port
+services one lane per cycle, so doubling lanes doubles the per-wave memory time
+over half as many waves — memory time is flat, only the parallel ALU/multiply
+portion scales:
+
+| kernel (N=256, GPU cycles, pipelined) | 8-lane | 16-lane | speedup |
 |---|---|---|---|
-| `poly` (compute-heavy) | 2358 | 1827 | 1.29× |
-| `saxpy` (memory-heavy) | 2070 | 1683 | 1.23× |
+| `poly` (compute-heavy) | 1901 | 1350 | 1.41× |
+| `saxpy` (memory-heavy) | 1613 | 1206 | 1.34× |
 
-The engine has **one global-buffer port**, so `LDX`/`STX` serialise the lanes:
-with 16 lanes each memory instruction takes twice as long per wave even though
-there are half as many waves, so memory time is unchanged — only the parallel
-ALU/multiply portion scales, and fixed per-instruction fetch/decode overhead
-dilutes even that.  Past ~8 lanes the bottleneck is the memory port and control,
-not lane count.  The lever for a genuinely faster GPU on a large part is a
-**wider/multi-bank memory port** (parallel lane access), not more lanes.  Lane
-variants ship in the catalog (`role.gpu-compute` 8, `-6`, `-lite` 4, `-16`).
+## Optimisation roadmap — maximising the large part
+
+Ranked levers to push the ULX3S further, with what each unblocks:
+
+1. **Pipelined `LDX`** — ✅ done (~1.35× flat, above).
+2. **Multi-bank global memory** (parallel lane access) — the lever that lets more
+   lanes actually pay off.  Interleave the buffer across B banks with a lane→bank
+   crossbar and per-bank conflict serialisation (preserving the ascending-lane
+   store order); a coalesced access then services all lanes in ~1 cycle instead
+   of N.  Large, correctness-sensitive change (must keep passing the oracle).
+3. **TPU `cbuf` → block RAM** — frees ~65k flip-flops (the accumulator currently
+   flattens to FFs; structurally it matches the GPU `gmem`, which *does* infer
+   BRAM, so the cause needs a synth-level diagnosis).  Makes the TPU cheap.
+4. **Composite GPU + TPU role** — with (3) done the FF budget allows both engines
+   behind one role window (needs a composite role; the shell has one window
+   today), so the large part runs CPU + GPU + TPU together — impossible on the
+   Tang Nano.
+
+Lane variants ship in the catalog (`role.gpu-compute` 8, `-6`, `-lite` 4, `-16`).
 
 ## Functional coverage (board-independent, SIM)
 

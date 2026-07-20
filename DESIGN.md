@@ -188,12 +188,48 @@ The endgame architecture. The FPGA design is split into two parts:
   `make -C sw/baremetal check-gpu` verifies saxpy, fused multiply+ReLU, and a
   gather kernel against an on-core interpreter of the ISA and prints the
   role-versus-CPU cycle counts.
+- **Scalable role family: gpu1 (implemented, `role.gpu1-{s,m,l,xl}`)** — the
+  successor to the above, built to make lane count worth scaling.  The single
+  global-buffer port is what capped the earlier engine: going from 8 to 16 lanes
+  bought only 1.18×, because memory time is flat when one lane is serviced per
+  cycle.  gpu1 splits the buffer into **NBANKS interleaved block RAMs behind a
+  lane→bank crossbar**, so a coalesced access — lane L touching `base+L` — hits
+  distinct banks and retires in one round.  Conflicts serialise lowest-lane-first
+  per bank, which is precisely what leaves the highest lane as the last writer to
+  a duplicated address and preserves the store order the oracle defines.  It also
+  carries the control ISA the first engine lacked: structured per-lane divergence
+  (IF/ELSE/ENDIF over a mask stack), uniform and any-lane branches, compare-set,
+  integer divide, cross-lane shuffle, and displaced addressing — so kernels can
+  branch and loop rather than being straight-line only.  Lanes, banks, and the optional ISA groups are
+  build-time parameters of the one component; the geometry is published in a
+  CAPS register so one driver and one oracle serve every setting.  Measured 1.69–1.82× per lane doubling
+  and 2.70× the old engine at 16 lanes
+  ([hardware-capabilities.md](docs/hardware-capabilities.md)).
 
 Simulation story is unchanged: the host link models as a virtual pipe, so the
 full stack — axhost on the real host, aXos on the simulated shell, role RTL —
 runs end-to-end under Verilator before any hardware exists.
 
 ## 4. CPU: `aXcore`
+
+The `axcore` boundary carries three core families, and which one a profile
+selects is a capability-versus-area decision, not a correctness one:
+
+| family | shape | privilege | evidence |
+|---|---|---|---|
+| `core.pipeline5` | 5-stage scalar | M/S/U + Sv32 | cosim, riscv-formal, ISA suite |
+| `core.ax2` | 3-stage, dual-issue, I$ + BTB (tunable) | M only, physical | ISA suite on RTL |
+| `core.minimal` | multi-cycle | M only, physical | directed + suite |
+
+Sizes inside a family are build-time parameters, not separate components: a
+component is the unit of architecture, so a different pipeline or privilege
+model earns one and a different cache size does not.  See
+[workflow.md](docs/workflow.md) §3.4a.
+
+`core.pipeline5` remains **the reference**: it is the only one with the MMU and
+the only one carrying lock-step cosimulation and formal evidence, and the
+architectural contract in §4.1–4.3 describes it.  `core.ax2` is the
+performance core (§4.4); `core.minimal` is the area-minimal accelerator host.
 
 ### 4.1 ISA profile and scope
 
@@ -255,6 +291,43 @@ Classic 5 stages: **IF → ID → EX → MEM → WB**.
 The core is correct when it (a) passes all rv32ui/rv32mi/rv32si riscv-tests,
 (b) retires lock-step-identical to the ISS over long randomized programs, and
 (c) passes riscv-formal's bounded checks. All three, not any one.
+
+### 4.4 Performance family: `core.ax2`
+
+A dual-issue in-order superscalar built for throughput rather than coverage.
+Pipeline is **F → D → X**, three stages:
+
+- **F** — `ax2_icache`: a direct-mapped instruction cache with 4-word lines,
+  plus a branch-target buffer, and it owns the fetch pointer.  The cache is not
+  a latency optimisation, it is the enabling structure: the aXbus fetch port is
+  32 bits wide, so a core fetching straight off the bus cannot sustain more than
+  one instruction per cycle however wide its back end is.  A line hit reads four
+  words out of one block RAM and hands the pipeline the two at the fetch PC.
+  The BTB is consulted in the same cycle as the cache index, which is what lets
+  a correct prediction cost zero cycles rather than a bubble.
+- **D** — decode both slots, read four operands, decide whether slot 1 may
+  issue alongside slot 0.
+- **X** — execute both, drive the data bus, resolve the branch, take traps,
+  write back.  Multi-cycle work (loads, stores, mul/div) holds the bundle here.
+
+Three stages rather than five is deliberate.  Because the register file is
+write-first and writeback happens in the same cycle D captures operands, the
+register file *is* the forwarding path — there is no forwarding network — and a
+branch mispredict costs two cycles instead of four.  The cost is a longer X
+stage, which is the right trade at these FPGA clock rates.
+
+Slot 1 is refused (and re-presented as the next bundle's slot 0) when it reads a
+register slot 0 writes, when both slots want the single data port or the single
+mul/div unit, when slot 0 is a control transfer, or when either slot is a CSR,
+system, or illegal instruction.  That last rule is what keeps every trap and
+every CSR side effect precise without a second commit path.
+
+Scope is machine mode with physical addressing: no Sv32, no S/U, no RVFI.  So
+§4.3's definition of correctness cannot be met in full — (b) and (c) need the
+RVFI surface — and ax2's evidence is (a) instead, the official rv32ui and
+rv32um binaries executed on the RTL across every tier and wait-state setting.
+A profile that needs virtual memory or the formal guarantee selects
+`core.pipeline5`; a profile that needs throughput on bare metal selects ax2.
 
 ## 5. Interconnect: `aXbus`
 

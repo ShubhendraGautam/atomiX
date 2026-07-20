@@ -1,7 +1,7 @@
 // GPU-compute engine: a parameterized NLANES-wide SIMT data-parallel vector
 // engine.  This is the implementation behind the `axrole` boundary; the thin
-// `axrole` wrappers in role.gpu-compute (NLANES=8) and role.gpu-compute-lite
-// (fewer lanes, to fit a small FPGA) instantiate it with a lane count.
+// `axrole` wrapper in role.gpu-compute instantiates it with the lane count
+// that component's `lanes` parameter selects.
 //
 // SIMT execution model.  A job runs waves 0..ceil(NTHREADS/NLANES)-1.  In wave
 // w, lane L runs thread tid = NLANES*w + L; a lane whose tid >= NTHREADS is

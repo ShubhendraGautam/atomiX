@@ -43,6 +43,9 @@ CACHES ?= $(COMPONENT_CACHES)
 # Registered-read (block-RAM) main memory.  Off by default so the async
 # single-cycle model stays the reference; FPGA BRAM bring-up sets it to 1.
 SYNC_READ ?= 0
+DEFINES ?= $(COMPONENT_DEFINES)
+CACHE_LINES ?= $(if $(COMPONENT_SETTING_CACHE_LINES),$(COMPONENT_SETTING_CACHE_LINES),16)
+CACHE_WORDS_PER_LINE ?= $(if $(COMPONENT_SETTING_CACHE_WORDS_PER_LINE),$(COMPONENT_SETTING_CACHE_WORDS_PER_LINE),4)
 MAX_CYCLES ?= 100000
 SD_IMAGE ?=
 BUILD_ID ?= default
@@ -55,7 +58,7 @@ UART_INPUT_FILE ?=
 # an external manifest) without reusing a generated Makefile that names the
 # old C++ harness path.
 SOURCE_LAYOUT_TAG := $(shell printf '%s' '$(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)' | cksum | awk '{print $$1}')
-BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)-sync$(SYNC_READ)-src$(SOURCE_LAYOUT_TAG)-$(BUILD_ID)
+BUILD_TAG := $(COMPONENT_CONFIG_NAME)-$(notdir $(RAM_INIT_FILE))-$(notdir $(ROM_INIT_FILE))-ram$(RAM_BYTES)-dram$(EXTERNAL_MEMORY)-cache$(CACHES)x$(CACHE_LINES)x$(CACHE_WORDS_PER_LINE)-sync$(SYNC_READ)-src$(SOURCE_LAYOUT_TAG)-def$(shell echo '$(DEFINES)' | cksum | cut -d' ' -f1)-$(BUILD_ID)
 MDIR := obj_dir_$(BUILD_TAG)
 
 config: $(COMPONENT_MK)
@@ -82,6 +85,8 @@ run: $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP)
 	$(VERILATOR) $(VFLAGS) --top-module $(SIM_TOP) --Mdir $(MDIR) --exe --build \
 	  -GRESET_PC=$(RESET_PC) -GRAM_BYTES=$(RAM_BYTES) -GUSE_DRAM_MODEL=$(EXTERNAL_MEMORY) -GUSE_CACHES=$(CACHES) \
 	  -GSYNC_READ=$(SYNC_READ) \
+	  -GCACHE_LINES=$(CACHE_LINES) -GCACHE_WORDS_PER_LINE=$(CACHE_WORDS_PER_LINE) \
+	  $(DEFINES) \
 	  -GRAM_INIT_FILE=\"$(RAM_INIT_FILE)\" -GROM_INIT_FILE=\"$(ROM_INIT_FILE)\" \
 	  -o axsoc $(SOC_SVS) $(HARNESS_SVS) $(HARNESS_CPP) >/dev/null
 	./$(MDIR)/axsoc --max-cycles $(MAX_CYCLES) --uart-input '$(UART_INPUT)' $(if $(UART_INPUT_FILE),--uart-input-file "$(UART_INPUT_FILE)",) $(if $(SD_IMAGE),--sd-image "$(SD_IMAGE)",)

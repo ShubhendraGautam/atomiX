@@ -2,11 +2,27 @@
   "schema": 1,
   "id": "role.gpu-compute",
   "kind": "role",
-  "title": "GPU-compute 8-lane SIMT vector engine role",
+  "title": "GPU-compute SIMT vector engine, single-port global memory (tunable)",
   "sources": [
     "components/role/gpu-compute/gpu_engine.sv",
     "components/role/gpu-compute/axrole.sv"
   ],
   "stock_soc_module": "axrole",
-  "capabilities": ["role-window", "doorbell", "status-poll", "simt", "8-lane", "programmable-kernel", "flat-global-memory", "tail-predication"]
+  "capabilities": [
+    "role-window",
+    "doorbell",
+    "status-poll",
+    "simt",
+    "programmable-kernel",
+    "flat-global-memory",
+    "tail-predication",
+    "tunable"
+  ],
+  "parameters": {
+    "lanes": {
+      "default": 8,
+      "define": "GPU_COMPUTE_LANES",
+      "doc": "SIMT lanes, 1..256. Memory is single-ported, so lanes past ~8 give diminishing returns; role.gpu1 banks its memory and scales further."
+    }
+  }
 }

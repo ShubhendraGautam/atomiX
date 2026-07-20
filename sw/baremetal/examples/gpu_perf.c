@@ -1,5 +1,5 @@
 /* GPU-compute performance test for role.gpu-compute (and the reduced-lane
- * role.gpu-compute-lite).  It sweeps the thread count over two kernels of
+ * role.gpu-compute with lanes=4).  It sweeps the thread count over two kernels of
  * different arithmetic intensity, times each on the SIMT engine and on an
  * equivalent on-core loop, and reports cycles, speedup, and SIMT throughput
  * (threads retired per cycle).

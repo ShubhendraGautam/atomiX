@@ -1,28 +1,24 @@
 {
   "schema": 1,
-  "name": "ulx3s-85f-gpu",
+  "name": "sim-ax2-gpu1",
   "components": {
-    "core": "core.minimal",
+    "core": "core.ax2",
     "soc": "soc.reference",
-    "memory": "memory.sdram",
+    "memory": "memory.bram",
     "uart": "uart.mmio16550",
     "clint": "clint.qemu-virt",
     "spi": "spi.polling-mode0",
-    "board": "board.ulx3s-85f",
+    "board": "board.sim",
     "interconnect": "interconnect.axbus-reference",
     "cache": "cache.direct-mapped",
     "rom": "rom.axrom",
     "finisher": "finisher.sifive-test",
-    "role": "role.gpu-compute"
+    "harness": "harness.verilator-soc",
+    "role": "role.gpu1"
   },
   "settings": {
-    "ram_bytes": 33554432,
-    "caches": true,
-    "reset_pc": "0x00001000"
-  },
-  "parameters": {
-    "role": {
-      "lanes": 16
-    }
+    "ram_bytes": 131072,
+    "caches": false,
+    "reset_pc": "0x80000000"
   }
 }

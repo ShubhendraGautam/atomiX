@@ -14,11 +14,16 @@
     "rom": "rom.axrom",
     "finisher": "finisher.sifive-test",
     "harness": "harness.verilator-soc",
-    "role": "role.gpu-compute-6"
+    "role": "role.gpu-compute"
   },
   "settings": {
     "ram_bytes": 131072,
     "caches": false,
     "reset_pc": "0x80000000"
+  },
+  "parameters": {
+    "role": {
+      "lanes": 6
+    }
   }
 }

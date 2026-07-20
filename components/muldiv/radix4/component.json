@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "muldiv.radix4",
+  "kind": "muldiv",
+  "title": "RV32M unit: single-cycle multiply, radix-4 divide (16 cycles)",
+  "sources": ["components/muldiv/radix4/muldiv.sv"],
+  "stock_soc_module": "muldiv",
+  "capabilities": ["rv32m", "single-cycle-multiply", "dsp-inferred", "radix4-divide", "16-cycle-divide"]
+}

@@ -12,6 +12,7 @@ module axcache #(
   input  logic        clk,
   input  logic        rst,
   input  logic        flush,
+  output logic        flush_busy,
 
   input  logic        c_valid,
   input  logic [31:0] c_addr,
@@ -29,6 +30,9 @@ module axcache #(
   input  logic [31:0] m_rdata,
   input  logic        m_err
 );
+  // Write-through: no dirty data can outlive a write, so a flush completes
+  // in the cycle it is requested and this is always low.
+  assign flush_busy = 1'b0;
   localparam int unsigned LINE_BYTES = WORDS_PER_LINE * 4;
   localparam int unsigned WORD_BITS = $clog2(WORDS_PER_LINE);
   localparam int unsigned INDEX_BITS = $clog2(LINES);

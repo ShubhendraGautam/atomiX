@@ -8,6 +8,7 @@ COMPONENTS := ../../components
 ALU_REFERENCE := $(COMPONENTS)/alu/single-cycle
 MULDIV_REFERENCE := $(COMPONENTS)/muldiv/iterative32
 MULDIV_FASTMUL := $(COMPONENTS)/muldiv/fast-mul
+MULDIV_RADIX4 := $(COMPONENTS)/muldiv/radix4
 REGFILE_REFERENCE := $(COMPONENTS)/regfile/flipflop
 MMU_REFERENCE := $(COMPONENTS)/mmu/sv32
 MEMORY_REFERENCE := $(COMPONENTS)/memory/reference
@@ -47,7 +48,7 @@ SOC_SVS := $(CORE_SOURCES) \
   $(SPI_REFERENCE)/axspi.sv $(FINISHER_REFERENCE)/test_finisher.sv \
   $(SOC_REFERENCE)/soc_top.sv
 
-test: $(MODULES:%=run-%) run-muldiv-fastmul run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
+test: $(MODULES:%=run-%) run-muldiv-fastmul run-muldiv-radix4 run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer run-suite-gpu1 run-suite-ax2
 
 # The alternate muldiv component passes the identical latency-agnostic
 # testbench; a swapped unit earns the same evidence as the reference.
@@ -56,6 +57,15 @@ run-muldiv-fastmul: tb_muldiv.cpp
 	  --exe --build -o tb_muldiv $(MULDIV_FASTMUL)/muldiv.sv \
 	  $(CURDIR)/tb_muldiv.cpp >/dev/null
 	./obj_dir_muldiv_fastmul/tb_muldiv
+
+# Radix-4 divide (16 cycles) + single-cycle multiply.  Same latency-agnostic
+# testbench again: a unit that changes its timing but not its results earns the
+# reference unit's evidence without a bespoke test.
+run-muldiv-radix4: tb_muldiv.cpp
+	$(VERILATOR) $(VFLAGS) --top-module muldiv --Mdir obj_dir_muldiv_radix4 \
+	  --exe --build -o tb_muldiv $(MULDIV_RADIX4)/muldiv.sv \
+	  $(CURDIR)/tb_muldiv.cpp >/dev/null
+	./obj_dir_muldiv_radix4/tb_muldiv
 
 run-%: tb_%.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $* --Mdir obj_dir_$* --exe --build \
@@ -184,3 +194,90 @@ clean:
 	rm -rf obj_dir_* build
 
 .PHONY: test clean run-muldiv-fastmul run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer
+
+# ---------------------------------------------------------------------------
+# gpu1 and ax2 suites.  Both are SUITES rather than per-component checks: one
+# target covers a whole tier family, because the tiers differ only in
+# parameters and the point of the suite is that the parameter does not change
+# the architectural result.
+# ---------------------------------------------------------------------------
+
+GPU1_ENGINE  := $(COMPONENTS)/role/gpu1/gpu1_engine.sv
+GPU1_ROLE    := $(COMPONENTS)/role/gpu1/axrole.sv
+
+# gpu1 is one component with build-time parameters, so the suite sweeps the
+# PARAMETER SPACE rather than a list of component variants.  These points are
+# chosen to cover what can actually break: the smallest configuration, the
+# baseline, banks fewer than lanes (so a coalesced access takes several rounds),
+# a non-power-of-two lane count, the optional ISA groups switched off, and the
+# largest configuration.  The testbench reads the geometry from CAPS, so one
+# source checks all of them.
+GPU1_POINTS := \
+  4,4,1,1 \
+  8,8,1,1 \
+  16,16,1,1 \
+  32,32,1,1 \
+  16,4,1,1 \
+  6,8,1,1 \
+  8,8,0,0
+
+run-suite-gpu1: tb_gpu1.cpp $(GPU1_ENGINE) $(GPU1_ROLE)
+	@for pt in $(GPU1_POINTS); do \
+	  l=$${pt%%,*}; r=$${pt#*,}; b=$${r%%,*}; r=$${r#*,}; \
+	  d=$${r%%,*}; sh=$${r#*,}; \
+	  echo "== suite/gpu1: lanes=$$l banks=$$b div=$$d shfl=$$sh =="; \
+	  $(VERILATOR) $(VFLAGS) --top-module axrole --Mdir obj_dir_gpu1_$${l}_$${b}_$${d}_$${sh} \
+	    +define+GPU1_LANES=$$l +define+GPU1_BANKS=$$b \
+	    +define+GPU1_ENABLE_DIV=$$d +define+GPU1_ENABLE_SHFL=$$sh \
+	    --exe --build -o tb_gpu1 $(GPU1_ENGINE) $(GPU1_ROLE) \
+	    $(CURDIR)/tb_gpu1.cpp >/dev/null || exit 1; \
+	  ./obj_dir_gpu1_$${l}_$${b}_$${d}_$${sh}/tb_gpu1 || exit 1; \
+	done
+	@echo "suite/gpu1: PASS"
+
+AX2_DIR := $(COMPONENTS)/core/ax2
+# ax2 shares the reference core's decoder, immdec and branch comparator, so a
+# decode-rule change is caught by both cores' suites at once.
+AX2_SOURCES  = $(CORE_COMPONENT)/axcore_pkg.sv $(AX2_DIR)/ax2_pkg.sv \
+  $(CORE_COMPONENT)/immdec.sv $(CORE_COMPONENT)/decoder.sv \
+  $(CORE_COMPONENT)/branch_cmp.sv $(ALU_REFERENCE)/alu.sv \
+  $(MULDIV_REFERENCE)/muldiv.sv $(AX2_DIR)/ax2_regfile.sv \
+  $(AX2_DIR)/ax2_icache.sv $(AX2_DIR)/ax2_core.sv $(AX2_DIR)/axcore.sv
+
+# Same idea for the core: sweep the parameter space, not a variant list.  The
+# points cover single versus dual issue, the smallest and largest caches, and
+# prediction switched off entirely -- the extremes are where a parameterised
+# design breaks (a zero-entry BTB is a zero-width index if you are careless).
+AX2_POINTS := \
+  1,1,16 \
+  2,2,32 \
+  2,8,128 \
+  2,1,0 \
+  1,8,0
+AX2_WS := 0 1 3
+
+run-suite-ax2: tb_ax2_isa.cpp tb_axcore.cpp $(AX2_SOURCES)
+	@mkdir -p build
+	@python3 ../../tests/directed/words2bin.py ../../tests/directed/smoke_ok.words build/smoke_ok.bin
+	@python3 ../../tests/directed/words2bin.py ../../tests/directed/trap_ecall.words build/trap_ecall.bin
+	@for pt in $(AX2_POINTS); do \
+	  w=$${pt%%,*}; r=$${pt#*,}; k=$${r%%,*}; b=$${r#*,}; \
+	  tag=w$${w}k$${k}b$${b}; \
+	  echo "== suite/ax2: issue_width=$$w icache_kb=$$k btb_entries=$$b =="; \
+	  defs="+define+AX2_ISSUE_WIDTH=$$w +define+AX2_ICACHE_KB=$$k +define+AX2_BTB_ENTRIES=$$b"; \
+	  $(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_ax2_$$tag \
+	    $$defs --exe --build -o tb_axcore $(AX2_SOURCES) \
+	    $(CURDIR)/tb_axcore.cpp >/dev/null || exit 1; \
+	  ./obj_dir_ax2_$$tag/tb_axcore build/smoke_ok.bin | grep -qx OK || exit 1; \
+	  ./obj_dir_ax2_$$tag/tb_axcore build/smoke_ok.bin --ws 3 | grep -qx OK || exit 1; \
+	  ./obj_dir_ax2_$$tag/tb_axcore build/trap_ecall.bin || exit 1; \
+	  $(VERILATOR) $(VFLAGS) --top-module axcore --Mdir obj_dir_ax2isa_$$tag \
+	    $$defs --exe --build -o tb_ax2_isa $(AX2_SOURCES) \
+	    $(CURDIR)/tb_ax2_isa.cpp >/dev/null || exit 1; \
+	  for ws in $(AX2_WS); do \
+	    WS=$$ws ./run_ax2_isa.sh $(CURDIR)/obj_dir_ax2isa_$$tag/tb_ax2_isa || exit 1; \
+	  done; \
+	done
+	@echo "suite/ax2: PASS"
+
+.PHONY: run-suite-gpu1 run-suite-ax2

@@ -6,6 +6,12 @@ module soc_top #(
   parameter int unsigned USE_DRAM_MODEL = 0,
   parameter int unsigned USE_SDRAM = 0,
   parameter int unsigned USE_CACHES = 0,
+  // Cache geometry.  The default (16 lines x 4 words = 256 bytes) is a
+  // composition smoke size, not a working one: any program with a real working
+  // set needs kilobytes here.  Profiles set it through the `cache_lines` and
+  // `cache_words_per_line` settings.
+  parameter int unsigned CACHE_LINES = 16,
+  parameter int unsigned CACHE_WORDS_PER_LINE = 4,
   parameter int unsigned SYNC_READ = 0,
   parameter ROM_INIT_FILE = "",
   parameter RAM_INIT_FILE = ""
@@ -112,28 +118,54 @@ module soc_top #(
     end
   end
 
+  // A write-back data cache can hold data that memory does not have yet, so an
+  // instruction fetch must not reach memory while that cache is draining -- it
+  // could refill from a word the data cache is still holding dirty.  Gating the
+  // instruction port's `valid` keeps the instruction cache in its idle state
+  // entirely, so it neither issues a fetch nor latches a stale response; when
+  // the drain finishes it re-looks-up and sees correct memory.  Write-through
+  // caches tie `flush_busy` low, so this costs them nothing.
+  wire dcache_draining;
+  wire ibus_valid_gated = ibus_valid && !dcache_draining;
+  // Both are driven in either arm of the cache generate below.
+  wire icache_c_ready;
+  // The instruction cache's own drain is never gated on: nothing else fetches
+  // from it, and a write-through instruction cache ties this low anyway.
+  /* verilator lint_off UNUSED */
+  wire icache_draining;
+  /* verilator lint_on UNUSED */
+  assign ibus_ready = (USE_CACHES != 0) ? (icache_c_ready && !dcache_draining)
+                                        : i_bus_ready;
+  // Tied off by the write-through caches and unused when caches are disabled.
+  wire unused_cache_sigs = &{1'b0, icache_c_ready, dcache_draining};
+
   generate
     if (USE_CACHES != 0) begin : g_caches
-      axcache #(.CACHE_BYTES(RAM_BYTES)) u_icache (
-        .clk(clk), .rst(rst), .flush(fence_i_complete),
-        .c_valid(ibus_valid), .c_addr(ibus_addr), .c_wdata(ibus_wdata), .c_wstrb(ibus_wstrb),
-        .c_ready(ibus_ready), .c_rdata(ibus_rdata), .c_err(ibus_err),
+      axcache #(.CACHE_BYTES(RAM_BYTES), .LINES(CACHE_LINES),
+                .WORDS_PER_LINE(CACHE_WORDS_PER_LINE)) u_icache (
+        .clk(clk), .rst(rst), .flush(fence_i_complete), .flush_busy(icache_draining),
+        .c_valid(ibus_valid_gated), .c_addr(ibus_addr), .c_wdata(ibus_wdata), .c_wstrb(ibus_wstrb),
+        .c_ready(icache_c_ready), .c_rdata(ibus_rdata), .c_err(ibus_err),
         .m_valid(i_bus_valid), .m_addr(i_bus_addr), .m_wdata(i_bus_wdata), .m_wstrb(i_bus_wstrb),
         .m_ready(i_bus_ready), .m_rdata(i_bus_rdata), .m_err(i_bus_err)
       );
-      axcache #(.CACHE_BYTES(RAM_BYTES)) u_dcache (
-        .clk(clk), .rst(rst), .flush(i_write_complete),
+      axcache #(.CACHE_BYTES(RAM_BYTES), .LINES(CACHE_LINES),
+                .WORDS_PER_LINE(CACHE_WORDS_PER_LINE)) u_dcache (
+        .clk(clk), .rst(rst), .flush(i_write_complete || fence_i_complete),
+        .flush_busy(dcache_draining),
         .c_valid(dbus_valid), .c_addr(dbus_addr), .c_wdata(dbus_wdata), .c_wstrb(dbus_wstrb),
         .c_ready(dbus_ready), .c_rdata(dbus_rdata), .c_err(dbus_err),
         .m_valid(d_bus_valid), .m_addr(d_bus_addr), .m_wdata(d_bus_wdata), .m_wstrb(d_bus_wstrb),
         .m_ready(d_bus_ready), .m_rdata(d_bus_rdata), .m_err(d_bus_err)
       );
     end else begin : g_no_caches
-      assign i_bus_valid = ibus_valid;
+      // No cache, so nothing can be dirty and the fetch gate never closes.
+      assign dcache_draining = 1'b0;
+      assign icache_c_ready  = i_bus_ready;
+      assign i_bus_valid = ibus_valid_gated;
       assign i_bus_addr = ibus_addr;
       assign i_bus_wdata = ibus_wdata;
       assign i_bus_wstrb = ibus_wstrb;
-      assign ibus_ready = i_bus_ready;
       assign ibus_rdata = i_bus_rdata;
       assign ibus_err = i_bus_err;
       assign d_bus_valid = dbus_valid;

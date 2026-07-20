@@ -1,3 +1,9 @@
+// Lane count is a build-time knob: the engine, ISA, window layout and
+// driver contract are identical at every lane count, so a different width
+// is a sizing choice rather than a different component.
+`ifndef GPU_COMPUTE_LANES
+  `define GPU_COMPUTE_LANES 8
+`endif
 // GPU-compute role: an 8-lane SIMT data-parallel vector engine.
 //
 // The second real accelerator behind the shell role window (DESIGN.md §3.3).
@@ -10,7 +16,7 @@
 // exact doorbell/status/descriptor driver model the loopback and TPU roles
 // proved.
 //
-// This file is the reference role: a thin wrapper that fixes NLANES = 8.  The
+// This file is the reference role: a thin wrapper setting NLANES.  The
 // lane-parameterized implementation lives in gpu_engine.sv; role.gpu-compute-
 // lite reuses it at a smaller lane count to fit a small FPGA.  Lane count only
 // changes wave grouping, never the result of a conflict-free kernel.
@@ -95,5 +101,5 @@ module axrole #(
   output logic [31:0] d_rdata,
   output logic        d_err
 );
-  gpu_engine #(.BASE(BASE), .NLANES(8)) u_engine (.*);
+  gpu_engine #(.BASE(BASE), .NLANES(`GPU_COMPUTE_LANES)) u_engine (.*);
 endmodule

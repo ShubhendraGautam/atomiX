@@ -113,24 +113,87 @@ make -C sw/baremetal check-role     # role.loopback contract proof
 make -C sw/baremetal check-tpu      # TPU-lite int8 systolic GEMM vs on-core reference
 make -C sw/baremetal check-gpu      # GPU-compute SIMT engine vs on-core reference (8-lane)
 make -C sw/baremetal check-gpu-perf # GPU throughput regression vs on-core (8-lane)
+make -C sw/baremetal check-gpu1     # gpu1 banked SIMT engine vs on-core ISA oracle
 ```
-The GPU engine is parameterized by lane count (gpu_engine.sv `NLANES`):
-`role.gpu-compute` is the 8-lane reference, with `role.gpu-compute-lite` (4) and
-`role.gpu-compute-6` (6) as smaller variants for the Tang Nano 20K (see
-[hardware-capabilities.md](hardware-capabilities.md)).  `check-gpu-perf` runs the
-8-lane role; point `COMPONENT_CONFIG` at a composed profile to time another.
+Two role components, each tuned by parameter rather than duplicated per size:
+
+- `role.gpu1` — the current engine: banked global memory and a control ISA
+  (divergence, branches, divide, shuffle).  Parameters: `lanes`, `banks`,
+  `enable_div`, `enable_shfl`.
+- `role.gpu-compute` — the earlier single-port engine, kept as the reference the
+  gpu1 store-ordering semantics are matched against.  Parameter: `lanes`.
+
+Software reads the geometry from the role's CAPS register, so `check-gpu1` is
+the check for any parameterisation.  See
+[hardware-capabilities.md](hardware-capabilities.md) for measured cycles.
 
 ### 3.4 Components / composition
 ```bash
 make config-check-all              # all profiles resolve
 make component-test                # runs the supplied composition matrix (slower)
 make -C sw/baremetal check-suite-minimal   # lean-component family in one suite
+make -C sim/unit run-suite-ax2            # every core.ax2 tier vs the official ISA suite
+make -C sim/unit run-suite-gpu1           # every role.gpu1 tier vs the ISA oracle
+make -C sw/baremetal check-suite-ax2      # ax2 + gpu1 SoC integration
 ```
 Prefer **suites** over a check-plus-profile per hardware combination: a suite
 exercises a family of components together.  `check-suite-minimal` runs
 `core.minimal` driving the CPU (hello), the GPU role, and the TPU role from the
 `sim-minimal*` fixtures.  Add a suite when a family of components (a new core,
 an accelerator variant) warrants coverage without one-off profiles.
+
+The ax2 and gpu1 suites show the shape to copy for a **parameterised** family.
+Tier coverage lives in `sim/unit`, which builds each tier's RTL directly and so
+needs no profile per tier; only the SoC-integration leg needs a profile, and it
+needs one (`sim-ax2.json`, `sim-ax2-gpu1.json`), not one per tier.  A tier sweep
+does not belong in `configs/` — the tiers differ only in parameters, and adding
+a profile each would duplicate coverage the unit suite already has.
+
+### 3.4a Tuning a component
+```bash
+python3 tools/configure.py describe core.ax2     # what it exposes and the defaults
+```
+A component is the unit of *architecture*; a size inside it is a build-time
+parameter.  A new component is warranted when the architecture changes — a
+different pipeline, a different privilege model, a different execution model —
+not when a cache or a lane count changes.  So `core.ax2` is one component with
+`issue_width`, `icache_kb`, and `btb_entries`, and `role.gpu1` is one component
+with `lanes`, `banks`, `enable_div`, and `enable_shfl`.
+
+A profile overrides by name, under the component's kind:
+
+```json
+{
+  "components": { "core": "core.ax2", "role": "role.gpu1" },
+  "parameters": {
+    "core": { "issue_width": 1, "icache_kb": 8 },
+    "role": { "lanes": 16, "banks": 16 }
+  }
+}
+```
+
+The manifest declares each parameter with the default that *defines the
+baseline*, so an unparameterised profile is the reference configuration.
+Overrides are validated: naming a parameter the component does not declare is a
+configuration error that lists what it does declare, the same discipline that
+makes component selection validated rather than hopeful.  Parameters reach the
+RTL as `+define+` flags, because they must cross stock module boundaries
+(`axcore`, `axrole`) whose port and parameter lists are shared with every other
+implementation and must not grow implementation-specific knobs.
+
+### 3.4b Benchmarking
+```bash
+make -C sw/baremetal images
+python3 tools/bench.py cpu     # IPC per core and per ax2 parameter setting
+python3 tools/bench.py gpu     # kernel cycles per role parameter setting
+python3 tools/bench.py render  # render workload vs cache policy/size and divider
+python3 tools/bench.py         # all three
+```
+The sweep needs a profile per configuration, but those are measurement fixtures
+rather than supported ones, so `bench.py` generates them into a scratch
+directory instead of the catalog.  What it sweeps is mostly *parameters* now,
+which is the point: the numbers show what each knob is worth instead of
+asserting that several near-identical components differ.
 
 ### 3.5 Kernel (aXos) — needs `qemu-system-riscv32` ≥ 7
 ```bash

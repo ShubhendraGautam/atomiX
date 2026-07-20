@@ -11,6 +11,7 @@ module axcache #(
   input  logic        clk,
   input  logic        rst,
   input  logic        flush,
+  output logic        flush_busy,
   input  logic        c_valid,
   input  logic [31:0] c_addr,
   input  logic [31:0] c_wdata,
@@ -26,6 +27,8 @@ module axcache #(
   input  logic [31:0] m_rdata,
   input  logic        m_err
 );
+  // Nothing is cached, so there is never anything to drain.
+  assign flush_busy = 1'b0;
   always_comb begin
     m_valid = c_valid;
     m_addr = c_addr;

@@ -50,6 +50,19 @@ contracts and selections are in [components/](../components/).
   overrides.  Evidence: `make -C sim/unit run-muldiv-fastmul` and
   `make -C sim/cosim test rv32um
   MULDIV_SV=../../components/muldiv/fast-mul/muldiv.sv`.
+- [x] A scalable core family demonstrates the seam at performance granularity:
+  `core.ax2-{s,m,l}` is a dual-issue in-order superscalar RV32IM machine-mode
+  core (block-RAM instruction cache, bundle BTB, 4R2W register file) sharing the
+  reference core's decoder/immdec/branch-comparator.  Tiers differ only in issue
+  width, cache size, and BTB depth.  Evidence: `make -C sim/unit run-suite-ax2`
+  (every tier against the official rv32ui + rv32um binaries on the RTL — 49
+  tests × 3 tiers × 3 wait-state settings — plus the directed programs) and
+  `make -C sw/baremetal check-suite-ax2` (SoC integration: interrupts, fence.i,
+  IPC, and the gpu1 role).  Measured 2.53× core.minimal and 1.60× core.pipeline5
+  on the mixed workload; see [hardware-capabilities.md](hardware-capabilities.md).
+  It implements machine mode with physical addressing only — no Sv32/S/U — and
+  has no RVFI surface, so it does not carry the reference core's cosim or
+  riscv-formal evidence.
 - [x] A whole-CPU swap demonstrates the same seam at core granularity:
   `core.minimal` is a compact multi-cycle RV32IM machine-mode core (no MMU/S/U,
   reusing the reference decoder/ALU/mul-div/regfile) built as an accelerator
@@ -58,6 +71,61 @@ contracts and selections are in [components/](../components/).
   It ships in the `tangnano20k-gpu` and `ulx3s-85f-gpu` profiles (minimal host +
   GPU).  It does not yet carry the reference core's cosim/riscv-formal evidence,
   so architectural equivalence at ISA granularity is still open.
+
+- [x] Memory-system components sized and shaped for real workloads:
+  `cache.writeback` (direct-mapped, write-back, write-allocate, drain-on-flush)
+  and `muldiv.radix4` (single-cycle multiply, 16-cycle divide), plus cache
+  geometry exposed as the `cache_lines` / `cache_words_per_line` profile
+  settings — the stock 256-byte cache was a composition smoke size, not a
+  working one.  Evidence: `make -C sim/unit run-muldiv-radix4` (the same
+  latency-agnostic unit testbench the reference divider passes),
+  `make -C sw/baremetal check-suite-ax2`, and `python3 tools/bench.py render`
+  (2.91× on a renderer-shaped workload, of which the write-back policy is
+  1.55×).  `cache.writeback` carries a documented constraint: it must not be
+  paired with a core whose fetch port writes memory (the Sv32 walker).
+- [x] Tunable components rather than near-duplicate variants: a component is
+  the unit of *architecture*, and a size within it is a build-time parameter.
+  `core.ax2` and `role.gpu1` are each one component; `role.gpu-compute` absorbed
+  its lane variants the same way.  Parameters are declared in the manifest with
+  the defaults that define the baseline, overridden per profile by name, and
+  validated — an undeclared parameter is a configuration error naming what the
+  component does declare.  This replaced eleven components with three.  Evidence:
+  `make config-check-all` and the parameter sweeps in
+  `make -C sim/unit run-suite-ax2` / `run-suite-gpu1`.
+
+## Userspace ABI (next milestone)
+
+aXos has a scheduler, an allocator, a filesystem, and a shell, but no way to
+*run a program*: there is no syscall ABI, no loader, and no C library.  Nothing
+compiled from C can target it today, which is the gap between "the CPU can run a
+real program" and "the system can host one".  Two findings from the render
+benchmark make the gap concrete: the bare-metal link has no libgcc (so a 64-bit
+divide is an undefined `__udivdi3`), and `link.ld` hardcodes a 128 KiB image.
+
+Staged so each step has its own evidence rather than landing as one large jump:
+
+- [ ] **Syscall ABI.** Define and document the M/U boundary: the `ecall`
+  convention (which register carries the number, which carry arguments, how a
+  negative return encodes an error), the initial set — `exit`, `write`, `read`,
+  `open`, `close`, `lseek`, `brk`/`sbrk`, `fstat` — and the guarantees each
+  makes.  This is a contract document plus a kernel trap handler, testable with
+  a hand-written assembly program before any libc exists.
+- [ ] **Program loader.** Load a flat or ELF image into a user address space and
+  enter U-mode with a defined initial stack, argv/envp layout, and entry
+  contract.  Needs the reference core's S/U modes, so it pins the pairing:
+  `core.pipeline5` for the hosted profile, not `core.ax2`.
+- [ ] **C library.** Retarget a small libc (newlib or picolibc) onto the
+  syscalls, with `malloc` over `brk` backed by `allocator.free-list` and file
+  I/O backed by `filesystem.axfs`.  Link libgcc so 64-bit arithmetic works.
+- [ ] **Evidence.** A compiled, unmodified C program — one that allocates,
+  reads a file, and prints — runs on aXos through the loader.  Then raise the
+  image ceiling and run something substantial enough to be a real test of the
+  ABI rather than a demonstration of it.
+
+Open questions to settle first: whether the ABI targets a subset of the Linux
+RISC-V calling convention (portable, familiar, larger) or a deliberately small
+atomiX-specific one (smaller, needs its own libc port); and whether the loader
+takes ELF directly or a pre-flattened image.
 
 ## Change-ready checklist
 
@@ -92,6 +160,20 @@ Use this for a substantive implementation or interface change:
   model.  Evidence: `make -C sw/baremetal check-gpu` (verifies saxpy, fused
   multiply+ReLU, and a masked-tail reduction-style kernel against an on-core
   reference and prints the role-versus-CPU cycle counts).
+- [x] Scalable accelerator role family, `role.gpu1-{s,m,l,xl}`: the SIMT engine
+  rebuilt around **banked global memory** (NBANKS interleaved block RAMs behind
+  a lane→bank crossbar with round-based conflict serialisation) and a real
+  control ISA (structured IF/ELSE/ENDIF divergence, uniform and any-lane
+  branches, compare-set, integer divide, cross-lane shuffle, displaced
+  addressing).  Banking is what makes lane count worth scaling: the previous
+  single-port engine gained only 1.18× going from 8 to 16 lanes, where gpu1
+  gains 1.69–1.82× per doubling and is 2.70× the old engine at equal lane count.
+  Geometry is published in a CAPS register, so one driver and one oracle serve
+  every tier.  Evidence: `make -C sim/unit run-suite-gpu1` (all four tiers
+  against a C++ interpreter of the ISA, including the maximal-bank-conflict and
+  worst-case-serialisation kernels that pin the store-ordering invariant) and
+  `make -C sw/baremetal check-gpu1` (the same battery driven on-core through the
+  shell window).
 - [x] aXos in-kernel role driver: the management kernel (not a bare-metal test
   program) discovers the role through the window device-mapped into its S-mode
   address space and drives a job end-to-end from the resident shell — the first
@@ -142,7 +224,7 @@ component work above.  It is the final platform-evidence gate.
 - [~] Attach an accelerator role on the Tang Nano.  The parameterized SIMT
   engine (gpu_engine.sv, `NLANES`) fits: the shipped `configs/tangnano20k-gpu.json`
   (minimal host + 6-lane) synthesises to ~20.2k LUT4, 32 DPB, 6 DSP — inside the
-  GW2A-18C at 97% (tight); the 4-lane `role.gpu-compute-lite` fits comfortably
+  GW2A-18C at 97% (tight); `role.gpu-compute` at 4 lanes fits comfortably
   (~18.9k).  Functional equivalence to the 8-lane reference is checked by
   `make -C sw/baremetal check-gpu`, and throughput by `check-gpu-perf` (poly
   kernel ~12.9× vs on-core).  Per-hardware fit:

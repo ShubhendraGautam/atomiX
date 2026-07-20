@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "cache.writeback",
+  "kind": "cache",
+  "title": "Direct-mapped write-back, write-allocate aXbus cache",
+  "sources": ["components/cache/writeback/axcache.sv"],
+  "stock_soc_module": "axcache",
+  "capabilities": ["direct-mapped", "write-back", "write-allocate", "drain-on-flush", "requires-no-fetch-port-writes"]
+}

@@ -79,6 +79,52 @@ static inline uint32_t gpu_insn(uint32_t op, uint32_t rd, uint32_t ra,
          ((uint32_t)imm & 0x1ffffu);
 }
 
+/* role.gpu1 programming model: the scalable SIMT engine.
+ *
+ * Same doorbell/descriptor shape as role.gpu-compute, with two differences that
+ * matter to software:
+ *
+ *   - CAPS publishes the geometry (lane count, bank count, optional ISA
+ *     groups).  A driver reads it instead of being compiled against a lane
+ *     count, so one binary runs on every tier.
+ *   - Registers are zeroed at the start of each wave, and a lane that is not
+ *     executing -- masked off by the thread tail or by divergence -- writes no
+ *     register and performs no store.
+ *
+ * Opcodes 0..18 are encoding-compatible with role.gpu-compute, so a
+ * straight-line kernel written for that engine assembles unchanged. */
+#define AX_ROLE_GPU1_ID       0x47505531u /* "GPU1" */
+#define AX_ROLE_GPU1_NTHREADS (AX_ROLE_BASE + 0x0010u)
+#define AX_ROLE_GPU1_NINSN    (AX_ROLE_BASE + 0x0014u)
+#define AX_ROLE_GPU1_COUNT    (AX_ROLE_BASE + 0x0018u)
+#define AX_ROLE_GPU1_CAPS     (AX_ROLE_BASE + 0x001cu)
+#define AX_ROLE_GPU1_PROG     (AX_ROLE_BASE + 0x0100u)
+#define AX_ROLE_GPU1_DATA     (AX_ROLE_BASE + 0x1000u)
+
+#define AX_GPU1_CAPS_LANES(c) (((c) >> 24) & 0xffu)
+#define AX_GPU1_CAPS_BANKS(c) (((c) >> 16) & 0xffu)
+#define AX_GPU1_CAPS_DIV      0x1u
+#define AX_GPU1_CAPS_SHFL     0x2u
+
+/* Instructions added over the gpu-compute set. */
+#define AX_GPU_SEQ   19u
+#define AX_GPU_SNE   20u
+#define AX_GPU_SLT   21u
+#define AX_GPU_SLTU  22u
+#define AX_GPU_SGE   23u
+#define AX_GPU_IF    24u   /* push mask; keep lanes whose ra != 0 */
+#define AX_GPU_ELSE  25u   /* complement within the enclosing mask */
+#define AX_GPU_ENDIF 26u   /* pop mask */
+#define AX_GPU_BRA   27u   /* pc += imm, unconditional */
+#define AX_GPU_BRANY 28u   /* pc += imm if any executing lane has ra != 0 */
+#define AX_GPU_DIV   29u
+#define AX_GPU_REM   30u
+#define AX_GPU_DIVU  31u
+#define AX_GPU_REMU  32u
+#define AX_GPU_SHFL  33u   /* rd = lane (rb mod NLANES)'s ra */
+#define AX_GPU_LDXI  34u   /* rd = mem[ra + imm] */
+#define AX_GPU_STXI  35u   /* mem[ra + imm] = rb */
+
 static inline uint32_t mmio_read32(uint32_t addr) {
   return *(volatile const uint32_t *)(uintptr_t)addr;
 }

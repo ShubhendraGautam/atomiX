@@ -1,22 +1,55 @@
 # Accelerator optimisation — design notes for discussion
 
-Design-stage notes for the levers that would maximise the large FPGA target
-(ULX3S-85F).  Nothing here is built yet; this is the material for a design
-discussion before implementation.  Measured context and the delivered
-optimisation (pipelined `LDX`) are in
+Notes on the levers that would maximise the large FPGA target (ULX3S-85F).
+Measured context and delivered optimisations are in
 [hardware-capabilities.md](hardware-capabilities.md).
 
 Ranked by payoff:
 
-| # | Lever | Payoff | Risk | Blocks / needs |
+| # | Lever | Payoff | Risk | Status |
 |---|---|---|---|---|
-| 1 | Multi-bank GPU memory | high (breaks the lane-scaling ceiling) | high (correctness) | — |
-| 2 | TPU `cbuf` → block RAM | frees ~65k FF | low–med (diagnosis) | — |
-| 3 | Composite GPU + TPU role | run both accelerators at once | med | best after #2 |
+| 1 | Multi-bank GPU memory | high (breaks the lane-scaling ceiling) | high (correctness) | **delivered** as `role.gpu1-*` |
+| 2 | TPU `cbuf` → block RAM | frees ~65k FF | low–med (diagnosis) | open |
+| 3 | Composite GPU + TPU role | run both accelerators at once | med | open, best after #2 |
 
 ---
 
-## 1. Multi-bank GPU global memory
+## 1. Multi-bank GPU global memory — delivered
+
+Built as the `gpu1` engine (`components/role/gpu1/gpu1_engine.sv`) behind the
+`role.gpu1-{s,m,l,xl}` tiers, rather than as a change to `role.gpu-compute`.
+The store-ordering and predication semantics are load-bearing, so the old engine
+stays untouched as a reference while the new one carries its own oracle.
+
+Decisions taken against the options that were open below:
+
+- **Bank count** `B = NLANES` at every tier, so a coalesced access retires in
+  one round.  The crossbar is the cost; at these lane counts it is affordable.
+- **Full crossbar**, not a coalesced-only fast path.  The gather and
+  same-address kernels are exactly what a fast-path-only design would fall back
+  to the serial path on, and reductions and scatter make those common enough
+  that the general structure earns its area.
+- **Round-based conflict sequencing**, each bank taking its lowest-index
+  pending lane.  That is what leaves the highest lane as the last writer to a
+  duplicated address, preserving the oracle's store order exactly.
+- Only `gmem` is banked; the program buffer and the register files are not.
+
+Measured (saxpy, 50 threads, cycles — lower is better):
+
+| lanes | `role.gpu-compute` (single port) | `role.gpu1-*` (banked) | gain |
+|---|---|---|---|
+| 4 | 503 | 347 | 1.45× |
+| 8 | 359 | 191 | 1.88× |
+| 16 | 305 | 113 | 2.70× |
+| 32 | — | 62 | — |
+
+The old engine gained 1.18× from 8→16 lanes; gpu1 gains 1.69–1.82× per
+doubling, which is the ceiling this lever existed to break.  Reproduce with
+`python3 tools/bench.py gpu`.
+
+The original analysis follows, unchanged, for the record.
+
+## 1a. Multi-bank GPU global memory — original analysis
 
 ### Problem
 `gmem` has one read/write port for the engine, so `LDX`/`STX` service one lane

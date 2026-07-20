@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "core.ax2",
+  "kind": "core",
+  "title": "aXcore ax2 dual-issue in-order superscalar RV32IM (tunable)",
+  "sources": [
+    "components/core/pipeline5/axcore_pkg.sv",
+    "components/core/ax2/ax2_pkg.sv",
+    "components/core/pipeline5/immdec.sv",
+    "components/core/pipeline5/decoder.sv",
+    "components/core/pipeline5/branch_cmp.sv",
+    "components/core/ax2/ax2_regfile.sv",
+    "components/core/ax2/ax2_icache.sv",
+    "components/core/ax2/ax2_core.sv",
+    "components/core/ax2/axcore.sv"
+  ],
+  "defaults": {"alu": "alu.single-cycle", "muldiv": "muldiv.iterative32"},
+  "stock_soc_module": "axcore",
+  "parameters": {
+    "issue_width": {
+      "default": 2,
+      "define": "AX2_ISSUE_WIDTH",
+      "doc": "Instructions issued per cycle: 2 is superscalar, 1 keeps the cache and predictor but retires one per cycle for a smaller part."
+    },
+    "icache_kb": {
+      "default": 2,
+      "define": "AX2_ICACHE_KB",
+      "doc": "Instruction cache size in KiB. Must be a power of two; a 4-word line means the smallest useful size is 1."
+    },
+    "btb_entries": {
+      "default": 32,
+      "define": "AX2_BTB_ENTRIES",
+      "doc": "Branch-target-buffer entries, or 0 to drop prediction entirely (every taken branch then costs a redirect)."
+    }
+  },
+  "capabilities": ["rv32im", "zicsr", "m-mode", "physical-addressing", "precise-traps", "instruction-cache", "branch-prediction", "in-order", "dual-issue-capable", "tunable"]
+}

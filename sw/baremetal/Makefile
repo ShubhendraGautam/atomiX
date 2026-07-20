@@ -11,7 +11,7 @@ CFLAGS   := -march=$(RISCV_ARCH) -mabi=ilp32 -mcmodel=medany -mno-relax \
             -fno-stack-protector -Wall -Wextra -Werror -O2 -g
 LDFLAGS  = -nostdlib -Wl,-T,link.ld -Wl,--gc-sections -Wl,-Map,$(@:.elf=.map)
 
-PROGRAMS := hello timer preempt fencei spi sd role tpu gpu gpu_perf
+PROGRAMS := hello timer preempt fencei spi sd role tpu gpu gpu_perf gpu1 cpu_perf render_perf
 ELFS     := $(PROGRAMS:%=build/%.elf)
 BINS     := $(ELFS:.elf=.bin)
 HEXS     := $(ELFS:.elf=.hex)
@@ -105,7 +105,7 @@ check-suite-minimal: build/hello.hex build/gpu.hex build/tpu.hex
 	@echo "== suite/minimal: core.minimal + CPU (hello) =="
 	$(MAKE) -C ../../sim/soc run COMPONENT_CONFIG=../../configs/sim-minimal.json \
 	  RAM_INIT_FILE=$(abspath build/hello.hex) RESET_PC=0x80000000 MAX_CYCLES=200000
-	@echo "== suite/minimal: core.minimal + GPU (gpu-compute-6) =="
+	@echo "== suite/minimal: core.minimal + GPU (gpu-compute, 6 lanes) =="
 	$(MAKE) -C ../../sim/soc run COMPONENT_CONFIG=../../configs/sim-minimal-gpu.json \
 	  RAM_INIT_FILE=$(abspath build/gpu.hex) RESET_PC=0x80000000 MAX_CYCLES=600000
 	@echo "== suite/minimal: core.minimal + TPU (tpu-lite) =="
@@ -113,7 +113,53 @@ check-suite-minimal: build/hello.hex build/gpu.hex build/tpu.hex
 	  RAM_INIT_FILE=$(abspath build/tpu.hex) RESET_PC=0x80000000 MAX_CYCLES=400000
 	@echo "suite/minimal: PASS"
 
+# RTL-only, like check-gpu.  Drives the scalable gpu1 engine through the shell
+# window and checks every kernel against an on-core interpreter of the gpu1 ISA.
+# The program reads CAPS for the geometry, so this one image is the check for
+# any parameterisation; the sweep itself lives in `make -C ../../sim/unit
+# run-suite-gpu1`, which builds each point directly and needs no profile each.
+check-gpu1: build/gpu1.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-ax2-gpu1.json \
+	  RAM_INIT_FILE=$(abspath build/gpu1.hex) RESET_PC=0x80000000 MAX_CYCLES=800000
+
+# IPC regression.  Prints retired-instructions-per-cycle for five workloads on
+# whichever core the profile selects.  `make -C ../../tools bench` sweeps this
+# across cores and roles for the comparison table.
+check-cpu-perf: build/cpu_perf.hex
+	$(MAKE) -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-ax2.json \
+	  RAM_INIT_FILE=$(abspath build/cpu_perf.hex) RESET_PC=0x80000000 MAX_CYCLES=2000000
+
+# Component test SUITE for the new core + new role: the SoC-integration leg.
+# It runs the CPU program, both interrupt programs (timer and preempt need the
+# CLINT, so they exist only at SoC level), the self-modifying-code program
+# (fencei, which exercises the instruction-cache invalidate), the IPC
+# benchmark, and the gpu1 role driven through the shell window.
+#
+# Parameter coverage is deliberately NOT here.  core.ax2 and role.gpu1 are each
+# a single component whose sizes are build-time parameters, and
+# `make -C ../../sim/unit run-suite-ax2` / `run-suite-gpu1` sweep that parameter
+# space directly -- against the official ISA suite and against the ISA oracle
+# respectively.  This target checks the one thing a parameter sweep cannot: that
+# the component composes into a working SoC.
+check-suite-ax2: build/hello.hex build/timer.hex build/preempt.hex \
+                 build/fencei.hex build/cpu_perf.hex build/gpu1.hex
+	@for p in hello timer preempt fencei cpu_perf; do \
+	  echo "== suite/ax2: core.ax2 (defaults) + $$p =="; \
+	  $(MAKE) -s -C ../../sim/soc run \
+	    COMPONENT_CONFIG=../../configs/sim-ax2.json \
+	    RAM_INIT_FILE=$(abspath build)/$$p.hex RESET_PC=0x80000000 \
+	    MAX_CYCLES=2000000 || exit 1; \
+	done
+	@echo "== suite/ax2: core.ax2 + gpu1 role =="
+	@$(MAKE) -s -C ../../sim/soc run \
+	  COMPONENT_CONFIG=../../configs/sim-ax2-gpu1.json \
+	  RAM_INIT_FILE=$(abspath build/gpu1.hex) RESET_PC=0x80000000 \
+	  MAX_CYCLES=1500000
+	@echo "suite/ax2: PASS"
+
 clean:
 	rm -rf build
 
-.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf check-suite-minimal clean
+.PHONY: all images run-iss run-qemu run-rtl check-hello check-timer check-preempt check-fencei check-spi check-sd check-role check-tpu check-gpu check-gpu-perf check-gpu1 check-cpu-perf check-suite-minimal check-suite-ax2 clean

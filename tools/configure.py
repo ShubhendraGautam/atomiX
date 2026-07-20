@@ -25,6 +25,8 @@ SCHEMA = 1
 # will pass it through as COMPONENT_<KIND>_* variables.
 SAFE_COMPONENT_KIND = re.compile(r"^[a-z][a-z0-9_]*$")
 SAFE_MAKE_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+SAFE_PARAM_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+SAFE_DEFINE_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 class ConfigError(Exception):
@@ -59,6 +61,25 @@ def validate_manifest(path: Path, value: dict[str, Any]) -> dict[str, Any]:
         raise ConfigError(f"{path}: sources must be a list of strings")
     if "make" in value and not isinstance(value["make"], dict):
         raise ConfigError(f"{path}: make must be an object")
+    if "parameters" in value:
+        params = value["parameters"]
+        if not isinstance(params, dict):
+            raise ConfigError(f"{path}: parameters must be an object")
+        for name, spec in params.items():
+            if not isinstance(name, str) or not SAFE_PARAM_NAME.fullmatch(name):
+                raise ConfigError(
+                    f"{path}: parameter name {name!r} must be lowercase "
+                    "letters, digits, and underscores")
+            if not isinstance(spec, dict) or "default" not in spec or "define" not in spec:
+                raise ConfigError(
+                    f"{path}: parameter {name!r} needs 'default' and 'define'")
+            if not isinstance(spec["define"], str) or \
+                    not SAFE_DEFINE_NAME.fullmatch(spec["define"]):
+                raise ConfigError(
+                    f"{path}: parameter {name!r} define must be an uppercase macro name")
+            if not isinstance(spec["default"], int) or isinstance(spec["default"], bool):
+                raise ConfigError(
+                    f"{path}: parameter {name!r} default must be an integer")
     if "defaults" in value:
         defaults = value["defaults"]
         if (not isinstance(defaults, dict) or
@@ -177,7 +198,11 @@ def resolved_config(path: Path) -> dict[str, Any]:
     settings = config.get("settings", {})
     if not isinstance(settings, dict):
         raise ConfigError(f"{path}: settings must be an object")
-    return {"path": path.resolve(), "raw": config, "components": selected, "settings": settings}
+    parameters = config.get("parameters", {})
+    if not isinstance(parameters, dict):
+        raise ConfigError(f"{path}: parameters must be an object")
+    return {"path": path.resolve(), "raw": config, "components": selected,
+            "settings": settings, "parameters": parameters}
 
 
 def source_list(component: dict[str, Any]) -> list[str]:
@@ -235,6 +260,39 @@ def to_make(resolved: dict[str, Any]) -> str:
             if full_key in make_values and make_values[full_key] != value:
                 raise ConfigError(f"conflicting component Make value {full_key}")
             make_values[full_key] = value
+    # Tunable parameters become preprocessor defines.  A component declares
+    # what it exposes and the default that defines its baseline; a profile
+    # overrides by name, under the component's kind.  Anything a component did
+    # not declare is a configuration error rather than a silent no-op -- the
+    # same discipline that makes component selection validated rather than
+    # hopeful.
+    overrides = resolved["parameters"]
+    for kind in overrides:
+        if kind not in resolved["components"]:
+            raise ConfigError(
+                f"{resolved['path']}: parameters given for {kind!r}, which the "
+                "configuration does not select")
+    defines: list[str] = []
+    for kind, component in sorted(resolved["components"].items()):
+        declared = component.get("parameters", {})
+        given = overrides.get(kind, {})
+        if not isinstance(given, dict):
+            raise ConfigError(f"{resolved['path']}: parameters.{kind} must be an object")
+        for name in given:
+            if name not in declared:
+                known = ", ".join(sorted(declared)) or "none"
+                raise ConfigError(
+                    f"{resolved['path']}: {component['id']} has no parameter "
+                    f"{name!r} (it declares: {known})")
+        for name, spec in sorted(declared.items()):
+            value = given.get(name, spec["default"])
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ConfigError(
+                    f"{resolved['path']}: parameter {kind}.{name} must be an integer")
+            defines.append(f"+define+{spec['define']}={value}")
+    if defines:
+        make_values["COMPONENT_DEFINES"] = " ".join(defines)
+
     settings = resolved["settings"]
     setting_names = {
         "ram_bytes": "COMPONENT_RAM_BYTES",

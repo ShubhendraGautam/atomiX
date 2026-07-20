@@ -60,17 +60,36 @@ core), and `role.gpu-compute-6` (used here).  Deep analysis:
 | Configuration | Profile | LUT4 | Flip-flops | Block RAM | DSP | Verdict |
 |---|---|---|---|---|---|---|
 | CPU (5-stage RV32IM/Sv32) | `ulx3s-85f` | 10.6k (13%) | 3.1k | — | 0 | ✅ **SYNTH** + **SIM** |
-| minimal host + GPU (8-lane SIMT) | `ulx3s-85f-gpu` | 22.2k (26%) | 3.8k | 18 EBR | 24 | ✅ **SYNTH** + **SIM** (suite) |
+| minimal host + GPU (**16-lane** SIMT) | `ulx3s-85f-gpu` | 35.4k (42%) | 5.9k | 18 EBR | 48 | ✅ **SYNTH** + **SIM** (suite) |
 | CPU + TPU (8×8 int8 GEMM) | `ulx3s-85f-tpu` | (large) | 71.5k (85%) | 2 EBR | 64 | ✅ **SYNTH** (fits; FF-bound) + **SIM** |
 
-**Possible on the ULX3S-85F:** the CPU plus the **full 8-lane GPU** with room to
-spare (26% LUT4 — the GPU profile pairs the 8-lane engine with the minimal host,
-same accelerator-first pattern as the Tang Nano), and the **TPU** as well
-(FF-bound at ~85% because its `cbuf`
+**Possible on the ULX3S-85F:** the CPU plus a **wider GPU** — the profile takes
+the engine to 16 lanes (42% LUT4, 48 of 156 DSP), using headroom the small Tang
+Nano does not have — and the **TPU** as well (FF-bound at ~85% because its `cbuf`
 accumulator still maps to flip-flops rather than block RAM — a role bug, not a
 board limit; fixing it would free most of that).  The part has headroom that the
 single-role shell does not yet exploit: hosting GPU **and** TPU together needs a
 composite role, which does not exist yet.
+
+### Lane scaling has diminishing returns (measured)
+
+More lanes fit easily here, but they do not buy proportional speed.  Doubling
+8 → 16 lanes doubles the silicon (22.2k → 35.4k LUT4, 24 → 48 DSP) yet only
+speeds the kernels ~1.3×:
+
+| kernel (N=256, GPU cycles) | 8-lane | 16-lane | speedup |
+|---|---|---|---|
+| `poly` (compute-heavy) | 2358 | 1827 | 1.29× |
+| `saxpy` (memory-heavy) | 2070 | 1683 | 1.23× |
+
+The engine has **one global-buffer port**, so `LDX`/`STX` serialise the lanes:
+with 16 lanes each memory instruction takes twice as long per wave even though
+there are half as many waves, so memory time is unchanged — only the parallel
+ALU/multiply portion scales, and fixed per-instruction fetch/decode overhead
+dilutes even that.  Past ~8 lanes the bottleneck is the memory port and control,
+not lane count.  The lever for a genuinely faster GPU on a large part is a
+**wider/multi-bank memory port** (parallel lane access), not more lanes.  Lane
+variants ship in the catalog (`role.gpu-compute` 8, `-6`, `-lite` 4, `-16`).
 
 ## Functional coverage (board-independent, SIM)
 

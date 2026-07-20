@@ -13,7 +13,7 @@
     "cache": "cache.direct-mapped",
     "rom": "rom.axrom",
     "finisher": "finisher.sifive-test",
-    "role": "role.gpu-compute"
+    "role": "role.gpu-compute-16"
   },
   "settings": {
     "ram_bytes": 33554432,

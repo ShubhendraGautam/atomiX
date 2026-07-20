@@ -95,7 +95,10 @@ portion scales:
 
 ## Optimisation roadmap — maximising the large part
 
-Ranked levers to push the ULX3S further, with what each unblocks:
+Ranked levers to push the ULX3S further, with what each unblocks.  Design-stage
+notes (options, correctness constraints, open questions) for #2–#4 are in
+[optimization-design.md](optimization-design.md) — pending a design discussion
+before implementation.
 
 1. **Pipelined `LDX`** — ✅ done (~1.35× flat, above).
 2. **Multi-bank global memory** (parallel lane access) — the lever that lets more

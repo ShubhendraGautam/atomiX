@@ -11,8 +11,8 @@
  * standard spelling.
  *
  * Not provided, and the reasons are the same as in docs/abi.md: no floating
- * point, no locale, no signals, no threads, no dynamic allocation of file
- * descriptors beyond the console. */
+ * point, no locale, no signals, no threads, and no FILE streams -- files are
+ * reached through the raw descriptor calls, which is what the kernel offers. */
 #pragma once
 
 typedef unsigned int size_t;
@@ -30,23 +30,76 @@ typedef unsigned char uint8_t;
 /* The errno subset docs/abi.md defines. */
 #define EPERM  1
 #define ENOENT 2
+#define EIO    5
 #define EBADF  9
 #define ENOMEM 12
 #define EFAULT 14
 #define EINVAL 22
+#define EMFILE 24
+#define EROFS  30
+#define ENAMETOOLONG 36
 #define ENOSYS 38
 
 extern int errno;
 extern char **__libc_environ;
 
 long __libc_syscall(long nr, long a0, long a1, long a2);
+long __libc_syscall5(long nr, long a0, long a1, long a2, long a3, long a4);
 long __libc_ret(long value);
+
+/* fcntl.  The volume is read-only through the ABI (docs/abi.md), so the write
+ * modes are declared for source compatibility and will return -EROFS. */
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR   2
+
+/* The asm-generic 32-bit `struct stat`, field for field.  It is the kernel's
+ * layout rather than a convenient one, so a program built against a real libc
+ * and a program built against this one see the same 80 bytes. */
+#define S_IFMT   0170000
+#define S_IFCHR  0020000
+#define S_IFREG  0100000
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define S_ISCHR(m) (((m) & S_IFMT) == S_IFCHR)
+
+struct stat {
+  unsigned long st_dev;
+  unsigned long st_ino;
+  unsigned int st_mode;
+  unsigned int st_nlink;
+  unsigned int st_uid;
+  unsigned int st_gid;
+  unsigned long st_rdev;
+  unsigned long __pad1;
+  long st_size;
+  int st_blksize;
+  int __pad2;
+  long st_blocks;
+  long st_atime_sec;
+  unsigned int st_atime_nsec;
+  long st_mtime_sec;
+  unsigned int st_mtime_nsec;
+  long st_ctime_sec;
+  unsigned int st_ctime_nsec;
+  unsigned int __unused4;
+  unsigned int __unused5;
+};
 
 /* unistd */
 ssize_t write(int fd, const void *buf, size_t count);
 ssize_t read(int fd, void *buf, size_t count);
+int close(int fd);
+long lseek(int fd, long offset, int whence);
 int getpid(void);
 void *sbrk(intptr_t increment);
+
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+/* fcntl / stat */
+int open(const char *path, int flags);
+int fstat(int fd, struct stat *out);
 
 /* stdlib */
 void exit(int status);

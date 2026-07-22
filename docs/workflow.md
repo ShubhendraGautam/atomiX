@@ -205,8 +205,12 @@ format (`loader.elf32`) are both selectable components, as is the C library
 (`libc.axlibc`) that user programs link against.
 
 Write a user program in `sw/kernel/userprog/` as ordinary C: it gets a `main()`,
-malloc, printf, string functions and 64-bit arithmetic, and is built and linked
-entirely separately from the kernel, reaching it only as an embedded image.
+malloc, printf, string functions, 64-bit arithmetic, and `open`/`read`/`lseek`/
+`fstat` on files, and is built and linked entirely separately from the kernel,
+reaching it only as an embedded image.  Files come from the selected
+`filesystem` component — the SD card when one is present, and a built-in
+read-only root when there is not, so a program can read a file on every profile
+rather than only the ones with storage.
 ```bash
 make -C sw/kernel check-boot QEMU=/path/to/qemu-system-riscv32   # shell + fork/wait on ISS, QEMU, RTL
 make -C sw/kernel kernel-component-test QEMU=/path/to/...        # default + cooperative scheduler

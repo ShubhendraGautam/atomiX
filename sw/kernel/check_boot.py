@@ -33,7 +33,7 @@ FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
 # different string, a non-zero exit -- means the loader mapped something wrong,
 # and the program's exit code says which check failed (see userprog/hello.c).
 EXEC_OUTPUT = ("aXos: shell online\naXos> exec\n"
-               "exec: axlibc: pid=1 n=42 hex=beef str=reused\n")
+               "exec: axlibc: pid=1 n=42 hex=beef str=reused motd=17\n")
 STORAGE_WRITE_OUTPUT = (
     "aXos: shell online\n"
     "aXos> write note phase6-persistent\n"

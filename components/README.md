@@ -72,7 +72,7 @@ module is plugged in:
 | `vm` | `vm_*` | bootstrap mappings and the user part of an aXos task address space |
 | `allocator` | `page_*` | physical-page allocation policy |
 | `shell` | `shell_run` | aXos console command loop |
-| `filesystem` | `fs_*` | mounted filesystem policy |
+| `filesystem` | `fs_*` | mounted filesystem policy: name lookup and byte-range reads, shared by the shell and the `read` syscall |
 | `block` | `sd_*` | block-device transport |
 
 The real SystemVerilog instantiation is the authoritative port list; no second

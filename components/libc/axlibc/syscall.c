@@ -22,16 +22,26 @@ long __libc_ret(long value) {
   return value;
 }
 
-long __libc_syscall(long nr, long a0, long a1, long a2) {
+/* One `ecall` site, taking the widest argument list any wrapper here needs.
+ * Calls with fewer arguments pass zeros: the kernel never reads a register a
+ * call does not define, so this costs two register moves rather than a second
+ * copy of the trap sequence. */
+long __libc_syscall5(long nr, long a0, long a1, long a2, long a3, long a4) {
   register long r_a7 __asm__("a7") = nr;
   register long r_a0 __asm__("a0") = a0;
   register long r_a1 __asm__("a1") = a1;
   register long r_a2 __asm__("a2") = a2;
+  register long r_a3 __asm__("a3") = a3;
+  register long r_a4 __asm__("a4") = a4;
   __asm__ volatile("ecall"
                    : "+r"(r_a0)
-                   : "r"(r_a7), "r"(r_a1), "r"(r_a2)
+                   : "r"(r_a7), "r"(r_a1), "r"(r_a2), "r"(r_a3), "r"(r_a4)
                    : "memory");
   return r_a0;
+}
+
+long __libc_syscall(long nr, long a0, long a1, long a2) {
+  return __libc_syscall5(nr, a0, a1, a2, 0, 0);
 }
 
 ssize_t write(int fd, const void *buf, size_t count) {
@@ -40,6 +50,30 @@ ssize_t write(int fd, const void *buf, size_t count) {
 
 ssize_t read(int fd, void *buf, size_t count) {
   return __libc_ret(__libc_syscall(63, fd, (long)buf, (long)count));
+}
+
+/* open() over openat(), which is the only one RISC-V has: AT_FDCWD says the
+ * path is not relative to a directory descriptor. */
+int open(const char *path, int flags) {
+  return (int)__libc_ret(__libc_syscall5(56, -100, (long)path, flags, 0, 0));
+}
+
+int close(int fd) { return (int)__libc_ret(__libc_syscall(57, fd, 0, 0)); }
+
+/* Number 62 on rv32 is llseek: the offset arrives as a register pair and the
+ * result comes back through a pointer, with 0 in a0.  Collapsing that to a
+ * 32-bit offset is this wrapper's job, not the kernel's -- the kernel has to
+ * keep the shape the standard gives it so a real libc port works unmodified. */
+long lseek(int fd, long offset, int whence) {
+  long long result = 0;
+  const long rc = __libc_syscall5(62, fd, offset >> 31, offset,
+                                  (long)&result, whence);
+  if (__libc_ret(rc) < 0) return -1;
+  return (long)result;
+}
+
+int fstat(int fd, struct stat *out) {
+  return (int)__libc_ret(__libc_syscall(80, fd, (long)out, 0));
 }
 
 int getpid(void) { return (int)__libc_ret(__libc_syscall(172, 0, 0, 0)); }

@@ -31,6 +31,12 @@
 #ifndef AXOS_WRITE_MAX
 #define AXOS_WRITE_MAX 1024
 #endif
+#ifndef AXOS_PATH_MAX
+#define AXOS_PATH_MAX 32
+#endif
+#ifndef AXOS_IO_CHUNK
+#define AXOS_IO_CHUNK 128
+#endif
 
 /* asm-generic/unistd.h numbers.  Only the ones this kernel answers are named;
  * everything else falls through to -ENOSYS, which a libc handles correctly. */
@@ -52,9 +58,44 @@ enum {
   NR_ax_role_submit = 0x1001,
 };
 
-/* Standard descriptor numbers.  Only the console exists so far; a real
- * descriptor table arrives with the filesystem binding. */
-enum { FD_STDIN = 0, FD_STDOUT = 1, FD_STDERR = 2 };
+/* Standard descriptor numbers.  0, 1 and 2 are the console and are never in the
+ * table; the first file a program opens is 3, as it is everywhere else. */
+enum { FD_STDIN = 0, FD_STDOUT = 1, FD_STDERR = 2, FD_FIRST = 3 };
+
+/* openat's dirfd for "relative to the working directory".  There are no
+ * directories here, so it is the only value accepted -- refusing an unsupported
+ * dirfd is better than resolving it against a root that does not exist. */
+enum { AT_FDCWD = -100 };
+
+/* open flags.  Only the access mode is inspected; the creation and status flags
+ * a program may add are accepted and ignored, which is what a read-only volume
+ * can honestly do with them. */
+enum { O_ACCMODE = 3, O_RDONLY = 0 };
+
+/* lseek whence values. */
+enum { SEEK_SET = 0, SEEK_CUR = 1, SEEK_END = 2 };
+
+/* The descriptor table.
+ *
+ * One table, not one per task.  A per-process table needs a place to live in
+ * struct task and a duplication rule in fork, and this kernel runs one program
+ * at a time; sharing it across a fork is also closer to correct than not, since
+ * Linux's forked descriptors share their file offsets anyway.  The kernel calls
+ * syscall_reset() when it starts a program, so descriptors do not survive a
+ * run.  When more than one program is ever runnable at once this becomes a
+ * per-task table, and that is the point at which it should. */
+static struct {
+  /* The filesystem id *plus one*, so that zero means free.  A table in .bss is
+   * then already a table of closed descriptors, and a kernel that forgets to
+   * call syscall_reset() gets no descriptors rather than eight aliases of
+   * file 0 -- the failure mode that would be silent. */
+  uint32_t file;
+  uint32_t offset;
+} fds[AXOS_MAX_FDS];
+
+void syscall_reset(void) {
+  for (uint32_t i = 0; i < AXOS_MAX_FDS; ++i) fds[i].file = 0;
+}
 
 static inline uint32_t csr_read_sepc(void) {
   uint32_t value;
@@ -105,12 +146,196 @@ static uint32_t *sys_write(uint32_t *trap_frame, const struct syscall_ops *ops) 
   return ret(trap_frame, chunk);
 }
 
-/* read(fd, buf, count).  No input source is bound yet; end-of-file (0) is the
- * honest answer for the console and keeps a libc's getchar loop terminating
- * instead of spinning. */
-static uint32_t *sys_read(uint32_t *trap_frame) {
-  const uint32_t fd = trap_frame[TRAP_FRAME_A0];
-  if (fd != FD_STDIN) return err(trap_frame, AX_EBADF);
+/* --- files ------------------------------------------------------------------
+ *
+ * The filesystem gives out ids and byte ranges; descriptors are built here,
+ * because which small integer a program gets back, what its offset does, and
+ * when it stops being valid are ABI decisions rather than storage ones. */
+
+/* Map a user-visible descriptor to a table slot, or -1 if it is not open. */
+static int slot_of(int32_t fd) {
+  if (fd < FD_FIRST || fd >= FD_FIRST + (int32_t)AXOS_MAX_FDS) return -1;
+  const int slot = (int)(fd - FD_FIRST);
+  return fds[slot].file == 0 ? -1 : slot;
+}
+
+/* The filesystem id behind an open slot. */
+static int file_of(int slot) { return (int)(fds[slot].file - 1u); }
+
+/* Pull a NUL-terminated path out of userspace.  Returns 0, or the errno to
+ * report: an unterminated path is ENAMETOOLONG rather than a kernel that reads
+ * until it faults. */
+static uint32_t copy_path(const struct syscall_ops *ops, uint32_t user_va,
+                          char *path) {
+  for (uint32_t i = 0; i < AXOS_PATH_MAX; ++i) {
+    if (!ops->copy_from_user(&path[i], user_va + i, 1)) return AX_EFAULT;
+    if (path[i] == 0) return 0;
+  }
+  return AX_ENAMETOOLONG;
+}
+
+/* openat(dirfd, path, flags, mode).
+ *
+ * Write access is refused outright, even on a writable volume: the filesystem
+ * seam replaces a whole file at a time and has no "write through a descriptor"
+ * operation, so accepting O_WRONLY here would hand back a descriptor that must
+ * fail on first use.  -EROFS at open is the answer a program can act on. */
+static uint32_t *sys_openat(uint32_t *trap_frame, const struct syscall_ops *ops) {
+  const int32_t dirfd = (int32_t)trap_frame[TRAP_FRAME_A0];
+  const uint32_t path_va = trap_frame[TRAP_FRAME_A1];
+  const uint32_t flags = trap_frame[TRAP_FRAME_A2];
+
+  if (dirfd != AT_FDCWD) return err(trap_frame, AX_EINVAL);
+  if ((flags & O_ACCMODE) != O_RDONLY) return err(trap_frame, AX_EROFS);
+
+  char path[AXOS_PATH_MAX];
+  const uint32_t fault = copy_path(ops, path_va, path);
+  if (fault != 0) return err(trap_frame, fault);
+
+  const int file = ops->file_open(path);
+  if (file < 0) return err(trap_frame, AX_ENOENT);
+
+  for (uint32_t i = 0; i < AXOS_MAX_FDS; ++i) {
+    if (fds[i].file != 0) continue;
+    fds[i].file = (uint32_t)file + 1u;
+    fds[i].offset = 0;
+    return ret(trap_frame, (uint32_t)(FD_FIRST + (int)i));
+  }
+  return err(trap_frame, AX_EMFILE);
+}
+
+static uint32_t *sys_close(uint32_t *trap_frame) {
+  const int32_t fd = (int32_t)trap_frame[TRAP_FRAME_A0];
+  /* Closing a console descriptor succeeds and does nothing.  The console is not
+   * a file and cannot be reopened, and -EBADF here would break the ordinary
+   * libc shutdown path to make a point no program benefits from. */
+  if (fd == FD_STDIN || fd == FD_STDOUT || fd == FD_STDERR)
+    return ret(trap_frame, 0);
+
+  const int slot = slot_of(fd);
+  if (slot < 0) return err(trap_frame, AX_EBADF);
+  fds[slot].file = 0;
+  return ret(trap_frame, 0);
+}
+
+/* read(fd, buf, count).
+ *
+ * Copies through a bounded kernel buffer rather than into userspace directly:
+ * sstatus.SUM stays clear, so every user byte goes through the translation the
+ * kernel validated.  A short read is legal, and is what happens at end of file
+ * or at the first unwritable user page. */
+static uint32_t *sys_read(uint32_t *trap_frame, const struct syscall_ops *ops) {
+  const int32_t fd = (int32_t)trap_frame[TRAP_FRAME_A0];
+  const uint32_t buf = trap_frame[TRAP_FRAME_A1];
+  const uint32_t count = trap_frame[TRAP_FRAME_A2];
+
+  /* No input source is bound to the console; end-of-file keeps a libc's
+   * getchar loop terminating instead of spinning. */
+  if (fd == FD_STDIN) return ret(trap_frame, 0);
+  if (fd == FD_STDOUT || fd == FD_STDERR) return err(trap_frame, AX_EBADF);
+
+  const int slot = slot_of(fd);
+  if (slot < 0) return err(trap_frame, AX_EBADF);
+
+  uint32_t done = 0;
+  while (done < count) {
+    char chunk[AXOS_IO_CHUNK];
+    uint32_t want = count - done;
+    if (want > sizeof(chunk)) want = sizeof(chunk);
+
+    const int32_t got =
+        ops->file_read(file_of(slot), fds[slot].offset, chunk, want);
+    if (got < 0) return done ? ret(trap_frame, done) : err(trap_frame, AX_EIO);
+    if (got == 0) break;                                   /* end of file */
+    if (!ops->copy_to_user(buf + done, chunk, (uint32_t)got))
+      return done ? ret(trap_frame, done) : err(trap_frame, AX_EFAULT);
+
+    fds[slot].offset += (uint32_t)got;
+    done += (uint32_t)got;
+  }
+  return ret(trap_frame, done);
+}
+
+/* lseek, in the shape 32-bit RISC-V Linux actually gives it: number 62 is
+ * llseek, taking the offset as a register pair and returning the result through
+ * a 64-bit out-parameter with 0 in a0.  Following the standard means following
+ * this part of it too -- a libc built for rv32 emits exactly this call, and a
+ * simplified 32-bit `lseek` would work only with our own libc. */
+static uint32_t *sys_llseek(uint32_t *trap_frame, const struct syscall_ops *ops) {
+  const int slot = slot_of((int32_t)trap_frame[TRAP_FRAME_A0]);
+  const uint32_t offset_high = trap_frame[TRAP_FRAME_A1];
+  const int32_t offset_low = (int32_t)trap_frame[TRAP_FRAME_A2];
+  const uint32_t result_va = trap_frame[TRAP_FRAME_A3];
+  const uint32_t whence = trap_frame[TRAP_FRAME_A4];
+
+  if (slot < 0) return err(trap_frame, AX_EBADF);
+  /* A v1 file is at most one block, so an offset that does not fit in a
+   * sign-extended 32 bits is out of range rather than unsupported. */
+  if (offset_high != (uint32_t)(offset_low >> 31))
+    return err(trap_frame, AX_EINVAL);
+
+  const int32_t size = ops->file_size(file_of(slot));
+  if (size < 0) return err(trap_frame, AX_EBADF);
+
+  int32_t base;
+  if (whence == SEEK_SET) base = 0;
+  else if (whence == SEEK_CUR) base = (int32_t)fds[slot].offset;
+  else if (whence == SEEK_END) base = size;
+  else return err(trap_frame, AX_EINVAL);
+
+  const int32_t where = base + offset_low;
+  /* Seeking past the end is legal and reads back as end-of-file; seeking before
+   * the start is not. */
+  if (where < 0) return err(trap_frame, AX_EINVAL);
+  fds[slot].offset = (uint32_t)where;
+
+  const uint32_t result[2] = {(uint32_t)where, 0};
+  if (!ops->copy_to_user(result_va, result, sizeof(result)))
+    return err(trap_frame, AX_EFAULT);
+  return ret(trap_frame, 0);
+}
+
+/* fstat(fd, statbuf), in the asm-generic 32-bit `struct stat` layout: 80 bytes,
+ * word-indexed here so the offsets are stated once and are checkable against
+ * the header rather than implied by a struct this kernel would have to keep in
+ * step by hand.  Everything not known -- device, inode, owner, times -- reports
+ * zero, which is honest for a filesystem that does not record it. */
+enum {
+  STAT_WORDS = 20,
+  STAT_MODE = 2,
+  STAT_NLINK = 3,
+  STAT_SIZE = 8,
+  STAT_BLKSIZE = 9,
+  STAT_BLOCKS = 11,
+  S_IFCHR = 0020000,
+  S_IFREG = 0100000,
+};
+
+static uint32_t *sys_fstat(uint32_t *trap_frame, const struct syscall_ops *ops) {
+  const int32_t fd = (int32_t)trap_frame[TRAP_FRAME_A0];
+  const uint32_t out_va = trap_frame[TRAP_FRAME_A1];
+  uint32_t st[STAT_WORDS];
+  for (uint32_t i = 0; i < STAT_WORDS; ++i) st[i] = 0;
+
+  if (fd == FD_STDIN || fd == FD_STDOUT || fd == FD_STDERR) {
+    /* A libc checks this to decide whether to line-buffer; a character device
+     * is what the console is. */
+    st[STAT_MODE] = S_IFCHR | 0666;
+    st[STAT_NLINK] = 1;
+    st[STAT_BLKSIZE] = 1;
+  } else {
+    const int slot = slot_of(fd);
+    if (slot < 0) return err(trap_frame, AX_EBADF);
+    const int32_t size = ops->file_size(file_of(slot));
+    if (size < 0) return err(trap_frame, AX_EBADF);
+    st[STAT_MODE] = S_IFREG | 0444;
+    st[STAT_NLINK] = 1;
+    st[STAT_SIZE] = (uint32_t)size;
+    st[STAT_BLKSIZE] = 512;
+    st[STAT_BLOCKS] = ((uint32_t)size + 511u) / 512u;
+  }
+  if (!ops->copy_to_user(out_va, st, sizeof(st)))
+    return err(trap_frame, AX_EFAULT);
   return ret(trap_frame, 0);
 }
 
@@ -152,18 +377,20 @@ uint32_t *syscall_dispatch(uint32_t *trap_frame, const struct syscall_ops *ops) 
       return sys_write(trap_frame, ops);
 
     case NR_read:
-      return sys_read(trap_frame);
+      return sys_read(trap_frame, ops);
 
-    /* --- declared but not yet backed --------------------------------------
-     * These need the descriptor table and the filesystem binding.  They are
-     * named here so the boundary is visible: -ENOSYS is a correct answer that
-     * a libc understands, and an unnamed number returning -ENOSYS by accident
-     * would not tell a reader that the work is known and scheduled. */
+    /* --- files ------------------------------------------------------------ */
     case NR_openat:
+      return sys_openat(trap_frame, ops);
+
     case NR_close:
+      return sys_close(trap_frame);
+
     case NR_lseek:
+      return sys_llseek(trap_frame, ops);
+
     case NR_fstat:
-      return err(trap_frame, AX_ENOSYS);
+      return sys_fstat(trap_frame, ops);
 
     /* --- atomiX private range ---------------------------------------------
      * The role driver lands here in the next stage; the numbers are reserved

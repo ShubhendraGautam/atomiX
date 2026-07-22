@@ -53,10 +53,10 @@ readable in one place.
 |---|---|---|
 | 56 | `openat` | RISC-V has no `open`; `AT_FDCWD` is -100 |
 | 57 | `close` | |
-| 62 | `lseek` | |
+| 62 | `lseek` | on 32-bit this number is `llseek`; see below |
 | 63 | `read` | |
 | 64 | `write` | fds 1 and 2 reach the console |
-| 80 | `fstat` | |
+| 80 | `fstat` | asm-generic 32-bit `struct stat`, 80 bytes |
 | 93 | `exit` | |
 | 172 | `getpid` | |
 | 214 | `brk` | the heap `malloc` grows |
@@ -125,10 +125,14 @@ The subset the initial calls can return, with Linux values:
 |---|---|---|
 | 1 | `EPERM` | operation not permitted |
 | 2 | `ENOENT` | no such file |
+| 5 | `EIO` | the block device failed a read |
 | 9 | `EBADF` | bad file descriptor |
 | 12 | `ENOMEM` | out of memory |
 | 14 | `EFAULT` | bad address from userspace |
 | 22 | `EINVAL` | invalid argument |
+| 24 | `EMFILE` | descriptor table full |
+| 30 | `EROFS` | write access to a read-only volume |
+| 36 | `ENAMETOOLONG` | path longer than `path_max` |
 | 38 | `ENOSYS` | syscall not implemented |
 
 `ENOSYS` is the honest answer for every number the table does not carry, and a
@@ -139,13 +143,74 @@ libc will do the right thing with it.
 | layer | how |
 |---|---|
 | syscall table and dispatch | the `syscall` component; write another to define a different ABI |
-| descriptor count, heap ceiling, stack size | parameters on that component |
+| descriptor count, path length, I/O chunk, write size | parameters on that component |
+| the on-disk format and the diskless root | the `filesystem` component |
 | private calls | the `0x1000+` range |
 | loader input format | the `loader` component, if a flat image is wanted after all |
 
 The parameters are declared in the component manifest and overridden per profile
 by name, like every other tunable in the tree (see
 [workflow.md](workflow.md) §3.4a).
+
+## Files
+
+A program opens a name, reads byte ranges from it, seeks within it, and asks
+how big it is.  That is the whole of it, and it is enough for a program to
+*read a file* -- the one thing the original evidence bar asked for that the
+loader and the C library together could not do.
+
+**Descriptors start at 3.**  0, 1 and 2 are the console and are never table
+entries; `close` on one succeeds and does nothing, because the console is not a
+file and cannot be reopened, and returning `-EBADF` would break the ordinary
+libc shutdown path to make a point no program benefits from.
+
+**The volume is read-only through the ABI.**  `openat` with any access mode
+other than `O_RDONLY` returns `-EROFS`, even on a writable AXFS card.  This is
+not a policy choice about permissions: the filesystem seam replaces a whole
+file at a time (`fs_write(name, data)`) and has no "write through a descriptor"
+operation, so accepting `O_WRONLY` would hand back a descriptor that must fail
+on first use.  `-EROFS` at open is the answer a program can act on.  Writable
+descriptors need `fs_write` to become an offset-and-length call first.
+
+**`lseek` is `llseek`.**  Number 62 on 32-bit RISC-V takes the offset as a
+register pair and returns the new position through a 64-bit out-parameter, with
+0 in `a0` -- five arguments, not three:
+
+```
+a0 = fd, a1 = offset_high, a2 = offset_low, a3 = uint64_t *result, a4 = whence
+```
+
+This is exactly the sort of detail that following a standard is *for*.  A
+32-bit `lseek` returning the offset in `a0` would be simpler and would work
+perfectly with the libc in this tree -- and would silently fail with any real
+rv32 libc, which emits the call above.  Collapsing it to a 32-bit offset is the
+libc wrapper's job, and `libc.axlibc` does exactly that in eight lines.
+
+**`fstat` fills the asm-generic 32-bit `struct stat`**: 80 bytes, `st_size` at
+offset 32, `st_mode` at 8, `st_blksize` at 36, `st_blocks` at 44.  Fields this
+system does not record -- device, inode, owner, timestamps -- report zero, which
+is honest for a filesystem that has never had them.  A regular file reports
+`S_IFREG | 0444`; a console descriptor reports `S_IFCHR | 0666`, which is what a
+libc checks to decide whether to line-buffer.
+
+**One descriptor table, not one per process.**  A per-process table needs a
+field in `struct task` and a duplication rule in `clone`, and this kernel runs
+one program at a time.  Sharing across a fork is also closer to correct than
+not, since Linux's forked descriptors share their file offsets anyway.  The
+kernel calls `syscall_reset()` when it starts a program, so descriptors never
+survive a run.  When more than one program is runnable at once this becomes a
+per-task table -- and that is the point at which it should, not before.
+
+### Where the files come from when there is no disk
+
+The filesystem component mounts the SD card, and presents a small built-in
+read-only root when no card answers.  Every profile that boots from RAM has no
+card, so without this the question "can a program read a file" would be
+answerable only on the storage platforms.  The fallback lives in the filesystem
+component rather than in the shell -- which is where an equivalent table used to
+live -- so `ls`, `cat`, and `openat` all go through one lookup and one read path
+whether or not there is hardware behind it.  It is read-only because a root with
+no device behind it cannot honestly accept a write.
 
 ## Deliberate omissions
 
@@ -162,9 +227,7 @@ Not in the first ABI, each for a reason rather than by oversight:
 
 ## Status
 
-The calling convention, the error convention, and the process-control and
-console calls are implemented and checked; the file calls are declared and
-return `-ENOSYS`.
+Everything in the table is implemented except the private range.
 
 | call | state |
 |---|---|
@@ -172,7 +235,7 @@ return `-ENOSYS`.
 | `write` (fds 1, 2) | implemented, with `-EFAULT` / `-EBADF` |
 | `read` (fd 0) | implemented, returns 0 (no input source bound) |
 | `brk` | implemented: maps/unmaps heap pages between the image and the stack |
-| `openat`, `close`, `lseek`, `fstat` | declared, `-ENOSYS` until the filesystem is bound |
+| `openat`, `close`, `read`, `lseek`, `fstat` | implemented, read-only |
 | `role_info`, `role_submit` | numbers reserved, `-ENOSYS` |
 | ELF loader | implemented (`loader.elf32`) |
 | C library | implemented (`libc.axlibc`) |
@@ -213,9 +276,11 @@ uses the standard spelling.
 
 It is deliberately incomplete.  No floating point (there is no FPU, and a
 soft-float `%f` pulls in a large chunk of libgcc for nothing), no locale, no
-signals, no threads, and no `FILE` streams — the last because there is nothing
-to point them at until the filesystem is bound, and inventing an interface with
-no implementation behind it is worse than leaving the gap visible.
+signals, and no threads.  There are still no `FILE` streams: files are reached
+through `open`/`read`/`lseek`/`close`, which is what the kernel offers, and
+`fopen` would mostly be a buffering layer that the 128 KiB budget would rather
+spend elsewhere.  A program that wants buffered reads can do them itself, and
+`printf` is already line-buffered.
 
 `malloc` is first-fit with forward coalescing only.  Backward coalescing needs
 either a footer per block or a doubly-linked list, and that extra word per

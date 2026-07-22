@@ -1,3 +1,18 @@
+/* filesystem.axfs: AXFS v1, plus the built-in root a diskless boot mounts.
+ *
+ * AXFS v1 is deliberately tiny: one 512-byte superblock holding up to eight
+ * 24-byte directory entries, and one 512-byte block per file.  It is a real
+ * on-disk format rather than an in-memory table, which is what makes the SD
+ * path a storage test.
+ *
+ * The built-in root exists because a machine with no card still has to have
+ * files: the shell's `ls`/`cat` and the ABI's `openat`/`read` both need
+ * something to name, and every profile that boots from RAM has no card.  The
+ * alternative -- a second filesystem component and a second profile selecting
+ * it -- is more machinery than one branch in the mount path, and it would make
+ * "can a program read a file" testable only on the storage platforms.  So the
+ * fallback is here, explicit, and read-only: a root without a device behind it
+ * cannot honestly accept a write. */
 #include <stdint.h>
 
 #include "fs.h"
@@ -8,6 +23,10 @@ struct fs_entry {
   char name[16];
   uint32_t block;
   uint32_t length;
+  /* Non-null when the file is served from the kernel image rather than from a
+   * block: the one difference between the two roots, kept to one field so the
+   * lookup and read paths stay single. */
+  const uint8_t *builtin;
 };
 
 static uint8_t sector[512];
@@ -18,6 +37,16 @@ static uint8_t metadata[512];
 static struct fs_entry entries[8];
 static uint32_t entry_count;
 static int mounted;
+static int mount_state;
+/* `sector` caches one block.  Without this a read() served in 128-byte chunks
+ * would re-read the same sector over SPI four times. */
+static uint32_t cached_block;
+
+/* The diskless root.  These are the strings the shell has always served, kept
+ * byte-identical so the boot transcript does not depend on whether a card is
+ * present. */
+static const char builtin_motd[] = "Welcome to aXos.\n";
+static const char builtin_readme[] = "aXos RAM disk: help, ls, cat, echo, exit.\n";
 
 static uint32_t read_u32(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -51,7 +80,13 @@ static uint32_t next_free_block(void) {
   return result;
 }
 
-int fs_mount(void) {
+static void set_name(struct fs_entry *entry, const char *name) {
+  uint32_t i = 0;
+  for (; i < 15 && name[i]; ++i) entry->name[i] = name[i];
+  for (; i < 16; ++i) entry->name[i] = 0;
+}
+
+static int mount_disk(void) {
   if (sd_init() || sd_read_block(AXFS_BLOCK, sector)) return -1;
   if (sector[0] != 'A' || sector[1] != 'X' || sector[2] != 'F' ||
       sector[3] != 'S' || sector[4] != 1 || sector[5] > 8) return -1;
@@ -62,10 +97,37 @@ int fs_mount(void) {
     entries[i].name[15] = 0;
     entries[i].block = read_u32(disk + 16);
     entries[i].length = read_u32(disk + 20);
+    entries[i].builtin = 0;
     if (entries[i].length > 512) return -1;
   }
-  mounted = 1;
   return 0;
+}
+
+static void mount_builtin(void) {
+  static const struct { const char *name; const char *data; } files[] = {
+      {"motd", builtin_motd},
+      {"readme", builtin_readme},
+  };
+  entry_count = sizeof(files) / sizeof(files[0]);
+  for (uint32_t i = 0; i < entry_count; ++i) {
+    set_name(&entries[i], files[i].name);
+    entries[i].block = 0;
+    entries[i].length = length(files[i].data);
+    entries[i].builtin = (const uint8_t *)files[i].data;
+  }
+}
+
+int fs_mount(void) {
+  if (mounted) return mount_state;
+  mounted = 1;
+  cached_block = 0xffffffffu;
+  if (mount_disk() == 0) {
+    mount_state = FS_MOUNT_RW;
+  } else {
+    mount_builtin();
+    mount_state = FS_MOUNT_RO;
+  }
+  return mount_state;
 }
 
 void fs_list(void) {
@@ -75,19 +137,45 @@ void fs_list(void) {
   }
 }
 
-int fs_cat(const char *name) {
-  if (!mounted) return -1;
-  for (uint32_t i = 0; i < entry_count; ++i) {
-    if (!same(name, entries[i].name)) continue;
-    if (sd_read_block(entries[i].block, sector)) return -1;
-    for (uint32_t j = 0; j < entries[i].length; ++j) uart_putchar((char)sector[j]);
-    return 0;
-  }
+int fs_lookup(const char *name) {
+  for (uint32_t i = 0; i < entry_count; ++i)
+    if (same(name, entries[i].name)) return (int)i;
   return -1;
 }
 
+int32_t fs_size(int id) {
+  if (id < 0 || (uint32_t)id >= entry_count) return -1;
+  return (int32_t)entries[id].length;
+}
+
+int32_t fs_read(int id, uint32_t offset, void *dst, uint32_t len) {
+  if (id < 0 || (uint32_t)id >= entry_count) return -1;
+  const struct fs_entry *const file = &entries[id];
+  if (offset >= file->length) return 0;          /* end of file */
+  uint32_t count = file->length - offset;
+  if (count > len) count = len;
+
+  const uint8_t *src;
+  if (file->builtin) {
+    src = file->builtin + offset;
+  } else {
+    if (cached_block != file->block) {
+      /* A v1 file is one block, so a hit here covers the whole file. */
+      if (sd_read_block(file->block, sector)) {
+        cached_block = 0xffffffffu;
+        return -1;
+      }
+      cached_block = file->block;
+    }
+    src = sector + offset;
+  }
+  uint8_t *const out = dst;
+  for (uint32_t i = 0; i < count; ++i) out[i] = src[i];
+  return (int32_t)count;
+}
+
 int fs_write(const char *name, const char *data) {
-  if (!mounted) return -1;
+  if (mount_state != FS_MOUNT_RW) return -1;
   const uint32_t name_length = length(name);
   const uint32_t data_length = length(data);
   if (!name_length || name_length > 15 || data_length > 512) return -2;
@@ -99,6 +187,8 @@ int fs_write(const char *name, const char *data) {
   if (index == entry_count && entry_count == 8) return -3;
 
   uint32_t block = index == entry_count ? next_free_block() : entries[index].block;
+  /* `sector` is the read cache; reusing it as the write buffer invalidates it. */
+  cached_block = 0xffffffffu;
   for (uint32_t i = 0; i < 512; ++i) sector[i] = 0;
   for (uint32_t i = 0; i < data_length; ++i) sector[i] = (uint8_t)data[i];
   if (sd_write_block(block, sector)) return -4;
@@ -112,10 +202,10 @@ int fs_write(const char *name, const char *data) {
   if (index == entry_count) metadata[5] = (uint8_t)(entry_count + 1);
   if (sd_write_block(AXFS_BLOCK, metadata)) return -6;
 
-  for (uint32_t i = 0; i < 16; ++i) entries[index].name[i] = 0;
-  for (uint32_t i = 0; i < name_length; ++i) entries[index].name[i] = name[i];
+  set_name(&entries[index], name);
   entries[index].block = block;
   entries[index].length = data_length;
+  entries[index].builtin = 0;
   if (index == entry_count) ++entry_count;
   return 0;
 }

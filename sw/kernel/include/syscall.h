@@ -32,11 +32,15 @@ enum {
 enum {
   AX_EPERM = 1,
   AX_ENOENT = 2,
+  AX_EIO = 5,
   AX_EBADF = 9,
   AX_ECHILD = 10,
   AX_ENOMEM = 12,
   AX_EFAULT = 14,
   AX_EINVAL = 22,
+  AX_EMFILE = 24,
+  AX_EROFS = 30,
+  AX_ENAMETOOLONG = 36,
   AX_ENOSYS = 38,
 };
 
@@ -67,7 +71,29 @@ struct syscall_ops {
    * Returns non-zero on success; a bad user pointer is a clean failure so the
    * kernel returns -EFAULT rather than faulting itself. */
   int (*copy_from_user)(void *dst, uint32_t user_va, uint32_t len);
+  /* The same in the other direction, for calls that return data rather than a
+   * scalar (read, fstat).  Fails cleanly on an unwritable page, so a program
+   * cannot make the kernel write through a bad pointer. */
+  int (*copy_to_user)(uint32_t user_va, const void *src, uint32_t len);
+
+  /* Files.  These are the filesystem seam as the ABI sees it: names resolve to
+   * ids, ids read byte ranges.  Descriptors -- the offset and the lifetime --
+   * belong to the syscall component, because which numbers a program gets back
+   * and what it may do with them is exactly what an ABI decides.
+   *
+   * Returns a file id >= 0, or negative when there is no such file. */
+  int (*file_open)(const char *name);
+  /* Size in bytes, or negative for a bad id. */
+  int32_t (*file_size)(int file);
+  /* Read up to `len` bytes at `offset`; 0 means end of file, negative is an
+   * error. */
+  int32_t (*file_read)(int file, uint32_t offset, void *dst, uint32_t len);
 };
+
+/* Drop any per-run ABI state -- open descriptors, most of all.  The kernel
+ * calls this when it starts a fresh program, so a run that exits without
+ * closing does not leak descriptors into the next one. */
+void syscall_reset(void);
 
 /* Called by the kernel for every U-mode ecall.  Returns the trap frame to
  * resume.  The component is responsible for advancing sepc past the ecall for

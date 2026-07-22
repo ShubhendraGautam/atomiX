@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#include "fs.h"
 #include "hostlink.h"
 #include "loader.h"
 #include "page.h"
@@ -220,6 +221,9 @@ static void task_release(struct task *task) {
  * exit status the program chooses becomes the test's verdict. */
 static void scheduler_make_loaded_task(uint32_t slot, const uint8_t *image,
                                        uint32_t size) {
+  /* A fresh program starts with no descriptors: a previous run that exited
+   * without closing must not leak them into this one. */
+  syscall_reset();
   if (vm_create_empty_user_space(&tasks[slot], root_pt)) test_finish(1);
 
   uint32_t entry = 0;
@@ -346,6 +350,34 @@ static int k_copy_from_user(void *dst, uint32_t user_va, uint32_t len) {
   return 1;
 }
 
+static int k_copy_to_user(uint32_t user_va, const void *src, uint32_t len) {
+  if (current_task == TASK_NONE) return 0;
+  const uint8_t *in = src;
+  for (uint32_t i = 0; i < len; ++i) {
+    uint8_t *dst = vm_translate_user(&tasks[current_task], user_va + i, 1);
+    if (dst == 0) return 0;
+    *dst = in[i];
+  }
+  return 1;
+}
+
+/* --- files ------------------------------------------------------------------
+ * Thin passthrough to the selected filesystem component.  The mount is done
+ * here rather than assumed, so a personality that never runs the shell (the
+ * host-managed one) still has files; fs_mount is idempotent, so the cost after
+ * the first call is a compare. */
+
+static int k_file_open(const char *name) {
+  if (fs_mount() < 0) return -1;
+  return fs_lookup(name);
+}
+
+static int32_t k_file_size(int file) { return fs_size(file); }
+
+static int32_t k_file_read(int file, uint32_t offset, void *dst, uint32_t len) {
+  return fs_read(file, offset, dst, len);
+}
+
 static const struct syscall_ops kernel_ops = {
     .fork = sys_fork,
     .wait = sys_wait,
@@ -354,6 +386,10 @@ static const struct syscall_ops kernel_ops = {
     .brk = k_brk,
     .console_putc = k_console_putc,
     .copy_from_user = k_copy_from_user,
+    .copy_to_user = k_copy_to_user,
+    .file_open = k_file_open,
+    .file_size = k_file_size,
+    .file_read = k_file_read,
 };
 
 static uint32_t *sys_fork(uint32_t *trap_frame) {

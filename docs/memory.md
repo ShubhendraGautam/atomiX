@@ -126,8 +126,14 @@ make -C sw/kernel check-storage
 ```
 
 This builds a deterministic SD image containing `motd` and `readme`, mounts it
-through the kernel SPI driver, and runs the normal shell plus fork/wait script
-on cached delayed RTL. It preserves the RAM-disk fallback for ISS and QEMU.
+through the kernel SPI driver, and runs the normal shell plus fork/wait plus
+`exec` script on cached delayed RTL.
+
+When no card answers, the same filesystem component mounts a built-in read-only
+root carrying those two files, so a diskless profile still has a namespace to
+`ls`, `cat`, and `openat`. That fallback used to be a private table inside the
+shell; moving it behind the filesystem seam is what lets the shell's `cat` and
+the `read` syscall share one lookup and one read path (docs/abi.md).
 
 ## Writable AXFS v1
 

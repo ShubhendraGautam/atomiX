@@ -156,17 +156,34 @@ Staged so each step has its own evidence rather than landing as one large jump:
   (no floating point — there is no FPU).  libgcc is linked, so 64-bit
   arithmetic resolves; that was the undefined `__udivdi3` the render benchmark
   tripped over.  `brk` became real to back it: the kernel maps heap pages
-  between the image and a one-page guard below the stack.  File I/O is still
-  `-ENOSYS` pending the filesystem binding.  Evidence:
+  between the image and a one-page guard below the stack.  Evidence:
   `make -C sw/kernel check-boot` runs `sw/kernel/userprog/hello.c` — an
   ordinary C `main()` using malloc/free/calloc/realloc, strings, 64-bit
   division, and `printf` — on the ISS, QEMU, and the RTL.
-- [~] **Evidence.** A compiled C program that allocates and prints runs on aXos
-  through the loader, on all three engines.  What is still missing from the
-  original bar is *reads a file*: `openat`/`read`/`close` need the filesystem
-  bound to descriptors.  After that, raise the 128 KiB image ceiling and run
-  something substantial enough to be a real test of the ABI rather than a
-  demonstration of it.
+- [x] **Filesystem binding.** `openat`/`close`/`read`/`lseek`/`fstat` are
+  backed rather than `-ENOSYS`.  The descriptor table lives in the syscall
+  component, because which small integer a program gets back and what its offset
+  does are ABI decisions; the filesystem seam widened from "print this file to
+  the console" to `fs_lookup`/`fs_size`/`fs_read`, so the shell's `cat` and the
+  `read` syscall now go through one implementation instead of two that can
+  drift.  The shell's private ramdisk moved into the filesystem component as a
+  built-in read-only root, which is what a diskless profile mounts — without it
+  "can a program read a file" would be testable only where there is storage.
+  Deliberate limits, each recorded in [abi.md](abi.md): read-only through the
+  ABI (`-EROFS`), one descriptor table rather than one per task, and `lseek`
+  implemented in its real 32-bit `llseek` shape rather than a simplified one
+  that would work only with this tree's libc.  Cost: 1,692 bytes of kernel text
+  and 104 of `.bss`.  Evidence: `make -C sw/kernel check-boot` (ISS, QEMU, RTL,
+  built-in root) and `make -C sw/kernel check-storage` (the same program reading
+  the same file off a real AXFS card over SPI).
+- [x] **Evidence.** A compiled C program that allocates, opens a file, reads it,
+  seeks within it, stats it, and prints runs on aXos through the loader — on the
+  ISS, QEMU, and the RTL, and against both the built-in root and an SD card.
+  Mutation-tested: breaking the read offset, the descriptor release, `SEEK_END`,
+  or the diskless root each makes it exit with the specific code for the check
+  that caught it.  The original bar is met.  What remains is scale rather than
+  capability: raise the 128 KiB image ceiling and run something substantial
+  enough to be a real test of the ABI rather than a demonstration of it.
 
 Both opening questions are settled in [abi.md](abi.md): the ABI is the RISC-V
 Linux subset, and the loader takes ELF directly rather than a pre-flattened

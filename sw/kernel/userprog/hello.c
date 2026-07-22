@@ -4,7 +4,8 @@
  * only as an opaque byte array, so nothing here is resolved at kernel link
  * time.  What it demonstrates, beyond the loader, is that a program can now be
  * written *normally*: a main() with a return value, malloc, printf, string
- * functions, and 64-bit arithmetic, none of which existed a stage ago.
+ * functions, 64-bit arithmetic, and open/read/lseek/fstat on a real file, none
+ * of which existed a stage ago.
  *
  * Each check exits with a distinct code so a failure says which part broke
  * rather than merely that something did. */
@@ -63,7 +64,50 @@ int main(void) {
   const uint64_t wide = 1000000007ull * 3ull;
   if (wide / 3ull != 1000000007ull) return 15;
 
-  printf("%s: pid=%d n=%d hex=%x str=%s\n", greeting, getpid() > 0 ? 1 : 0,
-         42, 0xbeef, again);
+  /* Files.  `motd` is the same seventeen bytes whether it came from the SD card
+   * or from the filesystem component's built-in root, so this is one test for
+   * both platforms rather than one that only runs where there is storage. */
+  static const char motd[] = "Welcome to aXos.\n";
+  const int motd_size = (int)sizeof(motd) - 1;
+
+  const int fd = open("motd", O_RDONLY);
+  if (fd < 0) return 16;
+  /* The first file a program opens is 3.  That is ABI, not an accident. */
+  if (fd != 3) return 17;
+
+  struct stat st;
+  if (fstat(fd, &st) != 0) return 18;
+  if (!S_ISREG(st.st_mode)) return 19;
+  if (st.st_size != motd_size) return 20;
+
+  char text[32];
+  if (read(fd, text, sizeof(text)) != motd_size) return 21;
+  if (memcmp(text, motd, (size_t)motd_size) != 0) return 22;
+
+  /* The descriptor's offset is now at end of file: a further read is 0, not an
+   * error and not a repeat of the file. */
+  if (read(fd, text, sizeof(text)) != 0) return 23;
+
+  /* Seek back into the middle and re-read, which is the whole point of having
+   * an offset rather than a "read the file" call. */
+  if (lseek(fd, 11, SEEK_SET) != 11) return 24;
+  if (read(fd, text, sizeof(text)) != motd_size - 11) return 25;
+  if (memcmp(text, "aXos.\n", 6) != 0) return 26;
+  if (lseek(fd, 0, SEEK_END) != motd_size) return 27;
+
+  /* Errors have to be the documented ones, or a libc cannot act on them. */
+  if (open("nonesuch", O_RDONLY) != -1 || errno != ENOENT) return 28;
+  if (open("motd", O_WRONLY) != -1 || errno != EROFS) return 29;
+  if (read(77, text, 1) != -1 || errno != EBADF) return 30;
+
+  if (close(fd) != 0) return 31;
+  if (read(fd, text, 1) != -1 || errno != EBADF) return 32;
+  /* The slot is free again, so the next open gets the same number back. */
+  const int reopened = open("readme", O_RDONLY);
+  if (reopened != 3) return 33;
+  if (close(reopened) != 0) return 34;
+
+  printf("%s: pid=%d n=%d hex=%x str=%s motd=%d\n", greeting,
+         getpid() > 0 ? 1 : 0, 42, 0xbeef, again, motd_size);
   return 0;
 }

@@ -8,13 +8,23 @@
     "max_fds": {
       "default": 8,
       "define": "AXOS_MAX_FDS",
-      "doc": "Per-process file descriptors. Only the console three are bound today; this sizes the table the filesystem binding will fill."
+      "doc": "Open files a program may hold at once, beyond the three console descriptors. Costs 8 bytes of .bss each."
     },
     "write_max": {
       "default": 1024,
       "define": "AXOS_WRITE_MAX",
       "doc": "Largest single write() serviced. A longer request returns a short count, which is legal and is what Linux does."
+    },
+    "path_max": {
+      "default": 32,
+      "define": "AXOS_PATH_MAX",
+      "doc": "Longest path openat() accepts. A longer one is -ENAMETOOLONG rather than a kernel that reads user memory until it faults; this buffer sits on the trap stack."
+    },
+    "io_chunk": {
+      "default": 128,
+      "define": "AXOS_IO_CHUNK",
+      "doc": "Bounce-buffer size read() copies through, also on the trap stack. Larger means fewer filesystem calls per read and a deeper kernel stack."
     }
   },
-  "capabilities": ["riscv-linux-abi", "asm-generic-numbers", "errno-returns", "private-range-0x1000", "clone-fork", "wait4", "write-console", "brk", "getpid"]
+  "capabilities": ["riscv-linux-abi", "asm-generic-numbers", "errno-returns", "private-range-0x1000", "clone-fork", "wait4", "write-console", "brk", "getpid", "openat-readonly", "read-file", "llseek", "fstat", "close"]
 }

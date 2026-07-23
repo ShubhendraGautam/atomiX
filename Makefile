@@ -26,6 +26,10 @@ help:
 	@echo "  make sim CONFIG=configs/sim-bram.json RAM_INIT_FILE=/path/program.hex"
 	@echo "  make software CONFIG=configs/sim-hello.json"
 	@echo "  make fpga CONFIG=configs/ulx3s-85f.json"
+	@echo "  make fpga CONFIG=configs/tangprimer25k.json"
+	@echo "  make fpga CONFIG=configs/tangprimer25k-ax2.json"
+	@echo "  make fpga CONFIG=configs/tangprimer25k-gpu.json"
+	@echo "  python3 tools/bench.py cpu|gpu|tpu"
 	@echo "  make component-test"
 
 component-list:

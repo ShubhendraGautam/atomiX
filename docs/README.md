@@ -14,6 +14,8 @@ verifiable, and replaceable.
   the final hardware gate.
 - [toolchain.md](toolchain.md) — exact Ubuntu/Debian setup and known tool
   workarounds.
+- [tangprimer25k-bringup.md](tangprimer25k-bringup.md) — safe Tang Primer 25K
+  Dock build, SRAM programming, and UART procedure.
 - [ulx3s-bringup.md](ulx3s-bringup.md) — safe ULX3S board procedure.
 
 ## Architecture and composition

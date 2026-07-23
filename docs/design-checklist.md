@@ -212,7 +212,7 @@ Use this for a substantive implementation or interface change:
   components (`role.none` shell default, `role.loopback` proof), and a
   bare-metal driver path.  Evidence: `make -C sw/baremetal check-role` and
   `make component-test`.
-- [x] First real accelerator role, TPU-lite (int8 weight-stationary systolic
+- [x] First real accelerator role, TPU-lite (folded 24-MAC int8
   GEMM), attached behind the role window.  Evidence:
   `make -C sw/baremetal check-tpu` (verifies plain, accumulate, and ReLU GEMM
   jobs against an on-core reference and prints the role-versus-CPU cycle
@@ -252,7 +252,7 @@ Use this for a substantive implementation or interface change:
   `axhost` driver — a host PC discovers the role and runs a job on it over the
   link, end-to-end in simulation through the virtual-pipe (console byte-pipe)
   transport.  Evidence: `make -C sw/kernel check-hostlink`.
-- [x] Per-role host-link job opcodes: `TPU_GEMM` (int8 systolic GEMM) and
+- [x] Per-role host-link job opcodes: `TPU_GEMM` (folded int8 GEMM) and
   `GPU_RUN` (an uploaded SIMT kernel over a flat data buffer) on the same frame
   format, backed by in-kernel TPU-lite and GPU-compute drivers.  A host PC drives
   all three real accelerators over the link, each checked against a host-side
@@ -267,7 +267,7 @@ Use this for a substantive implementation or interface change:
 - [ ] Evaluate A or C ISA extensions only when their enabling need is explicit;
   neither is required for the current single-hart reference machine.
 
-## Final physical ULX3S gate
+## Final physical FPGA gate
 
 Hardware availability is intentionally not a blocker for the simulation and
 component work above.  It is the final platform-evidence gate.
@@ -284,6 +284,20 @@ component work above.  It is the final platform-evidence gate.
   CONFIG=configs/sim-bram.json SYNC_READ=1` (hello prints, one wait state per
   access).  Fit on the GW2A-18C: 32 DPB, ~2.7k FF, ~11k LUT4.  P&R and
   bitstream await the apicula tools (`nextpnr-himbaechel`, `gowin_pack`).
+- [~] Tang Primer 25K Dock (Gowin GW5A-25A) board component, official
+  clock/UART/S1 pins, GW5A open-flow flags, and a BRAM-only profile exist.
+  Evidence: `make -C rtl/fpga synth
+  COMPONENT_CONFIG=$PWD/configs/tangprimer25k.json BUILD=build-primer25k`
+  completes with zero design-check errors; its 32 KB main memory maps to 32
+  `DPB` cells. P&R, timing, programming, and the UART transcript await the
+  physical board and matched apicula tools.
+- [~] Tang Primer performance profiles are measured. `tangprimer25k-ax2`
+  is peaked at 2-wide/2 KiB I$/64-entry BTB: 20,893 LUTs and 36,558 benchmark
+  cycles. `tangprimer25k-gpu` explicitly maps three GW5A DSPs per multiplier
+  and reaches 8 lanes: 22,623 LUTs, 24 DSPs, and 359 SAXPY engine cycles.
+  `tangprimer25k-tpu` folds K=8 over 24 MACs and makes its C buffer infer
+  BSRAM: 14,555 LUTs, 24 DSPs, and 179 cycles versus 35,132 on CPU. All have
+  zero synthesis design-check errors; P&R/timing and board tests remain open.
 - [~] Attach an accelerator role on the Tang Nano.  The parameterized SIMT
   engine (gpu_engine.sv, `NLANES`) fits: the shipped `configs/tangnano20k-gpu.json`
   (minimal host + 6-lane) synthesises to ~20.2k LUT4, 32 DPB, 6 DSP — inside the
@@ -302,5 +316,6 @@ component work above.  It is the final platform-evidence gate.
 - [ ] Decide separately, and only after the SRAM path is proven, whether a
   persistent flash operation is appropriate.
 
-The detailed, safe board procedure is
+The detailed, safe board procedures are
+[tangprimer25k-bringup.md](tangprimer25k-bringup.md) and
 [ulx3s-bringup.md](ulx3s-bringup.md).

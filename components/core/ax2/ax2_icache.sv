@@ -129,6 +129,11 @@ module ax2_icache #(
   wire [BTB_IDX-1:0] look_idx = btb_idx(fetch_addr);
   wire btb_hit = (BTB_ON != 0) && btb_valid_q[look_idx] &&
                  btb_tag_q[look_idx] == btb_tag(fetch_addr);
+  // Keep update lookup values at module scope.  Some synthesis frontends do
+  // not accept initialized automatic variables declared inside always_ff.
+  wire [BTB_IDX-1:0] upd_idx = btb_idx(upd_pc);
+  wire upd_hit = btb_valid_q[upd_idx] &&
+                 btb_tag_q[upd_idx] == btb_tag(upd_pc);
   // 2-bit hysteresis: predict taken only in the two "taken" states, so a single
   // contrary outcome does not flip a well-established branch.
   wire btb_predict = btb_hit && btb_ctr_q[look_idx][1];
@@ -297,22 +302,21 @@ module ax2_icache #(
       // not-taken branch that saturates down stops predicting but keeps its
       // target, so a loop that is re-entered warms up again in one iteration.
       if (BTB_ON != 0 && upd_valid) begin
-        automatic logic [BTB_IDX-1:0] ui = btb_idx(upd_pc);
-        automatic logic hit_u = btb_valid_q[ui] && btb_tag_q[ui] == btb_tag(upd_pc);
-        if (hit_u) begin
+        if (upd_hit) begin
           if (upd_taken) begin
-            btb_target_q[ui] <= upd_target;
-            btb_slot_q[ui]   <= upd_slot;
-            if (btb_ctr_q[ui] != 2'b11) btb_ctr_q[ui] <= btb_ctr_q[ui] + 2'd1;
-          end else if (btb_ctr_q[ui] != 2'b00) begin
-            btb_ctr_q[ui] <= btb_ctr_q[ui] - 2'd1;
+            btb_target_q[upd_idx] <= upd_target;
+            btb_slot_q[upd_idx]   <= upd_slot;
+            if (btb_ctr_q[upd_idx] != 2'b11)
+              btb_ctr_q[upd_idx] <= btb_ctr_q[upd_idx] + 2'd1;
+          end else if (btb_ctr_q[upd_idx] != 2'b00) begin
+            btb_ctr_q[upd_idx] <= btb_ctr_q[upd_idx] - 2'd1;
           end
         end else if (upd_taken) begin
-          btb_valid_q[ui]  <= 1'b1;
-          btb_tag_q[ui]    <= btb_tag(upd_pc);
-          btb_target_q[ui] <= upd_target;
-          btb_slot_q[ui]   <= upd_slot;
-          btb_ctr_q[ui]    <= 2'b10;   // weakly taken on allocation
+          btb_valid_q[upd_idx]  <= 1'b1;
+          btb_tag_q[upd_idx]    <= btb_tag(upd_pc);
+          btb_target_q[upd_idx] <= upd_target;
+          btb_slot_q[upd_idx]   <= upd_slot;
+          btb_ctr_q[upd_idx]    <= 2'b10;   // weakly taken on allocation
         end
       end
       if (flush) btb_valid_q <= '0;

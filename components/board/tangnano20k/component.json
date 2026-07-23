@@ -13,6 +13,7 @@
     "FPGA_CST": "components/board/tangnano20k/tangnano20k.cst",
     "FPGA_DEVICE": "GW2AR-LV18QN88C8/I7",
     "FPGA_FAMILY": "GW2A-18C",
+    "FPGA_SYNTH_FAMILY": "gw2a",
     "FPGA_PROG_BOARD": "tangnano20k"
   },
   "capabilities": ["gowin", "gw2ar-18c", "open-flow", "bram-only", "usb-uart"]

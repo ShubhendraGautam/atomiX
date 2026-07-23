@@ -5,10 +5,10 @@
 
 | Reference machine | Evidence | Platform direction |
 |---|---|---|
-| RV32IM, five stages, M/S/U + Sv32 | ISS · lock-step RTL · ISA tests · formal | ULX3S shell + swappable accelerator roles |
+| RV32IM, five stages, M/S/U + Sv32 | ISS · lock-step RTL · ISA tests · formal | ULX3S/Tang shells + swappable accelerator roles |
 
 **Status:** simulation-verified reference system · component-first builds ·
-physical ULX3S validation is the final evidence gate.
+physical FPGA validation is the final evidence gate.
 
 [Architecture](DESIGN.md) · [Build/test/deploy](docs/workflow.md) ·
 [Dependencies](docs/dependencies.md) ·
@@ -82,7 +82,8 @@ and verification claim.  Read the [component catalog](components/README.md),
 | Set up a host or FPGA toolchain | [docs/dependencies.md](docs/dependencies.md) |
 | Change an implementation | [components/README.md](components/README.md) |
 | Inspect current evidence and open work | [docs/design-checklist.md](docs/design-checklist.md) |
-| Prepare the real board | [docs/ulx3s-bringup.md](docs/ulx3s-bringup.md) |
+| Prepare the Tang Primer 25K | [docs/tangprimer25k-bringup.md](docs/tangprimer25k-bringup.md) |
+| Prepare the ULX3S | [docs/ulx3s-bringup.md](docs/ulx3s-bringup.md) |
 
 ## Repository map
 

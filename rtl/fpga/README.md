@@ -1,8 +1,25 @@
 # rtl/fpga/ — FPGA flow entry point
 
-The generic ECP5 synthesis, place-and-route, packing, and programming flow.
+The generic ECP5/Gowin synthesis, place-and-route, packing, and programming
+flow.
 Board-specific top-level RTL, pin constraints, and physical I/O live beside
 their `board` component manifest; this directory does not own a board design.
+
+## Tang Primer 25K Dock target
+
+`configs/tangprimer25k.json` selects a BRAM-only GW5A-25A shell with a 50 MHz
+system clock, the Dock debugger's 115200 8-N-1 UART, and S1 as active-high
+reset. Build it with:
+
+```bash
+make fpga CONFIG=configs/tangprimer25k.json
+make -C rtl/fpga program COMPONENT_CONFIG=$PWD/configs/tangprimer25k.json
+```
+
+The profile uses 32 KB of on-chip BSRAM and starts the baked-in bare-metal
+image at `0x80000000`. See
+[docs/tangprimer25k-bringup.md](../../docs/tangprimer25k-bringup.md) before
+programming or flashing hardware.
 
 ## ULX3S 85F target
 
@@ -33,8 +50,8 @@ make -C rtl/fpga program      # reversible SRAM configuration
 
 `configs/ulx3s-85f.json` selects every implementation used by the board.
 Provide another configuration with a custom core, memory backend, peripheral,
-SoC, or board manifest to compose a DIY variant. The reference ULX3S top is
-still the only board target whose synthesis has been checked; selection alone
+SoC, or board manifest to compose a DIY variant. The stock ULX3S, Tang Nano,
+and Tang Primer tops have passed their Yosys synthesis gates; selection alone
 does not claim timing or hardware compatibility.
 
 `make flash` writes persistent configuration flash and is intentionally

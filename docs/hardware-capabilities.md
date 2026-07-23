@@ -18,7 +18,7 @@ Each capability is marked with the strongest evidence that currently backs it:
 
 > **No row is BOARD yet.**  Place-and-route tools are not installed on the build
 > host (`nextpnr-ecp5` for ECP5, `nextpnr-himbaechel`/`gowin_pack` for Gowin), so
-> the physical-board gate is untaken for both targets.  Everything below is
+> the physical-board gate is untaken for all targets. Everything below is
 > SIM + SYNTH: real, but pre-silicon.  SYNTH fit is a synthesis-level resource
 > check; final place-and-route may differ, especially near 90%+ utilisation.
 
@@ -27,11 +27,12 @@ Each capability is marked with the strongest evidence that currently backs it:
 | Board | FPGA | LUT4 | Flip-flops | Block RAM | DSP (18×18) | Clock |
 |---|---|---|---|---|---|---|
 | **Tang Nano 20K** | Gowin GW2AR-18C | 20,736 | 15,552 | ~46 × 18 Kb (828 Kb) | ~48 | 27 MHz |
+| **Tang Primer 25K Dock** | Gowin GW5A-25A | 23,040 | 23,040 | 56 × 18 Kb (1,008 Kb) | 28 | 50 MHz |
 | **ULX3S-85F** | Lattice ECP5 LFE5U-85F | ~83,640 | ~83,640 | 208 × 18 Kb (3.7 Mb) | 156 | 25 MHz |
 
-The two boards differ in main-memory strategy, which the board component fixes:
-the Tang Nano is **BRAM-only** (program and data in on-chip block RAM, so RAM
-size competes with the accelerator for BSRAM), while the ULX3S uses **external
+The boards differ in main-memory strategy, which the board component fixes:
+both Tang targets are **BRAM-only** (program and data in on-chip block RAM, so
+RAM size competes with accelerators for BSRAM), while the ULX3S uses **external
 SDRAM** with caches (fabric holds only a small ROM, leaving block RAM free).
 
 ## Tang Nano 20K (Gowin GW2AR-18C) — the small part
@@ -43,17 +44,48 @@ and the TPU:
 |---|---|---|---|---|---|---|
 | **CPU** | `tangnano20k` | 5-stage RV32IM/Sv32 | 11.3k | 32 DPB | 0 | ✅ **SYNTH** + **SIM** (hello) |
 | **GPU** | `tangnano20k-gpu` | minimal host + 6-lane SIMT | 20.2k (97%) | 32 DPB | 24 | ⚠️ **SYNTH** (fits, tight) + **SIM** (gpu, perf) |
-| **TPU** | `tangnano20k-tpu` | 8×8 int8 GEMM | — | — | 64 | ❌ overflow — ~69.5k FF (`cbuf` in flip-flops) |
+| **TPU** | `tangnano20k-tpu` | folded 24-MAC int8 GEMM | 14.3k | 32 DPB + 8 DPX9B | 24 | ✅ **SYNTH** + **SIM** |
 
-**Possible on the Tang Nano 20K:** a CPU plus **one** modest accelerator.  The
+**Possible on the Tang Nano 20K:** a CPU plus **one** accelerator.  The
 GPU is peaked at 6 lanes by pairing the wide engine with the minimal host core
 (the 5-stage core + 8-lane GPU overflows at ~29k LUT4; the minimal core frees
-enough to reach 6 lanes, at 97% — tight).  The TPU does not fit at all, and
-all-three is out (the shell also has only one role window).  Other lane counts
-are a config away — the catalog ships `role.gpu-compute` (8-lane, overflows
-this part), `role.gpu-compute` at 4 lanes (fits comfortably with the
-5-stage core), and at 6 lanes (used here).  Deep analysis:
+enough to reach 6 lanes, at 97% — tight). The folded TPU now also fits: 14,300
+LUT primitives, 3,239 FFs, and 24 `MULT9X9` cells; its old 64-MAC/flip-flop
+overflow was removed by the same folding and single-port C-buffer work used for
+the Primer. All-three is still out because the shell has one role window.
+Other GPU lane counts are a config away. Deep analysis:
 [tangnano-capacity.md](tangnano-capacity.md).
+
+## Tang Primer 25K Dock (Gowin GW5A-25A)
+
+Keep `tangprimer25k` as the small first-UART profile. The three performance
+profiles are independently peaked for the device; they are alternatives, not
+one combined image:
+
+| Capability | Profile | Configuration | LUT1–LUT4 | FF | Main/role RAM | DSP | Simulation result |
+|---|---|---|---:|---:|---|---:|---|
+| **CPU** | `tangprimer25k-ax2` | 2-wide AX2, 2 KiB I$, 64-entry BTB | 20,893 (90.7%) | 4,618 | 32 DPB + 6 SDPX9B | 0 | 36,558 cycles, 1.60× over pipeline5 |
+| **GPU** | `tangprimer25k-gpu` | minimal host + 8-lane SIMT | 22,623 (98.2%) | 3,473 | 32 DPB + 4 SDPX9B | 24 MULTALU27X18 | 359 SAXPY engine cycles |
+| **TPU** | `tangprimer25k-tpu` | 8 columns × 3 folded K MACs | 14,555 (63.2%) | 3,698 | 32 DPB + 8 DPX9B + 4 SDPX9B | 24 MULT12X12 | 179 cycles vs 35,132 CPU, 196× |
+
+All three mapped with zero Yosys design-check errors. The GPU is intentionally
+as tight as the Tang Nano max profile: a 32-bit low-word multiply is decomposed
+into three unsigned 16-bit partial products and mapped explicitly to GW5A
+`MULTALU27X18` cells. Eight lanes consume 24 of the 28 DSPs; a ninth lane would
+need 27 DSPs but cannot fit the remaining 417 LUTs and has little benefit behind
+the engine's single memory port. The generic RTL path is unchanged for
+simulation and other FPGA families.
+
+The TPU was folded from 64 simultaneous multipliers to 24 physical int8 MACs.
+It evaluates K=8 in three phases (3+3+2), while the C buffer now uses one
+physical port so it infers BSRAM instead of tens of thousands of flip-flops.
+Its programming interface and numerical result are unchanged.
+
+The larger AX2 experiments establish the CPU boundary: 2 KiB/64 fits, while
+2 KiB/128 jumps to 34,701 LUT primitives and 8 KiB/128 reaches 46,871. The
+64-entry profile is 10 cycles faster than the 32-entry default in the current
+benchmark. Exact packed utilisation, routing, and the 50 MHz verdict remain
+nextpnr/physical-board gates, especially for the 98.2%-LUT GPU.
 
 ## ULX3S-85F (Lattice ECP5) — the large part
 
@@ -61,15 +93,14 @@ this part), `role.gpu-compute` at 4 lanes (fits comfortably with the
 |---|---|---|---|---|---|---|
 | CPU (5-stage RV32IM/Sv32) | `ulx3s-85f` | 10.6k (13%) | 3.1k | — | 0 | ✅ **SYNTH** + **SIM** |
 | minimal host + GPU (**16-lane** SIMT) | `ulx3s-85f-gpu` | 35.4k (42%) | 5.9k | 18 EBR | 48 | ✅ **SYNTH** + **SIM** (suite) |
-| CPU + TPU (8×8 int8 GEMM) | `ulx3s-85f-tpu` | (large) | 71.5k (85%) | 2 EBR | 64 | ✅ **SYNTH** (fits; FF-bound) + **SIM** |
+| CPU + TPU (folded 24-MAC int8 GEMM) | `ulx3s-85f-tpu` | 12.8k (15%) | 3.6k | 10 EBR | 24 | ✅ **SYNTH** + **SIM** |
 
 **Possible on the ULX3S-85F:** the CPU plus a **wider GPU** — the profile takes
 the engine to 16 lanes (42% LUT4, 48 of 156 DSP), using headroom the small Tang
-Nano does not have — and the **TPU** as well (FF-bound at ~85% because its `cbuf`
-accumulator still maps to flip-flops rather than block RAM — a role bug, not a
-board limit; fixing it would free most of that).  The part has headroom that the
-single-role shell does not yet exploit: hosting GPU **and** TPU together needs a
-composite role, which does not exist yet.
+Nano does not have — and the **TPU** as well. Folding the TPU and mapping its
+accumulator to RAM cut this profile from 71.5k FFs/64 DSPs to 3.6k FFs/24 DSPs.
+The part has headroom that the single-role shell does not yet exploit: hosting
+GPU **and** TPU together needs a composite role, which does not exist yet.
 
 ### Lane scaling has diminishing returns (measured)
 
@@ -150,6 +181,7 @@ is one component, so these rows are parameter settings, not variants:
 | ax2 1-wide, 2K I$, BTB 32 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 45,748 | 2.02× |
 | ax2 2-wide, 2K I$, no BTB | 1.15 | 0.90 | 0.79 | 0.99 | 0.99 | 48,498 | 1.90× |
 | **ax2 defaults** (2-wide, 2K I$, BTB 32) | 1.71 | 1.10 | 1.32 | 1.39 | 1.21 | 36,568 | **2.53×** |
+| **GW5A-25 max** (2-wide, 2K I$, BTB 64) | 1.71 | 1.10 | 1.32 | 1.39 | 1.21 | 36,558 | **2.53×** |
 | ax2 2-wide, 8K I$, BTB 128 | 1.71 | 1.10 | 1.32 | 1.39 | 1.21 | 36,540 | 2.53× |
 
 What each knob is actually worth, which a fixed set of tiers could not have
@@ -228,13 +260,12 @@ in [optimization-design.md](optimization-design.md).
 
 1. **Pipelined `LDX`** — ✅ done (~1.35× flat, above).
 2. **Multi-bank global memory** — ✅ done, shipped as `role.gpu1-*` (above).
-3. **TPU `cbuf` → block RAM** — frees ~65k flip-flops (the accumulator currently
-   flattens to FFs; structurally it matches the GPU `gmem`, which *does* infer
-   BRAM, so the cause needs a synth-level diagnosis).  Makes the TPU cheap.
-4. **Composite GPU + TPU role** — with (3) done the FF budget allows both engines
-   behind one role window (needs a composite role; the shell has one window
-   today), so the large part runs CPU + GPU + TPU together — impossible on the
-   Tang Nano.
+3. **TPU folding + `cbuf` block RAM** — ✅ done. The shared role now uses 24
+   physical MACs and one mutually exclusive host/engine C-buffer port; ULX3S
+   drops from 71.5k to 3.6k FFs.
+4. **Composite GPU + TPU role** — the FF/DSP budget now allows both engines
+   behind one role window on the large part (needs a composite role; the shell
+   has one window today).
 
 Catalog: cores `core.ax2` (tunable, above), `core.pipeline5` (reference — the
 only one with Sv32/S-U and cosim/formal evidence), `core.minimal` (smallest).
@@ -242,11 +273,9 @@ Roles `role.gpu1` (banked, tunable) and `role.gpu-compute` (single-port,
 tunable).  Sizes are parameters on these components, not separate components:
 see [workflow.md](workflow.md) §3.4a.
 
-> **Not yet synthesised.**  The ax2 and gpu1 numbers above are SIM: correctness
-> and cycle counts from Verilator.  Neither family has a SYNTH fit row yet, so
-> no claim is made about whether a given tier fits the Tang Nano or the ULX3S.
-> The tier targets named in the component titles are design intent, not measured
-> fit.
+> The scaling tables above are simulation cycle counts. AX2 now also has GW5A
+> synthesis evidence for the Primer profile described above; other family/tier
+> and board combinations still need their own synthesis and P&R evidence.
 
 ## Functional coverage (board-independent, SIM)
 

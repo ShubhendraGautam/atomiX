@@ -80,12 +80,13 @@ distro version on a normal Ubuntu `PATH`. `/opt/sby` similarly places `sby` in
 `/usr/local/bin`. `/opt/riscv-formal` remains an external reference checkout;
 the atomiX repository never modifies it.
 
-## ECP5 FPGA tools
+## FPGA tools (ECP5 and Gowin)
 
-The ULX3S target needs the ECP5-specific tools `nextpnr-ecp5` and `ecppack`
-from Project Trellis in addition to Yosys. Ubuntu 22.04 packages generic and
-iCE40 nextpnr variants, but not `nextpnr-ecp5`; installing the `yosys` package
-alone cannot build this board. The maintained and fast route is the prebuilt
+The ULX3S target needs `nextpnr-ecp5` and `ecppack`; Tang targets need
+`nextpnr-himbaechel` and apicula's `gowin_pack`. The Tang Primer 25K also needs
+a current Yosys with `synth_gowin -family gw5a`. Installing an older distro
+`yosys` package alone cannot build these boards. The maintained and fast route
+is the prebuilt
 [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases), not
 an hour-long local build of the whole FPGA stack.
 
@@ -100,13 +101,13 @@ tar -C "$HOME/opt" -xf "$HOME/Downloads/oss-cad-suite-linux-x64-<release>.tgz"
 source "$HOME/opt/oss-cad-suite/environment"
 ```
 
-The environment script supplies a matched `yosys`, `nextpnr-ecp5`, and
-`ecppack`; do not mix arbitrary distro and suite binaries inside one FPGA
-build. Add the `source` line to your shell profile only after confirming the
-commands below resolve to the extracted suite:
+The environment script supplies matched Yosys, nextpnr backends, and packers;
+do not mix arbitrary distro and suite binaries inside one FPGA build. Add the
+`source` line to your shell profile only after confirming the commands below
+resolve to the extracted suite:
 
 ```bash
-command -v yosys nextpnr-ecp5 ecppack
+command -v yosys nextpnr-ecp5 ecppack nextpnr-himbaechel gowin_pack
 yosys -V
 nextpnr-ecp5 --version
 ecppack --version
@@ -133,7 +134,8 @@ openFPGALoader --version
 
 The reproducible target is `make -C rtl/fpga`; `program` is a reversible SRAM
 configuration and `flash` is explicitly persistent. The complete hardware
-sequence and SD-card safety check are in [ulx3s-bringup.md](ulx3s-bringup.md).
+sequences are in [tangprimer25k-bringup.md](tangprimer25k-bringup.md) and
+[ulx3s-bringup.md](ulx3s-bringup.md).
 
 ## Known quirks (learned the hard way)
 

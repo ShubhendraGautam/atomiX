@@ -57,9 +57,9 @@ Response  5A | status(1) | len(2) | payload(len)
 - `ROLE_RUN` targets `role.loopback` (the contract-proof role): aXos copies the
   input words through the engine and returns them.  Its role in the base is to
   exercise the whole path with a trivially checkable result.
-- `TPU_GEMM` targets `role.tpu-lite`: aXos loads the stationary weight tile and
+- `TPU_GEMM` targets `role.tpu-lite`: aXos loads the K=8 weight tile and
   `m` activation rows, latches `ctrl` (`0x1` ReLU, `0x2` accumulate), runs the
-  systolic GEMM, and returns the `m × 8` int32 result tile.
+  folded 24-MAC GEMM, and returns the `m × 8` int32 result tile.
 - `GPU_RUN` targets `role.gpu-compute`: aXos uploads a straight-line kernel and
   a flat data buffer, launches `nthreads` SIMT lanes over the program, and
   returns the data buffer read back.

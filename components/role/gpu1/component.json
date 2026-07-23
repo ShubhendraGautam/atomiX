@@ -4,6 +4,7 @@
   "kind": "role",
   "title": "gpu1 SIMT engine with banked global memory (tunable)",
   "sources": [
+    "components/role/common/ax_gw5a_mul.sv",
     "components/role/gpu1/gpu1_engine.sv",
     "components/role/gpu1/axrole.sv"
   ],

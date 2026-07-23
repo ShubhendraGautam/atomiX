@@ -64,6 +64,7 @@ and avoids a long one-off build.
 |---|---|---|
 | ULX3S-85F (Lattice ECP5) | `ecp5` | `yosys` (`synth_ecp5`), `nextpnr-ecp5`, `ecppack` |
 | Tang Nano 20K (Gowin GW2A-18C) | `gowin` | `yosys` (`synth_gowin`), `nextpnr-himbaechel` (apicula), `gowin_pack` (apicula) |
+| Tang Primer 25K Dock (Gowin GW5A-25A) | `gowin` | current `yosys` with GW5A mapping, `nextpnr-himbaechel` (apicula), `gowin_pack` (apicula) |
 
 `make -C rtl/fpga check-tools` verifies exactly the tools the selected flow
 needs, and `make -C rtl/fpga synth` is a yosys-only "does it synthesise for this
@@ -72,6 +73,7 @@ board" gate that needs no place-and-route tools installed.
 `openFPGALoader` and `picocom` are only needed for physical-board work.  The
 setup, tool verification, and safe SRAM-versus-flash distinction are in
 [toolchain.md](toolchain.md#ecp5-fpga-tools) and
+[tangprimer25k-bringup.md](tangprimer25k-bringup.md) and
 [ulx3s-bringup.md](ulx3s-bringup.md).
 
 ## Recorded working baseline

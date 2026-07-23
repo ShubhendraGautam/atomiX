@@ -7,7 +7,7 @@
 // GPU-compute role: an 8-lane SIMT data-parallel vector engine.
 //
 // The second real accelerator behind the shell role window (DESIGN.md §3.3).
-// Where TPU-lite is a fixed-function systolic GEMM, this role is programmable:
+// Where TPU-lite is a fixed-function folded GEMM, this role is programmable:
 // software uploads a short straight-line kernel and a flat global data buffer,
 // sets the thread count, and rings the doorbell.  The engine then runs the
 // kernel across all threads the way a GPU does — Single Instruction, Multiple

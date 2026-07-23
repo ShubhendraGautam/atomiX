@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark the CPU cores and the GPU roles against each other.
+"""Benchmark the CPU cores and accelerator roles.
 
 The sweep needs a profile per (core, role) combination, but those combinations
 are measurement fixtures rather than supported configurations, so they are
@@ -9,8 +9,9 @@ The catalog keeps only the profiles a suite actually runs.
 usage:
   tools/bench.py cpu      IPC and cycle counts per core
   tools/bench.py gpu      GPU kernel cycles per role tier
+  tools/bench.py tpu      TPU GEMM cycles versus the host CPU
   tools/bench.py render   render workload vs cache size and divider latency
-  tools/bench.py all      all three (default)
+  tools/bench.py all      all four (default)
 
 Requires the baremetal images: make -C sw/baremetal images
 """
@@ -39,6 +40,8 @@ CPUS = [
      "ax2 2-wide, 2K I$, no BTB"),
     ("core.ax2", {"issue_width": 2, "icache_kb": 2, "btb_entries": 32},
      "ax2 2-wide, 2K I$, BTB 32  (default)"),
+    ("core.ax2", {"issue_width": 2, "icache_kb": 2, "btb_entries": 64},
+     "ax2 2-wide, 2K I$, BTB 64  (GW5A-25 max)"),
     ("core.ax2", {"issue_width": 2, "icache_kb": 8, "btb_entries": 128},
      "ax2 2-wide, 8K I$, BTB 128"),
 ]
@@ -139,6 +142,25 @@ def bench_gpu(workdir):
     print("\n  speedup is relative to role.gpu-compute (8 lanes, single port).")
 
 
+def bench_tpu():
+    print("\n== TPU: 12x8x8 int8 GEMM cycles (lower is better) ==\n")
+    profile = os.path.join(CONFIGS, "sim-tpu-lite.json")
+    text = run(profile, "tpu.hex", 500000)
+    accel = re.search(r"tpu gemm cycles: 0x([0-9a-f]+)", text)
+    host = re.search(r"cpu gemm cycles: 0x([0-9a-f]+)", text)
+    if not accel or not host or "role tpu-lite: PASS" not in text:
+        print("  FAILED TO RUN")
+        return
+    accel_cycles = int(accel.group(1), 16)
+    host_cycles = int(host.group(1), 16)
+    print("  %-20s %12s" % ("implementation", "cycles"))
+    print("  " + "-" * 34)
+    print("  %-20s %12d" % ("tpu-lite", accel_cycles))
+    print("  %-20s %12d" % ("pipeline5 CPU", host_cycles))
+    print("\n  accelerator speedup: %.2fx" % (host_cycles / accel_cycles))
+    print("  Note: TPU timing is doorbell-to-done; operand upload is excluded.")
+
+
 # Memory-system sweep for the render workload.  Cache geometry is (lines,
 # words-per-line); the default 16x4 = 256 bytes is the composition smoke size.
 RENDER_CFGS = [
@@ -196,13 +218,26 @@ def bench_render(workdir):
 
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if not os.path.exists(os.path.join(IMAGES, "cpu_perf.hex")):
+    choices = {"cpu", "gpu", "tpu", "render", "all"}
+    if what not in choices:
+        sys.exit("usage: tools/bench.py [cpu|gpu|tpu|render|all]")
+    needed = {
+        "cpu": ("cpu_perf.hex",),
+        "gpu": ("gpu.hex", "gpu1.hex"),
+        "tpu": ("tpu.hex",),
+        "render": ("render_perf.hex",),
+        "all": ("cpu_perf.hex", "gpu.hex", "gpu1.hex", "tpu.hex",
+                "render_perf.hex"),
+    }
+    if any(not os.path.exists(os.path.join(IMAGES, image)) for image in needed[what]):
         sys.exit("missing images: run `make -C sw/baremetal images` first")
     with tempfile.TemporaryDirectory(prefix="axbench-") as workdir:
         if what in ("cpu", "all"):
             bench_cpu(workdir)
         if what in ("gpu", "all"):
             bench_gpu(workdir)
+        if what in ("tpu", "all"):
+            bench_tpu()
         if what in ("render", "all"):
             bench_render(workdir)
     print()

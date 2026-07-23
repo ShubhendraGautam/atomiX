@@ -4,6 +4,7 @@
   "kind": "role",
   "title": "GPU-compute SIMT vector engine, single-port global memory (tunable)",
   "sources": [
+    "components/role/common/ax_gw5a_mul.sv",
     "components/role/gpu-compute/gpu_engine.sv",
     "components/role/gpu-compute/axrole.sv"
   ],

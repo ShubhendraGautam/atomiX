@@ -104,35 +104,21 @@ whether to bank the program/`A`/weight buffers too (probably not — only `gmem`
 
 ## 2. TPU `cbuf` → block RAM
 
-### Problem
-The C accumulator (`cbuf`, 2048×32) maps to ~65k flip-flops, which is ~85% of
-the ULX3S FF budget and the whole reason the TPU is "large".  Structurally
-`cbuf` matches the GPU `gmem` (two ports, each write-or-registered-read), and
-`gmem` **does** infer block RAM — so the cause is not obvious from the source.
+### Outcome — delivered
 
-### Approach
-Diagnose before changing: synth `cbuf` in isolation and read the `memory_libmap`
-decision (why it declined block RAM), then diff against `gmem`.  Candidate causes
-to rule out:
+The two-process/two-port description was the blocker. Host access and engine
+drain are mutually exclusive by contract, so `cbuf` now expresses both through
+one physical synchronous port. Yosys consequently maps it to block RAM.
 
-- The drain read-modify-write under `ACC` (read `cbuf[idx]` then write it back a
-  cycle later) may create a read/write dependency the mapper won't bank.
-- A write-enable / read-enable expression difference from `gmem` (e.g. the
-  `!busy_q` guard `gmem` has and `cbuf` does not).
-- Index-expression or width detail that trips `memory_bram` for one and not the
-  other.
-
-Once the cause is known the fix is expected to be small (mirror the `gmem`
-coding), like the `SYNC_READ` fix that moved the main memory from FFs to BSRAM.
+The compute array was also folded from 64 simultaneous multipliers to 24 MACs:
+all eight output columns evaluate K=8 in three phases (3+3+2). This puts the
+role below both Tang FPGA DSP budgets while preserving its MMIO/API contract.
 
 ### Correctness
-Must preserve the drain semantics exactly: `C = acc_base + A×W`, `ACC`
+The drain semantics remain exactly `C = acc_base + A×W`, including `ACC`
 read-modify-write accumulation across doorbells, and `RELU` clamp.  Verified by
-`make -C sw/baremetal check-tpu` (three GEMMs vs the on-core reference).
-
-**Open question:** is the RMW the blocker?  If so, does a small pipeline tweak
-(separate read and write cycles per C element, which the drain already does)
-suffice, or does the accumulator need a different port structure?
+`make -C sw/baremetal check-tpu` (three GEMMs vs the on-core reference), plus
+GW2A, GW5A, and ECP5 synthesis.
 
 ---
 

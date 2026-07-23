@@ -1,0 +1,61 @@
+// Sipeed Tang Primer 25K + Dock board shell
+// (Gowin GW5A-LV25MG121NC1/I0, open-flow device GW5A-LV25MG121NES).
+//
+// This first target is deliberately BRAM-only: the bare-metal image is baked
+// into on-chip block RAM and starts at 0x8000_0000. The Dock's 50 MHz crystal
+// clocks the SoC directly, and its onboard debugger supplies the 115200 8-N-1
+// UART. S1 is an active-high manual reset in addition to power-on reset.
+module tangprimer25k_top #(
+  parameter RAM_INIT_FILE = "../../sw/baremetal/build/hello.hex",
+  parameter int unsigned RAM_BYTES = 32 * 1024
+) (
+  input  logic clk_50mhz,
+  input  logic button_s1,
+  output logic uart_tx,
+  input  logic uart_rx
+);
+  logic [15:0] reset_count = 16'b0;
+  logic rst;
+  logic uart_tx_valid, uart_tx_ready, uart_rx_valid, uart_rx_ready;
+  logic [7:0] uart_tx_data, uart_rx_data;
+  logic finished;
+  logic [15:0] exit_code;
+
+  always_ff @(posedge clk_50mhz) begin
+    if (!&reset_count) reset_count <= reset_count + 1'b1;
+  end
+  assign rst = !&reset_count || button_s1;
+
+  axuart_phy #(.CLOCK_HZ(50_000_000), .BAUD(115_200)) u_uart_phy (
+    .clk(clk_50mhz), .rst(rst),
+    .tx_valid(uart_tx_valid), .tx_data(uart_tx_data), .tx_ready(uart_tx_ready),
+    .tx(uart_tx), .rx(uart_rx),
+    .rx_valid(uart_rx_valid), .rx_data(uart_rx_data), .rx_ready(uart_rx_ready)
+  );
+
+  soc_top #(
+    .RESET_PC(32'h8000_0000),
+    .RAM_BYTES(RAM_BYTES),
+    .USE_DRAM_MODEL(0),
+    .USE_SDRAM(0),
+    .USE_CACHES(0),
+    .SYNC_READ(1),
+    .RAM_INIT_FILE(RAM_INIT_FILE),
+    .ROM_INIT_FILE("")
+  ) u_soc (
+    .clk(clk_50mhz), .rst(rst), .irq_external(1'b0),
+    .uart_tx_valid(uart_tx_valid), .uart_tx_data(uart_tx_data), .uart_tx_ready(uart_tx_ready),
+    .uart_rx_valid(uart_rx_valid), .uart_rx_data(uart_rx_data), .uart_rx_ready(uart_rx_ready),
+    .spi_sclk(), .spi_mosi(), .spi_cs_n(), .spi_miso(1'b1),
+    .sdram_cke(), .sdram_cs_n(), .sdram_ras_n(), .sdram_cas_n(), .sdram_we_n(),
+    .sdram_ba(), .sdram_a(), .sdram_dqm(), .sdram_dq_i(16'b0),
+    .sdram_dq_o(), .sdram_dq_oe(), .sdram_init_done(),
+    .finished(finished), .exit_code(exit_code)
+  );
+
+  // The Dock has no ordinary FPGA-driven user LED; UART is the bring-up
+  // verdict. READY/DONE remain dedicated configuration pins.
+  // verilator lint_off UNUSED
+  wire unused = ^{finished, exit_code, uart_rx_ready};
+  // verilator lint_on UNUSED
+endmodule

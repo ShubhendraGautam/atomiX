@@ -30,6 +30,11 @@ TOP ?= $(COMPONENT_FPGA_TOP)
 BOOT_HEX := ../../sw/bootrom/build/bootrom.hex
 JSON := $(BUILD)/$(TOP).json
 SYNTH_SV := $(BUILD)/atomiX_synth.sv
+# The simulation flow consumes Verilator's +define+NAME=VALUE spelling. Yosys
+# needs the equivalent -DNAME=VALUE form; without this conversion profile
+# parameters silently fall back to the RTL defaults during FPGA synthesis.
+SYNTH_DEFINES := $(patsubst +define+%,-D%,$(COMPONENT_DEFINES)) \
+  $(patsubst %,-D%,$(COMPONENT_FPGA_DEFINES))
 
 SOURCES := $(COMPONENT_CORE_SOURCES) \
   $(COMPONENT_ALU_SOURCES) $(COMPONENT_MULDIV_SOURCES) \
@@ -41,8 +46,6 @@ SOURCES := $(COMPONENT_CORE_SOURCES) \
   $(COMPONENT_ROLE_SOURCES) \
   $(COMPONENT_FINISHER_SOURCES) $(COMPONENT_SOC_SOURCES) \
   $(COMPONENT_BOARD_SOURCES)
-
-all: check-tools $(BIT)
 
 # Synthesis only (yosys -> netlist).  Runs with just yosys installed, so it is
 # the "does the design synthesise for this board" gate that needs no P&R tools.
@@ -68,9 +71,10 @@ $(BUILD):
 	mkdir -p $@
 
 ifeq ($(COMPONENT_FPGA_FLOW),gowin)
-# ---- Gowin open flow (Tang Nano): synth_gowin -> nextpnr-himbaechel -> gowin_pack.
+# ---- Gowin open flow (Tang boards): synth_gowin -> nextpnr-himbaechel -> gowin_pack.
 DEVICE := $(COMPONENT_FPGA_DEVICE)
 FAMILY := $(COMPONENT_FPGA_FAMILY)
+SYNTH_FAMILY := $(or $(COMPONENT_FPGA_SYNTH_FAMILY),gw1n)
 CST ?= $(COMPONENT_FPGA_CST)
 PROG_BOARD := $(COMPONENT_FPGA_PROG_BOARD)
 PNR_JSON := $(BUILD)/$(TOP)_pnr.json
@@ -88,13 +92,13 @@ RAM_BYTES ?= $(COMPONENT_RAM_BYTES)
 RAM_BYTES_CHPARAM := $(if $(RAM_BYTES),chparam -set RAM_BYTES $(RAM_BYTES) $(TOP);,)
 
 $(JSON): $(SYNTH_SV) $(PROGRAM_HEX) Makefile | $(BUILD)
-	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_SV); $(RAM_BYTES_CHPARAM) synth_gowin -noabc9 -top $(TOP) -json $@'
+	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); $(RAM_BYTES_CHPARAM) synth_gowin -noabc9 -family $(SYNTH_FAMILY) $(COMPONENT_GOWIN_SYNTH_ARGS) -top $(TOP) -json $@'
 
 $(PNR_JSON): $(JSON) $(CST) | check-tools
-	$(NEXTPNR_HIMBAECHEL) --device $(DEVICE) --vopt family=$(FAMILY) --vopt cst=$(CST) --json $(JSON) --write $@
+	$(NEXTPNR_HIMBAECHEL) $(COMPONENT_NEXTPNR_ARGS) --device $(DEVICE) --vopt family=$(FAMILY) --vopt cst=$(CST) --json $(JSON) --write $@
 
 $(BIT): $(PNR_JSON)
-	$(GOWIN_PACK) -d $(FAMILY) -o $@ $(PNR_JSON)
+	$(GOWIN_PACK) $(COMPONENT_GOWIN_PACK_ARGS) -d $(FAMILY) -o $@ $(PNR_JSON)
 
 check-tools:
 	@command -v $(YOSYS) >/dev/null || { echo "missing: $(YOSYS)"; exit 2; }
@@ -114,7 +118,7 @@ TEXTCFG := $(BUILD)/$(TOP).config
 BIT := $(BUILD)/$(TOP).bit
 
 $(JSON): $(SYNTH_SV) $(BOOT_HEX) Makefile | $(BUILD)
-	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -lib +/ecp5/cells_sim.v; read_verilog -lib +/ecp5/cells_bb.v; read_verilog -sv $(SYNTH_SV); hierarchy -check -top $(TOP); synth_ecp5 -noabc9 -top $(TOP) -json $@'
+	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -lib +/ecp5/cells_sim.v; read_verilog -lib +/ecp5/cells_bb.v; read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); hierarchy -check -top $(TOP); synth_ecp5 -noabc9 -top $(TOP) -json $@'
 
 $(TEXTCFG): $(JSON) $(LPF) | check-tools
 	$(NEXTPNR_ECP5) $(COMPONENT_NEXTPNR_ARGS) --json $(JSON) --lpf $(LPF) --textcfg $@
@@ -133,6 +137,10 @@ toolchain-report: check-tools
 	@$(ECPPACK) --version
 	@if command -v $(OPENFPGALOADER) >/dev/null; then $(OPENFPGALOADER) --version; else echo "openFPGALoader: not found (programming only)"; fi
 endif
+
+# BIT is selected inside the board-flow branch above, so define the aggregate
+# target only after that branch has been parsed.
+all: check-tools $(BIT)
 
 # Reversible SRAM configuration. It is the only programming command needed for
 # bring-up; power-cycling restores the board's flash-loaded image.

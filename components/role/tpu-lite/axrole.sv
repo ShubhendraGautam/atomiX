@@ -1,4 +1,4 @@
-// TPU-lite role: an int8 weight-stationary systolic GEMM accelerator.
+// TPU-lite role: an int8 folded 24-MAC GEMM accelerator.
 //
 // The role computes C = acc_base + A x W over signed 8-bit operands with
 // 32-bit accumulation:
@@ -9,14 +9,11 @@
 //   load the next weight/activation slice and ring the doorbell again);
 //   CTRL.RELU clamps negative results to zero on the way out.
 //
-// The engine is an 8 x 8 grid of MACs with the weight held stationary in
-// each cell.  Partial sums flow down the columns through pipeline
-// registers, one array row per advance; the activation element for array
-// row r passes through an r-deep skew delay line so the psum wave for
-// activation row m meets a[m][r] exactly at row r.  All eight columns of
-// row m therefore finish together at the array bottom, where the drain
-// sequencer writes (or read-modify-writes, under ACC) them into C.  A job
-// over M rows takes M + 7 array advances plus the load/drain cycles.
+// All eight output columns are computed together with three K terms per
+// phase. Three phases cover K=8 (3 + 3 + 2), so the datapath instantiates
+// 24 signed int8 multipliers--the widest arrangement below the GW5A-25's
+// 28-DSP limit. Rows are processed in sequence and the drain stage writes
+// (or read-modify-writes, under ACC) the eight completed accumulators to C.
 //
 // Window layout (common role header per DESIGN.md section 3.3 first):
 //
@@ -33,13 +30,12 @@
 //   0x1000  A buffer, 512 words: row m in words 2m and 2m+1, packed like W
 //   0x2000  C buffer, 2048 words: c[m][col] at word 8m + col
 //
-// The buffers keep the loopback role's block-RAM discipline: two
-// synchronous ports each (data-port MMIO and the engine), MMIO reads
-// complete with one aXbus wait state, MMIO writes are full-word only
-// (partial strobes error).  The weight tile and buffers are data-port
-// only; the fetch port sees just the header registers.  CTRL, M, and the
-// weight tile are writable only while idle, and software must not touch
-// the buffers while BUSY.
+// The buffers use synchronous block RAM. Host and engine accesses are
+// mutually exclusive on one physical port so the large C buffer infers
+// BSRAM on GW5A instead of flip-flops. MMIO reads complete with one aXbus
+// wait state and writes are full-word only (partial strobes error). The
+// fetch port sees just the header registers; software must not touch the
+// buffers while BUSY.
 module axrole #(
   parameter logic [31:0] BASE = 32'h4000_0000
 ) (
@@ -73,16 +69,17 @@ module axrole #(
   localparam logic [15:0] A_BASE       = 16'h1000;
   localparam logic [15:0] C_BASE       = 16'h2000;
 
-  // Engine sequencer: per array step, load one activation row (three
-  // cycles of synchronous A reads), advance the array once, then drain the
-  // completed output row bottom-of-column by column.
-  localparam logic [2:0] E_IDLE     = 3'd0;
-  localparam logic [2:0] E_LOAD0    = 3'd1;
-  localparam logic [2:0] E_LOAD1    = 3'd2;
-  localparam logic [2:0] E_LOAD2    = 3'd3;
-  localparam logic [2:0] E_ADV      = 3'd4;
-  localparam logic [2:0] E_DRAIN_RD = 3'd5;
-  localparam logic [2:0] E_DRAIN_WR = 3'd6;
+  // Three K phases service all eight result columns with 24 physical MACs.
+  // This is the widest datapath that stays below the GW5A-25's 28-DSP budget.
+  localparam logic [3:0] E_IDLE     = 4'd0;
+  localparam logic [3:0] E_LOAD0    = 4'd1;
+  localparam logic [3:0] E_LOAD1    = 4'd2;
+  localparam logic [3:0] E_LOAD2    = 4'd3;
+  localparam logic [3:0] E_MAC0     = 4'd4;
+  localparam logic [3:0] E_MAC1     = 4'd5;
+  localparam logic [3:0] E_MAC2     = 4'd6;
+  localparam logic [3:0] E_DRAIN_RD = 4'd7;
+  localparam logic [3:0] E_DRAIN_WR = 4'd8;
 
   logic [31:0] wreg_q [0:15];
   logic [31:0] abuf [0:511];
@@ -92,10 +89,11 @@ module axrole #(
   logic        busy_q, done_q;
   logic [8:0]  job_m_q;
   logic        job_relu_q, job_acc_q;
-  logic [2:0]  state_q;
-  logic [8:0]  step_q;
+  logic [3:0]  state_q;
+  logic [7:0]  row_q;
   logic [2:0]  col_q;
   logic [63:0] row_in_q;
+  logic [31:0] acc_q [0:7];
   logic [31:0] a_mmio_rdata_q, c_mmio_rdata_q;
   logic [31:0] a_eng_rdata_q, c_eng_rdata_q;
   logic        buf_pending_q;
@@ -177,62 +175,34 @@ module axrole #(
     end
   end
 
-  // Weight-stationary systolic datapath.  a_feed[r] is the activation
-  // entering array row r this advance: row 0 straight from the assembled
-  // row register, row r through r skew stages, so the psum wave for
-  // activation row m sees a[m][r] exactly when it reaches array row r.
-  wire advance = busy_q && state_q == E_ADV;
-
-  logic [7:0] dly_q [1:7][0:6];
-  always_ff @(posedge clk) begin
-    if (advance) begin
-      for (int r = 1; r < 8; r++) begin
-        dly_q[r][0] <= row_in_q[8*r +: 8];
-        for (int j = 1; j < 7; j++) dly_q[r][j] <= dly_q[r][j-1];
-      end
-    end
-  end
-
-  wire [7:0] a_feed [0:7];
-  assign a_feed[0] = row_in_q[7:0];
+  // Fold K=8 over three phases (3 + 3 + 2) while keeping all eight output
+  // columns live. Each column owns three signed int8 multipliers.
+  wire [3:0] k_base = (state_q == E_MAC0) ? 4'd0 :
+                      (state_q == E_MAC1) ? 4'd3 : 4'd6;
+  wire signed [15:0] prod [0:7][0:2];
+  wire signed [31:0] mac_sum [0:7];
   generate
-    for (genvar r = 1; r < 8; r++) begin : g_skew
-      assign a_feed[r] = dly_q[r][r-1];
+    for (genvar c = 0; c < 8; c++) begin : g_col
+      for (genvar j = 0; j < 3; j++) begin : g_k
+        wire [3:0] k = k_base + 4'(j);
+        wire signed [7:0] a_val =
+            (k < 4'd8) ? $signed(row_in_q[8*k +: 8]) : 8'sd0;
+        wire signed [7:0] w_val =
+            (k < 4'd8) ? $signed(wreg_q[2*k + c/4][8*(c%4) +: 8]) : 8'sd0;
+        ax_mul_s8 u_mul (.a(a_val), .b(w_val), .y(prod[c][j]));
+      end
+      assign mac_sum[c] =
+          {{16{prod[c][0][15]}}, prod[c][0]} +
+          {{16{prod[c][1][15]}}, prod[c][1]} +
+          {{16{prod[c][2][15]}}, prod[c][2]};
     end
   endgenerate
 
-  wire [7:0] w_val [0:7][0:7];
-  wire [15:0] prod [0:7][0:7];
-  logic [31:0] p_q [0:7][0:7];
-  wire [31:0] psum_in [0:7][0:7];
-  generate
-    for (genvar r = 0; r < 8; r++) begin : g_row
-      for (genvar c = 0; c < 8; c++) begin : g_col
-        assign w_val[r][c] = wreg_q[2*r + c/4][8*(c%4) +: 8];
-        assign prod[r][c] = $signed(a_feed[r]) * $signed(w_val[r][c]);
-        if (r == 0) assign psum_in[r][c] = 32'b0;
-        else assign psum_in[r][c] = p_q[r-1][c];
-      end
-    end
-  endgenerate
-
-  always_ff @(posedge clk) begin
-    if (advance) begin
-      for (int r = 0; r < 8; r++)
-        for (int c = 0; c < 8; c++)
-          p_q[r][c] <= psum_in[r][c] + {{16{prod[r][c][15]}}, prod[r][c]};
-    end
-  end
-
-  // Drain datapath: after the advance of step s the bottom psum registers
-  // hold output row s - 7 (modulo-256 subtraction is exact here because
-  // the drained row index never exceeds 255).
-  wire [7:0]  drain_m = step_q[7:0] - 8'd7;
-  wire [10:0] c_eng_idx = {drain_m, col_q};
+  wire [10:0] c_eng_idx = {row_q, col_q};
   wire        c_eng_write = busy_q && state_q == E_DRAIN_WR;
-  wire [31:0] drain_sum = (job_acc_q ? c_eng_rdata_q : 32'b0) + p_q[7][col_q];
+  wire [31:0] drain_sum = (job_acc_q ? c_eng_rdata_q : 32'b0) + acc_q[col_q];
   wire [31:0] c_eng_wdata = (job_relu_q && drain_sum[31]) ? 32'b0 : drain_sum;
-  wire [8:0]  a_eng_addr = {step_q[7:0], state_q == E_LOAD1};
+  wire [8:0]  a_eng_addr = {row_q, state_q == E_LOAD1};
 
   // A buffer port A: data-port MMIO.  A separate always_ff per port is the
   // true-dual-port block-RAM inference pattern.
@@ -245,15 +215,18 @@ module axrole #(
     a_eng_rdata_q <= abuf[a_eng_addr];
   end
 
-  // C buffer port A: data-port MMIO.
+  // C is physically single-port. Host access is legal only while idle, so
+  // arbitration preserves the programming contract and lets cbuf infer BSRAM
+  // instead of 65,536 flip-flops.
   always_ff @(posedge clk) begin
-    if (d_cbuf_hit && d_wstrb == 4'hf) cbuf[d_off[12:2]] <= d_wdata;
-    else if (d_cbuf_hit && d_wstrb == 4'b0) c_mmio_rdata_q <= cbuf[d_off[12:2]];
-  end
-  // C buffer port B: the drain sequencer (read phase only under ACC).
-  always_ff @(posedge clk) begin
-    if (c_eng_write) cbuf[c_eng_idx] <= c_eng_wdata;
-    else c_eng_rdata_q <= cbuf[c_eng_idx];
+    if (busy_q) begin
+      if (c_eng_write) cbuf[c_eng_idx] <= c_eng_wdata;
+      else if (state_q == E_DRAIN_RD) c_eng_rdata_q <= cbuf[c_eng_idx];
+    end else if (d_cbuf_hit && d_wstrb == 4'hf) begin
+      cbuf[d_off[12:2]] <= d_wdata;
+    end else if (d_cbuf_hit && d_wstrb == 4'b0) begin
+      c_mmio_rdata_q <= cbuf[d_off[12:2]];
+    end
   end
 
   // The weight tile is a small register file with one write port; writes
@@ -291,24 +264,6 @@ module axrole #(
     endcase
   endtask
 
-  // Advance to array step step_q + 1, or finish the job after the last
-  // drain.  Steps at or past job_m stream zero rows to flush the array.
-  task automatic advance_step();
-    if (step_q == job_m_q + 9'd6) begin
-      busy_q  <= 1'b0;
-      done_q  <= 1'b1;
-      count_q <= count_q + 32'd1;
-      state_q <= E_IDLE;
-    end else begin
-      step_q <= step_q + 9'd1;
-      if (step_q + 9'd1 < job_m_q) state_q <= E_LOAD0;
-      else begin
-        row_in_q <= 64'b0;
-        state_q  <= E_ADV;
-      end
-    end
-  endtask
-
   always_ff @(posedge clk) begin
     if (rst) begin
       ctrl_q        <= 32'b0;
@@ -320,10 +275,11 @@ module axrole #(
       job_relu_q    <= 1'b0;
       job_acc_q     <= 1'b0;
       state_q       <= E_IDLE;
-      step_q        <= 9'b0;
+      row_q         <= 8'b0;
       col_q         <= 3'b0;
       row_in_q      <= 64'b0;
       buf_pending_q <= 1'b0;
+      for (int c = 0; c < 8; c++) acc_q[c] <= 32'b0;
     end else begin
       buf_pending_q <= d_buf_read && !buf_pending_q;
       // Same conflict rule as the reference CLINT: if both ports write a
@@ -334,7 +290,7 @@ module axrole #(
       if (busy_q) begin
         unique case (state_q)
           E_IDLE: begin
-            step_q  <= 9'd0;
+            row_q   <= 8'd0;
             state_q <= E_LOAD0;
           end
           E_LOAD0: state_q <= E_LOAD1;
@@ -344,20 +300,35 @@ module axrole #(
           end
           E_LOAD2: begin
             row_in_q[63:32] <= a_eng_rdata_q;
-            state_q         <= E_ADV;
+            for (int c = 0; c < 8; c++) acc_q[c] <= 32'b0;
+            state_q <= E_MAC0;
           end
-          E_ADV: begin
-            if (step_q >= 9'd7) begin
-              col_q   <= 3'd0;
-              state_q <= job_acc_q ? E_DRAIN_RD : E_DRAIN_WR;
-            end else advance_step();
+          E_MAC0: begin
+            for (int c = 0; c < 8; c++) acc_q[c] <= mac_sum[c];
+            state_q <= E_MAC1;
+          end
+          E_MAC1: begin
+            for (int c = 0; c < 8; c++) acc_q[c] <= acc_q[c] + mac_sum[c];
+            state_q <= E_MAC2;
+          end
+          E_MAC2: begin
+            for (int c = 0; c < 8; c++) acc_q[c] <= acc_q[c] + mac_sum[c];
+            col_q   <= 3'd0;
+            state_q <= job_acc_q ? E_DRAIN_RD : E_DRAIN_WR;
           end
           E_DRAIN_RD: state_q <= E_DRAIN_WR;
           E_DRAIN_WR: begin
-            if (col_q == 3'd7) advance_step();
-            else begin
+            if (col_q != 3'd7) begin
               col_q   <= col_q + 3'd1;
               state_q <= job_acc_q ? E_DRAIN_RD : E_DRAIN_WR;
+            end else if ({1'b0, row_q} + 9'd1 == job_m_q) begin
+              busy_q  <= 1'b0;
+              done_q  <= 1'b1;
+              count_q <= count_q + 32'd1;
+              state_q <= E_IDLE;
+            end else begin
+              row_q   <= row_q + 8'd1;
+              state_q <= E_LOAD0;
             end
           end
           default: state_q <= E_IDLE;

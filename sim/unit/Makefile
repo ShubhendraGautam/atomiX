@@ -204,6 +204,7 @@ clean:
 
 GPU1_ENGINE  := $(COMPONENTS)/role/gpu1/gpu1_engine.sv
 GPU1_ROLE    := $(COMPONENTS)/role/gpu1/axrole.sv
+ROLE_MUL     := $(COMPONENTS)/role/common/ax_gw5a_mul.sv
 
 # gpu1 is one component with build-time parameters, so the suite sweeps the
 # PARAMETER SPACE rather than a list of component variants.  These points are
@@ -221,7 +222,7 @@ GPU1_POINTS := \
   6,8,1,1 \
   8,8,0,0
 
-run-suite-gpu1: tb_gpu1.cpp $(GPU1_ENGINE) $(GPU1_ROLE)
+run-suite-gpu1: tb_gpu1.cpp $(ROLE_MUL) $(GPU1_ENGINE) $(GPU1_ROLE)
 	@for pt in $(GPU1_POINTS); do \
 	  l=$${pt%%,*}; r=$${pt#*,}; b=$${r%%,*}; r=$${r#*,}; \
 	  d=$${r%%,*}; sh=$${r#*,}; \
@@ -229,7 +230,7 @@ run-suite-gpu1: tb_gpu1.cpp $(GPU1_ENGINE) $(GPU1_ROLE)
 	  $(VERILATOR) $(VFLAGS) --top-module axrole --Mdir obj_dir_gpu1_$${l}_$${b}_$${d}_$${sh} \
 	    +define+GPU1_LANES=$$l +define+GPU1_BANKS=$$b \
 	    +define+GPU1_ENABLE_DIV=$$d +define+GPU1_ENABLE_SHFL=$$sh \
-	    --exe --build -o tb_gpu1 $(GPU1_ENGINE) $(GPU1_ROLE) \
+	    --exe --build -o tb_gpu1 $(ROLE_MUL) $(GPU1_ENGINE) $(GPU1_ROLE) \
 	    $(CURDIR)/tb_gpu1.cpp >/dev/null || exit 1; \
 	  ./obj_dir_gpu1_$${l}_$${b}_$${d}_$${sh}/tb_gpu1 || exit 1; \
 	done

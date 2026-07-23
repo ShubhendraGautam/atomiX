@@ -197,7 +197,9 @@ module gpu1_engine #(
   wire d_data_hit = d_valid && d_in_range && data_offset(d_off) &&
                     d_addr[1:0] == 2'b00;
   wire d_buf_hit  = d_prog_hit || d_data_hit;
-  wire d_buf_read = d_buf_hit && d_wstrb == 4'b0;
+  // Buffer reads wait while the engine owns the single physical RAM ports.
+  // Writes retain the documented "accepted but dropped while busy" behavior.
+  wire d_buf_read = d_buf_hit && d_wstrb == 4'b0 && !busy_q;
 
   wire [PC_BITS-1:0] d_prog_idx = PC_BITS'((d_off - PROG_BASE) >> 2);
   wire [11:0] d_data_word = 12'((d_off - DATA_BASE) >> 2);
@@ -213,7 +215,9 @@ module gpu1_engine #(
     d_rdata = 32'b0;
     d_err   = 1'b0;
     if (d_valid) begin
-      if (d_buf_hit && d_wstrb == 4'hf) begin
+      if (d_buf_hit && busy_q && d_wstrb == 4'b0) begin
+        d_ready = 1'b0;
+      end else if (d_buf_hit && d_wstrb == 4'hf) begin
         d_ready = 1'b1;              // writes while BUSY are dropped, not faulted
       end else if (d_buf_read) begin
         d_ready = buf_pending_q;     // registered block-RAM read: one wait state
@@ -252,16 +256,29 @@ module gpu1_engine #(
   wire [NLANES-1:0] exec_mask = tail_active & div_mask_q;
 
   // ---- Per-lane ALU ----------------------------------------------------------
+  wire [31:0] mul_result [0:NLANES-1];
+  generate
+    for (genvar l = 0; l < NLANES; l++) begin : g_mul
+      wire [31:0] mul_rhs = (op == OP_MULI) ? imm : regs[l][rb];
+      ax_mul32_low u_mul (
+        .a(regs[l][ra]),
+        .b(mul_rhs),
+        .y(mul_result[l])
+      );
+    end
+  endgenerate
+
   function automatic logic [31:0] alu_result(
       input logic [5:0] o, input logic [31:0] a, input logic [31:0] b,
-      input logic [31:0] im, input logic [15:0] tid);
+      input logic [31:0] im, input logic [15:0] tid,
+      input logic [31:0] mul);
     unique case (o)
       OP_TID:  alu_result = {16'b0, tid};
       OP_LI:   alu_result = im;
       OP_MOV:  alu_result = a;
       OP_ADD:  alu_result = a + b;
       OP_SUB:  alu_result = a - b;
-      OP_MUL:  alu_result = a * b;
+      OP_MUL:  alu_result = mul;
       OP_AND:  alu_result = a & b;
       OP_OR:   alu_result = a | b;
       OP_XOR:  alu_result = a ^ b;
@@ -271,7 +288,7 @@ module gpu1_engine #(
       OP_MIN:  alu_result = ($signed(a) < $signed(b)) ? a : b;
       OP_MAX:  alu_result = ($signed(a) > $signed(b)) ? a : b;
       OP_ADDI: alu_result = a + im;
-      OP_MULI: alu_result = a * im;
+      OP_MULI: alu_result = mul;
       OP_SEQ:  alu_result = {31'b0, a == b};
       OP_SNE:  alu_result = {31'b0, a != b};
       OP_SLT:  alu_result = {31'b0, $signed(a) < $signed(b)};
@@ -290,33 +307,31 @@ module gpu1_engine #(
   endfunction
 
   // ---- Global memory: NBANKS independent block RAMs ---------------------------
-  // Each bank has a port A for MMIO (host upload/readback) and a port B for the
-  // engine's crossbar.  The two never contend: MMIO buffer writes are ignored
-  // while BUSY, and the engine only runs while BUSY.
+  // Host and engine accesses share one physical port per bank. The engine owns
+  // the ports while BUSY; host reads wait and host writes are accepted/dropped.
+  // Describing both modes in one always_ff is essential for GW5A BSRAM
+  // inference--two separate processes flatten the banks into flip-flops.
   logic [IDX_BITS-1:0] bank_addr  [0:NBANKS-1];
   logic                bank_we    [0:NBANKS-1];
   logic [31:0]         bank_wdata [0:NBANKS-1];
   logic [31:0]         bank_rdata [0:NBANKS-1];
-  logic [31:0]         bank_mmio_rdata [0:NBANKS-1];
 
   generate
     for (genvar b = 0; b < NBANKS; b++) begin : g_bank
       logic [31:0] mem [0:BANK_WORDS-1];
-      logic [31:0] mmio_rdata_q;
       wire mmio_sel = d_data_hit && (d_data_bank == BANK_BITS'(b));
+      wire host_port = !busy_q && mmio_sel;
+      wire port_we = host_port ? (d_wstrb == 4'hf) : bank_we[b];
+      wire [IDX_BITS-1:0] port_addr = host_port ? d_data_idx : bank_addr[b];
+      wire [31:0] port_wdata = host_port ? d_wdata : bank_wdata[b];
       always_ff @(posedge clk) begin
-        if (mmio_sel && d_wstrb == 4'hf && !busy_q) mem[d_data_idx] <= d_wdata;
-        else if (mmio_sel && d_wstrb == 4'b0)       mmio_rdata_q <= mem[d_data_idx];
+        if (port_we) mem[port_addr] <= port_wdata;
+        else         bank_rdata[b] <= mem[port_addr];
       end
-      always_ff @(posedge clk) begin
-        if (bank_we[b]) mem[bank_addr[b]] <= bank_wdata[b];
-        else            bank_rdata[b]     <= mem[bank_addr[b]];
-      end
-      assign bank_mmio_rdata[b] = mmio_rdata_q;
     end
   endgenerate
   // The MMIO read data lands in the bank the *previous* cycle's address chose.
-  assign data_mmio_rdata = bank_mmio_rdata[d_data_bank_q];
+  assign data_mmio_rdata = bank_rdata[d_data_bank_q];
 
   // Program memory: port A MMIO, port B engine fetch.
   always_ff @(posedge clk) begin
@@ -531,7 +546,7 @@ module gpu1_engine #(
                 for (int l = 0; l < NLANES; l++)
                   if (op_writes_rd && exec_mask[l])
                     regs[l][rd] <= alu_result(op, regs[l][ra], regs[l][rb], imm,
-                                              tid_base_q + 16'(l));
+                                              tid_base_q + 16'(l), mul_result[l]);
               end
             endcase
 
@@ -576,7 +591,13 @@ module gpu1_engine #(
           end
 
           E_DIV: begin
-            if (div_step_q == 6'd0) begin
+            // Keep the entire divider cone behind the feature parameter. The
+            // decoder cannot enter this state when division is disabled, but
+            // the explicit constant guard also lets synthesis delete its
+            // per-lane variable selects, subtractors, and state registers.
+            if (!ENABLE_DIV) begin
+              state_q <= E_IDLE;
+            end else if (div_step_q == 6'd0) begin
               // Seed: take magnitudes, remember result signs.
               for (int l = 0; l < NLANES; l++) begin
                 logic neg_n, neg_d;

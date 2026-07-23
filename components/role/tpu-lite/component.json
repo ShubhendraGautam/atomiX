@@ -2,8 +2,11 @@
   "schema": 1,
   "id": "role.tpu-lite",
   "kind": "role",
-  "title": "TPU-lite int8 weight-stationary systolic GEMM role",
-  "sources": ["components/role/tpu-lite/axrole.sv"],
+  "title": "TPU-lite int8 folded 24-MAC GEMM role",
+  "sources": [
+    "components/role/common/ax_gw5a_mul.sv",
+    "components/role/tpu-lite/axrole.sv"
+  ],
   "stock_soc_module": "axrole",
-  "capabilities": ["role-window", "doorbell", "status-poll", "int8-gemm", "systolic-8x8", "weight-stationary", "accumulate", "relu"]
+  "capabilities": ["role-window", "doorbell", "status-poll", "int8-gemm", "folded-24-mac", "tiled-k8", "accumulate", "relu"]
 }

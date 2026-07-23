@@ -23,10 +23,10 @@ profile.
 |---|---|---|---|---|---|
 | **CPU** — `configs/tangnano20k.json` | ~11.3k | ~2.8k | 32 DPB | 0 | ✅ yes (32 KB RAM in BSRAM) |
 | **GPU (peaked)** — `configs/tangnano20k-gpu.json` (minimal host + 6-lane) | ~20.2k | ~2k | 32 DPB | 6× MULT36X36 | ✅ yes, **tight** (97% LUT4) |
-| **TPU** — `configs/tangnano20k-tpu.json` | — | ~69.5k | 32 DPB | 64× MULT9X9 | ❌ FF overflow (~4.5×) |
+| **TPU** — `configs/tangnano20k-tpu.json` | 14.3k | 3.2k | 32 DPB + 8 DPX9B | 24× MULT9X9 | ✅ yes |
 | 5-stage CPU + GPU 4-lane (`role.gpu-compute-lite`) | ~18.9k | ~6.2k | 32 DPB | 4× MULT36X36 | ✅ yes, comfortable |
 | 5-stage CPU + GPU 8-lane (`role.gpu-compute`) | ~29.3k | ~5.3k | 48 DPB | 8× MULT36X36 | ❌ logic overflow (~1.4×) |
-| CPU + GPU + TPU (all three) | — | — | — | — | ❌ impossible — one accelerator overflows, one role window |
+| CPU + GPU + TPU (all three) | — | — | — | — | ❌ unsupported — one role window |
 
 **The GPU fits** because the engine is parameterized by `NLANES` (gpu_engine.sv):
 `role.gpu-compute` is the 8-lane reference, `role.gpu-compute-lite` (4) and
@@ -39,7 +39,7 @@ Functional equivalence and speed are covered by `make -C sw/baremetal check-gpu`
 and `check-gpu-perf` (point `COMPONENT_CONFIG` at a composed profile to measure a
 specific core/lane pairing).
 
-## Why each fails — they are different problems
+## Why the profiles land where they do
 
 **CPU (role.none) fits.**  The core, SoC, UART, CLINT, SPI, and boot ROM, with a
 32 KB main memory that maps to 32 `DPB` block-RAM cells (the registered-read
@@ -50,14 +50,11 @@ an 8-lane SIMT machine with a full 32-bit, multiply-capable ISA — ~29k LUT4 in
 system.  It is now parameterized by `NLANES` (gpu_engine.sv), so the fix is to
 build fewer lanes: the 4-lane and 6-lane variants above fit.
 
-**TPU is a fixable block-RAM gap, not raw size.**  The `role.tpu-lite` C
-accumulator (`cbuf`, 2048×32) falls back to 65,536 flip-flops instead of block
-RAM.  It is a two-write-port read-modify-write accumulator; unlike the GPU's
-`gmem` (which maps to 16 `DPB`), it does not infer BSRAM.  Making `cbuf` block-
-RAM-friendly drops the flip-flop count ~20×; after that the fit hinges on the
-64 `MULT9X9` multipliers versus ~48 DSP blocks (so the 8×8 array may also need
-to shrink).  This is the same class of issue that the main memory had before the
-`SYNC_READ` fix.
+**TPU now fits after folding and RAM inference work.** `role.tpu-lite` computes
+all eight output columns with 24 physical int8 MACs over three K phases
+(3+3+2). Its 2,048-word C accumulator uses one mutually exclusive host/engine
+port, so it infers BSRAM instead of 65,536 flip-flops. The result is 14.3k LUT
+primitives, 3.2k FFs, and 24 `MULT9X9` cells with the same software interface.
 
 ## Accelerator-first: a minimal host to buy more GPU
 
@@ -92,8 +89,8 @@ which fits but leaves little headroom.
 
 - **CPU + GPU** — ✅ done: `configs/tangnano20k-gpu.json` (minimal host + 6-lane),
   or `role.gpu-compute-lite` (4-lane) for a comfortable margin.
-- **CPU + TPU on the 20K** — fix `cbuf` to infer BSRAM, then shrink the systolic
-  array if the DSP count overflows.  Still open.
+- **CPU + TPU on the 20K** — ✅ done: `configs/tangnano20k-tpu.json`, using the
+  folded 24-MAC engine and BSRAM accumulator.
 - **All three** — needs a larger part (e.g. ULX3S-85F or a bigger Gowin) plus a
   new composite role that hosts both engines behind the single role window.
 

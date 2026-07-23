@@ -1,0 +1,17 @@
+// Sipeed Tang Primer 25K + Dock physical constraints.
+// Pins are from Sipeed's official UART example for the GW5A-LV25MG121NC1/I0.
+
+// The 50 MHz oscillator uses the CPU dual-purpose pin; gowin_pack receives
+// --cpu_as_gpio from the board manifest.
+IO_LOC "clk_50mhz" E2;
+IO_PORT "clk_50mhz" IO_TYPE=LVCMOS33 PULL_MODE=DOWN BANK_VCCIO=3.3;
+
+// S1 is active-high.
+IO_LOC "button_s1" H11;
+IO_PORT "button_s1" IO_TYPE=LVCMOS33 PULL_MODE=DOWN BANK_VCCIO=3.3;
+
+// Onboard debugger UART: uart_tx is FPGA -> host.
+IO_LOC "uart_rx" B3;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
+IO_LOC "uart_tx" C3;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;

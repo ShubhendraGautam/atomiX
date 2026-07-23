@@ -110,7 +110,7 @@ make -C sw/baremetal check-spi check-sd            # RTL-only (SPI-SD path)
 ### 3.3 Accelerator roles (RTL-only — the ISS does not model the role window)
 ```bash
 make -C sw/baremetal check-role     # role.loopback contract proof
-make -C sw/baremetal check-tpu      # TPU-lite int8 systolic GEMM vs on-core reference
+make -C sw/baremetal check-tpu      # TPU-lite folded int8 GEMM vs on-core reference
 make -C sw/baremetal check-gpu      # GPU-compute SIMT engine vs on-core reference (8-lane)
 make -C sw/baremetal check-gpu-perf # GPU throughput regression vs on-core (8-lane)
 make -C sw/baremetal check-gpu1     # gpu1 banked SIMT engine vs on-core ISA oracle
@@ -186,8 +186,9 @@ implementation and must not grow implementation-specific knobs.
 make -C sw/baremetal images
 python3 tools/bench.py cpu     # IPC per core and per ax2 parameter setting
 python3 tools/bench.py gpu     # kernel cycles per role parameter setting
+python3 tools/bench.py tpu     # int8 GEMM accelerator versus the host CPU
 python3 tools/bench.py render  # render workload vs cache policy/size and divider
-python3 tools/bench.py         # all three
+python3 tools/bench.py         # all four
 ```
 The sweep needs a profile per configuration, but those are measurement fixtures
 rather than supported ones, so `bench.py` generates them into a scratch
@@ -251,16 +252,18 @@ make -C formal check          # after core/RVFI changes
 ## 4. Deploy (FPGA synthesis → physical board)
 
 Physical deployment is the **final evidence gate**.  Simulation passing is not
-board proof.  The board component selects the flow; two boards are supported:
+board proof.  The board component selects the flow; three boards are supported:
 
 | Board | Profile | Flow | Main memory |
 |---|---|---|---|
 | ULX3S-85F (Lattice ECP5) | `configs/ulx3s-85f.json` | ECP5 | external SDRAM + fabric ROM |
 | Tang Nano 20K (Gowin GW2A-18C) | `configs/tangnano20k.json` | Gowin | 32 KB on-chip block RAM (BSRAM) |
+| Tang Primer 25K Dock (Gowin GW5A-25A) | `configs/tangprimer25k.json` | Gowin | 32 KB on-chip block RAM (BSRAM) |
 
 What each board can actually run, per configuration, backed by real synth/sim
-runs: [hardware-capabilities.md](hardware-capabilities.md).  Full ULX3S
-procedure and safety notes: [ulx3s-bringup.md](ulx3s-bringup.md).
+runs: [hardware-capabilities.md](hardware-capabilities.md). Board procedures
+and safety notes: [tangprimer25k-bringup.md](tangprimer25k-bringup.md)
+and [ulx3s-bringup.md](ulx3s-bringup.md).
 
 ### 4.1 Tool check
 ```bash
@@ -272,30 +275,39 @@ make -C rtl/fpga toolchain-report COMPONENT_CONFIG=$PWD/configs/tangnano20k.json
 ### 4.2 Synthesis-only gate (no P&R tools needed)
 ```bash
 make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangnano20k.json   # yosys netlist only
+make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangprimer25k.json # GW5A netlist only
 ```
 `synth` is the "does the design map for this board" check: it runs Yosys alone,
-so it passes with only `yosys` installed.  For the Tang Nano it must map the
-32 KB RAM to block RAM (`DPB` cells), not flip-flops — the memory uses
+so it passes with only `yosys` installed. For both Tang profiles it must map
+the 32 KB RAM to block RAM (`DPB` cells), not flip-flops — the memory uses
 registered reads (`axram` `SYNC_READ=1`) precisely so it infers BSRAM.
 
 ### 4.3 Synthesis, place-and-route, bitstream
 ```bash
 make fpga CONFIG=configs/ulx3s-85f.json     # top-level wrapper (ECP5), or:
 make fpga CONFIG=configs/tangnano20k.json   # Gowin/Tang Nano
+make fpga CONFIG=configs/tangprimer25k.json # Gowin/Tang Primer 25K
 make -C rtl/fpga config COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # print resolved selection
 ```
 The P&R tool (`nextpnr-ecp5` / `nextpnr-himbaechel`) prints utilisation and
-timing at the end; the board clock constraint (25 MHz ULX3S, 27 MHz Tang Nano)
-must pass.  Do not program a bitstream from a failed or unconstrained P&R run.
+timing at the end; the board clock target (25 MHz ULX3S, 27 MHz Tang Nano,
+50 MHz Tang Primer) must pass. Do not program a bitstream from a failed or
+unconstrained P&R run.
 
 ### 4.4 Program the board
 ```bash
 make -C rtl/fpga program COMPONENT_CONFIG=$PWD/configs/tangnano20k.json  # reversible SRAM config
 ```
-`program` targets the board named in the manifest (`ulx3s` / `tangnano20k`).
+`program` targets the board named in the manifest (`ulx3s`, `tangnano20k`, or
+`tangprimer25k`).
 Then open the console (`picocom -b 115200 /dev/ttyUSB0`) and confirm the UART
 transcript; for the Tang Nano the BL616 exposes the USB serial and LED5 shows a
 ~0.5 s heartbeat.
+
+For Tang Primer use the same command with `configs/tangprimer25k.json`; its
+programmer name is `tangprimer25k`, the onboard debugger UART is 115200 8-N-1,
+and S1 resets the SoC. The Dock has no ordinary FPGA user LED, so UART is the
+verdict.
 
 ### 4.5 Persistent flash — only after a passing board proof
 ```bash

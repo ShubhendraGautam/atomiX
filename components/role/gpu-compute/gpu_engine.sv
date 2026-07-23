@@ -173,17 +173,32 @@ module gpu_engine #(
   wire [2:0]  rb  = insn_q[19:17];
   wire [31:0] imm = {{15{insn_q[16]}}, insn_q[16:0]};
 
+  // Per-lane multipliers. Generic RTL is retained for simulation and other
+  // FPGA families; GW5A board builds select explicit DSP primitives.
+  wire [31:0] mul_result [0:NLANES-1];
+  generate
+    for (genvar l = 0; l < NLANES; l++) begin : g_mul
+      wire [31:0] mul_rhs = (op == OP_MULI) ? imm : regs[l][rb];
+      ax_mul32_low u_mul (
+        .a(regs[l][ra]),
+        .b(mul_rhs),
+        .y(mul_result[l])
+      );
+    end
+  endgenerate
+
   // Per-lane ALU result for the ALU-class execute step.
   function automatic logic [31:0] alu_result(
       input logic [5:0] o, input logic [31:0] a, input logic [31:0] b,
-      input logic [31:0] im, input logic [15:0] tid);
+      input logic [31:0] im, input logic [15:0] tid,
+      input logic [31:0] mul);
     unique case (o)
       OP_TID:  alu_result = {16'b0, tid};
       OP_LI:   alu_result = im;
       OP_MOV:  alu_result = a;
       OP_ADD:  alu_result = a + b;
       OP_SUB:  alu_result = a - b;
-      OP_MUL:  alu_result = a * b;
+      OP_MUL:  alu_result = mul;
       OP_AND:  alu_result = a & b;
       OP_OR:   alu_result = a | b;
       OP_XOR:  alu_result = a ^ b;
@@ -193,7 +208,7 @@ module gpu_engine #(
       OP_MIN:  alu_result = ($signed(a) < $signed(b)) ? a : b;
       OP_MAX:  alu_result = ($signed(a) > $signed(b)) ? a : b;
       OP_ADDI: alu_result = a + im;
-      OP_MULI: alu_result = a * im;
+      OP_MULI: alu_result = mul;
       default: alu_result = 32'b0;
     endcase
   endfunction
@@ -321,7 +336,7 @@ module gpu_engine #(
             for (int l = 0; l < NLANES; l++)
               if (op_writes_rd)
                 regs[l][rd] <= alu_result(op, regs[l][ra], regs[l][rb], imm,
-                                          tid_base_q + 16'(l));
+                                          tid_base_q + 16'(l), mul_result[l]);
             pc_q    <= pc_q + 7'd1;
             state_q <= E_FETCH;
           end

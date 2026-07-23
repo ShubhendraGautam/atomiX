@@ -14,6 +14,7 @@ BUILD := build
 COMPONENT_CONFIG ?= ../../configs/ulx3s-85f.json
 COMPONENT_CONFIG_KEY := $(subst /,_,$(basename $(abspath $(COMPONENT_CONFIG))))
 COMPONENT_MK := $(BUILD)/component$(COMPONENT_CONFIG_KEY).mk
+CONFIG_BUILD := $(BUILD)/$(COMPONENT_CONFIG_KEY)
 COMPONENT_MANIFESTS := $(wildcard ../../components/*/*/component.json)
 
 $(COMPONENT_MK): $(COMPONENT_CONFIG) ../../tools/configure.py $(COMPONENT_MANIFESTS)
@@ -28,8 +29,8 @@ $(COMPONENT_MK): $(COMPONENT_SELECTED_MANIFESTS)
 COMPONENT_FPGA_FLOW ?= ecp5
 TOP ?= $(COMPONENT_FPGA_TOP)
 BOOT_HEX := ../../sw/bootrom/build/bootrom.hex
-JSON := $(BUILD)/$(TOP).json
-SYNTH_SV := $(BUILD)/atomiX_synth.sv
+JSON := $(CONFIG_BUILD)/$(TOP).json
+SYNTH_SV := $(CONFIG_BUILD)/atomiX_synth.sv
 # The simulation flow consumes Verilator's +define+NAME=VALUE spelling. Yosys
 # needs the equivalent -DNAME=VALUE form; without this conversion profile
 # parameters silently fall back to the RTL defaults during FPGA synthesis.
@@ -64,10 +65,13 @@ config: $(COMPONENT_MK)
 $(BOOT_HEX):
 	$(MAKE) -C ../../sw/bootrom images
 
-$(SYNTH_SV): prepare_synth.py $(COMPONENT_MK) $(SOURCES) | $(BUILD)
+$(SYNTH_SV): prepare_synth.py $(COMPONENT_MK) $(SOURCES) | $(CONFIG_BUILD)
 	python3 prepare_synth.py $@ $(SOURCES)
 
 $(BUILD):
+	mkdir -p $@
+
+$(CONFIG_BUILD):
 	mkdir -p $@
 
 ifeq ($(COMPONENT_FPGA_FLOW),gowin)
@@ -77,8 +81,8 @@ FAMILY := $(COMPONENT_FPGA_FAMILY)
 SYNTH_FAMILY := $(or $(COMPONENT_FPGA_SYNTH_FAMILY),gw1n)
 CST ?= $(COMPONENT_FPGA_CST)
 PROG_BOARD := $(COMPONENT_FPGA_PROG_BOARD)
-PNR_JSON := $(BUILD)/$(TOP)_pnr.json
-BIT := $(BUILD)/$(TOP).fs
+PNR_JSON := $(CONFIG_BUILD)/$(TOP)_pnr.json
+BIT := $(CONFIG_BUILD)/$(TOP).fs
 
 # BRAM-only Tang bring-up bakes a bare-metal program into on-chip block RAM at
 # synthesis time; build it first so the RAM_INIT_FILE $readmemh resolves.
@@ -91,8 +95,14 @@ $(PROGRAM_HEX):
 RAM_BYTES ?= $(COMPONENT_RAM_BYTES)
 RAM_BYTES_CHPARAM := $(if $(RAM_BYTES),chparam -set RAM_BYTES $(RAM_BYTES) $(TOP);,)
 
-$(JSON): $(SYNTH_SV) $(PROGRAM_HEX) Makefile | $(BUILD)
-	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); $(RAM_BYTES_CHPARAM) synth_gowin -noabc9 -family $(SYNTH_FAMILY) $(COMPONENT_GOWIN_SYNTH_ARGS) -top $(TOP) -json $@'
+# Yosys 0.67's final Gowin `autoname` pass scales pathologically on the larger
+# CPU/GPU/TPU netlists. Cell names are not part of nextpnr's input contract, so
+# run the documented flow through map_cells, reproduce its remaining commands,
+# and omit only autoname. This yields the same checked JSON netlist in seconds
+# instead of hanging for minutes.
+GOWIN_SETUNDEF_CMD := $(if $(filter -setundef,$(COMPONENT_GOWIN_SYNTH_ARGS)),setundef -undriven -params -zero;,)
+$(JSON): $(SYNTH_SV) $(PROGRAM_HEX) Makefile | $(CONFIG_BUILD)
+	$(YOSYS) -q -l $(CONFIG_BUILD)/synth.log -p 'read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); $(RAM_BYTES_CHPARAM) synth_gowin -noabc9 -family $(SYNTH_FAMILY) $(COMPONENT_GOWIN_SYNTH_ARGS) -top $(TOP) -run begin:map_cells; techmap -map +/gowin/cells_map.v; opt_lut_ins -tech gowin; $(GOWIN_SETUNDEF_CMD) hilomap -singleton -hicell VCC V -locell GND G; clean; hierarchy -check; stat; check -noinit; blackbox =A:whitebox; write_json $@'
 
 $(PNR_JSON): $(JSON) $(CST) | check-tools
 	$(NEXTPNR_HIMBAECHEL) $(COMPONENT_NEXTPNR_ARGS) --device $(DEVICE) --vopt family=$(FAMILY) --vopt cst=$(CST) --json $(JSON) --write $@
@@ -114,11 +124,11 @@ else
 # ---- ECP5 open flow (ULX3S): synth_ecp5 -> nextpnr-ecp5 -> ecppack.
 LPF ?= $(COMPONENT_FPGA_LPF)
 PROG_BOARD := ulx3s
-TEXTCFG := $(BUILD)/$(TOP).config
-BIT := $(BUILD)/$(TOP).bit
+TEXTCFG := $(CONFIG_BUILD)/$(TOP).config
+BIT := $(CONFIG_BUILD)/$(TOP).bit
 
-$(JSON): $(SYNTH_SV) $(BOOT_HEX) Makefile | $(BUILD)
-	$(YOSYS) -q -l $(BUILD)/synth.log -p 'read_verilog -lib +/ecp5/cells_sim.v; read_verilog -lib +/ecp5/cells_bb.v; read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); hierarchy -check -top $(TOP); synth_ecp5 -noabc9 -top $(TOP) -json $@'
+$(JSON): $(SYNTH_SV) $(BOOT_HEX) Makefile | $(CONFIG_BUILD)
+	$(YOSYS) -q -l $(CONFIG_BUILD)/synth.log -p 'read_verilog -lib +/ecp5/cells_sim.v; read_verilog -lib +/ecp5/cells_bb.v; read_verilog -sv $(SYNTH_DEFINES) $(SYNTH_SV); hierarchy -check -top $(TOP); synth_ecp5 -noabc9 -top $(TOP) -json $@'
 
 $(TEXTCFG): $(JSON) $(LPF) | check-tools
 	$(NEXTPNR_ECP5) $(COMPONENT_NEXTPNR_ARGS) --json $(JSON) --lpf $(LPF) --textcfg $@

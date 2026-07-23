@@ -125,9 +125,10 @@ AXFS v1 and the kernel block driver provide a mounted SD filesystem path:
 make -C sw/kernel check-storage
 ```
 
-This builds a deterministic SD image containing `motd` and `readme`, mounts it
-through the kernel SPI driver, and runs the normal shell plus fork/wait plus
-`exec` script on cached delayed RTL.
+This builds a deterministic SD image containing `motd`, `readme`, and the
+`hello.elf` user program, mounts it through the kernel SPI driver, and runs the
+normal shell plus fork/wait plus filesystem-backed `exec` script on cached
+delayed RTL.
 
 When no card answers, the same filesystem component mounts a built-in read-only
 root carrying those two files, so a diskless profile still has a namespace to
@@ -137,11 +138,14 @@ the `read` syscall share one lookup and one read path (docs/abi.md).
 
 ## Writable AXFS v1
 
-AXFS deliberately remains small: up to eight named files, one 512-byte sector
-per file. `write NAME TEXT` creates or replaces a file by issuing CMD24 for
-the data sector and then CMD24 for the directory sector. It has no multi-sector
-files, reclamation, checksums, or crash-safe journalling; those are explicit
-future filesystem work.
+AXFS deliberately remains small: up to eight named files. Image builders may
+package a read-only file as a contiguous multi-sector extent, which is how the
+kernel loads `hello.elf` without embedding its padded ELF image in the boot
+kernel. Runtime `write NAME TEXT` remains limited to one 512-byte sector and
+creates or replaces a file by issuing CMD24 for the data sector and then CMD24
+for the directory sector. AXFS has no extent allocation for runtime writes,
+reclamation, checksums, or crash-safe journalling; those are explicit future
+filesystem work.
 
 ```bash
 make -C sw/kernel check-storage-write
@@ -161,6 +165,7 @@ make -C sw/kernel check-sdboot
 ```
 
 This is a true SD-to-SDRAM boot through `axsdram`; the test requires the
-`aXboot` banner, shell, and fork/wait transcript. It currently takes roughly
-2.5 million simulation cycles because the deliberately simple SPI controller
-transfers one byte at a time and SDRAM accesses are conservative.
+`aXboot` banner, shell, fork/wait, and filesystem-backed ELF-exec transcripts.
+It takes several million simulation cycles because the deliberately simple SPI
+controller transfers one byte at a time, including the multi-sector ELF, and
+SDRAM accesses are conservative.

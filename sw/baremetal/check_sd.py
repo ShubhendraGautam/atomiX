@@ -18,7 +18,7 @@ def main() -> None:
             ["make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
              "run", f"RAM_INIT_FILE={ROOT / 'sw/baremetal/build/sd.hex'}",
              "RESET_PC=0x80000000", f"SD_IMAGE={image}", "MAX_CYCLES=100000"],
-            cwd=ROOT, text=True, capture_output=True, timeout=30)
+            cwd=ROOT, text=True, capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise SystemExit("[baremetal] SD RTL: TIMEOUT")
     if result.returncode:

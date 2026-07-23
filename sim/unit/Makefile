@@ -19,6 +19,7 @@ CLINT_REFERENCE := $(COMPONENTS)/clint/qemu_virt
 UART_REFERENCE := $(COMPONENTS)/uart/mmio16550
 SPI_REFERENCE := $(COMPONENTS)/spi/polling_mode0
 FINISHER_REFERENCE := $(COMPONENTS)/finisher/sifive-test
+ROLE_REFERENCE := $(COMPONENTS)/role/none
 SOC_REFERENCE := $(COMPONENTS)/soc/reference
 HARNESS_SDRAM := $(COMPONENTS)/harness/verilator-sdram
 BOARD_ULX3S := $(COMPONENTS)/board/ulx3s_85f
@@ -46,6 +47,7 @@ SOC_SVS := $(CORE_SOURCES) \
   $(MEMORY_SOURCES) $(ROM_REFERENCE)/axrom.sv \
   $(CLINT_REFERENCE)/clint.sv $(UART_REFERENCE)/uart.sv \
   $(SPI_REFERENCE)/axspi.sv $(FINISHER_REFERENCE)/test_finisher.sv \
+  $(ROLE_REFERENCE)/axrole.sv \
   $(SOC_REFERENCE)/soc_top.sv
 
 test: $(MODULES:%=run-%) run-muldiv-fastmul run-muldiv-radix4 run-axcore run-interrupt run-irq-collide run-privilege run-sv32 run-axdram-model run-axcache run-axsdram run-axuart-phy run-axspi run-soc run-soc-timer run-suite-gpu1 run-suite-ax2

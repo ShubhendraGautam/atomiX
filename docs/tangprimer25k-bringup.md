@@ -34,7 +34,9 @@ make fpga CONFIG=configs/tangprimer25k.json
 ```
 
 The build must finish without a failed 50 MHz timing check. It produces
-`rtl/fpga/build/tangprimer25k_top.fs`. The synthesis report should contain 32
+a configuration-keyed `tangprimer25k_top.fs` below `rtl/fpga/build/`. The
+per-profile directory prevents CPU, GPU, and TPU netlists from overwriting or
+silently reusing one another. The synthesis report beside it should contain 32
 `DPB` cells for main memory; a large flip-flop array means BRAM inference has
 regressed.
 

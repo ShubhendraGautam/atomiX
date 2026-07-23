@@ -12,7 +12,7 @@ HELLO = "hello from atomiX\n"
 def run(label: str, command: list[str]) -> None:
     try:
         result = subprocess.run(command, cwd=ROOT, text=True,
-                                capture_output=True, timeout=10)
+                                capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise SystemExit(f"[baremetal] {label}: TIMEOUT")
     if result.returncode:

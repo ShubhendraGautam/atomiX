@@ -24,9 +24,9 @@ SHELL_OUTPUT = (
     "atomiX\n"
     "aXos> exit\n"
 )
-SHELL_OUTPUT_SD = SHELL_OUTPUT.replace(
-    "aXos RAM disk: help, ls, cat, echo, exit.\n",
-    "aXos SD disk: help, ls, cat, echo, exit.\n")
+SHELL_OUTPUT_STORAGE = SHELL_OUTPUT.replace(
+    "motd\nreadme\n", "motd\nreadme\nhello.elf\n")
+SHELL_OUTPUT_SDBOOT = SHELL_OUTPUT_STORAGE
 BOOT_PREFIX = "aXboot\n"
 FORK_PREFIX = "aXos: shell online\naXos> fork\nfork demo: "
 # The loaded program prints exactly this and then exits 0.  Anything else -- a
@@ -41,6 +41,7 @@ STORAGE_WRITE_OUTPUT = (
     "phase6-persistentaXos> ls\n"
     "motd\n"
     "readme\n"
+    "hello.elf\n"
     "note\n"
     "aXos> exit\n"
 )
@@ -139,8 +140,9 @@ def main() -> None:
         shell_command = command + ([f"UART_INPUT_FILE={SHELL_INPUT}"] if label.startswith("RTL")
                                    else ["--uart-input-file", str(SHELL_INPUT)] if label == "ISS"
                                    else [])
-        expected_shell = SHELL_OUTPUT_SD if sd_image else SHELL_OUTPUT
-        if label == "RTL SD boot": expected_shell = BOOT_PREFIX + expected_shell
+        expected_shell = SHELL_OUTPUT_STORAGE if sd_image else SHELL_OUTPUT
+        if label == "RTL SD boot":
+            expected_shell = BOOT_PREFIX + SHELL_OUTPUT_SDBOOT
         run(f"{label} shell", shell_command, SHELL_INPUT, expected_shell)
         fork_command = command + ([f"UART_INPUT_FILE={FORK_INPUT}"] if label.startswith("RTL")
                                   else ["--uart-input-file", str(FORK_INPUT)] if label == "ISS"
@@ -157,7 +159,10 @@ def main() -> None:
         # -- see docs/hardware-capabilities.md, where the same cache costs the
         # render workload a 2.9x slowdown.  Sizing the cache is a profile
         # decision; this budget only has to not hide it.
-        exec_cycles = "15000000" if "external memory" in label else "1500000"
+        # SD boot also has to fetch the multi-sector user ELF over the
+        # bit-serial SPI model before the loader can inspect it.
+        slow_exec = "external memory" in label or label == "RTL SD boot"
+        exec_cycles = "15000000" if slow_exec else "1500000"
         exec_command = command + (
             [f"UART_INPUT_FILE={EXEC_INPUT}", f"MAX_CYCLES={exec_cycles}"]
             if label.startswith("RTL")

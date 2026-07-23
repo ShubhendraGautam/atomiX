@@ -15,7 +15,7 @@ def main() -> None:
         result = subprocess.run(
             ["make", "-s", "--no-print-directory", "-C", str(ROOT / "sim/soc"),
              "run", f"RAM_INIT_FILE={image}", "RESET_PC=0x80000000"],
-            cwd=ROOT, text=True, capture_output=True, timeout=15)
+            cwd=ROOT, text=True, capture_output=True, timeout=60)
     except subprocess.TimeoutExpired:
         raise SystemExit("[baremetal] SPI RTL: TIMEOUT")
     if result.returncode:

@@ -5,6 +5,7 @@ module axcache_test_top (
   input  logic clk,
   input  logic rst,
   input  logic flush,
+  output logic flush_busy,
   input  logic c_valid,
   input  logic [31:0] c_addr,
   input  logic [31:0] c_wdata,
@@ -20,7 +21,7 @@ module axcache_test_top (
   logic mem_err;
 
   axcache #(.CACHE_BASE(32'h8000_0000), .CACHE_BYTES(64), .LINES(4), .WORDS_PER_LINE(4)) u_cache (
-    .clk(clk), .rst(rst), .flush(flush),
+    .clk(clk), .rst(rst), .flush(flush), .flush_busy(flush_busy),
     .c_valid(c_valid), .c_addr(c_addr), .c_wdata(c_wdata), .c_wstrb(c_wstrb),
     .c_ready(c_ready), .c_rdata(c_rdata), .c_err(c_err),
     .m_valid(mem_valid), .m_addr(mem_addr), .m_wdata(mem_wdata), .m_wstrb(mem_wstrb),

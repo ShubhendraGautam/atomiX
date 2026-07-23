@@ -31,6 +31,13 @@ FS_BLOCK ?= 0
 
 HOSTLINK ?= 0
 CPPFLAGS := -Iinclude -Ibuild -DAXOS_SD=$(STORAGE) -DAXFS_BLOCK=$(FS_BLOCK)
+ifeq ($(STORAGE),1)
+CPPFLAGS += -DAXOS_EMBED_USER=0
+KERNEL_USER_DEP = $(USER_ELF)
+else
+CPPFLAGS += -DAXOS_EMBED_USER=1
+KERNEL_USER_DEP = $(USER_IMAGE)
+endif
 # Host-managed personality: the console byte pipe carries the host-link
 # protocol (docs/host-protocol.md) instead of the interactive shell.
 ifeq ($(HOSTLINK),1)
@@ -79,7 +86,7 @@ endif
 all: $(ELF)
 images: $(BIN) $(HEX)
 
-$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) $(USER_IMAGE) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/syscall.h include/loader.h include/fs.h include/sd.h include/role.h include/hostlink.h | build
+$(ELF): $(SOURCES) $(KERNEL_COMPONENT_MK) $(KERNEL_USER_DEP) link.ld include/platform.h include/page.h include/task.h include/scheduler.h include/vm.h include/syscall.h include/loader.h include/fs.h include/sd.h include/role.h include/hostlink.h | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 $(BIN): $(ELF)
@@ -134,20 +141,20 @@ check-memory: images
 	$(MAKE) -B images STORAGE=0
 	python3 check_boot.py --external-memory
 
-check-storage: images
+check-storage: images $(USER_ELF)
 	$(MAKE) -B images STORAGE=1
-	python3 make_fs_image.py build/axfs.img
+	python3 make_fs_image.py $(USER_ELF) build/axfs.img
 	SD_IMAGE=$(abspath build/axfs.img) python3 check_boot.py --external-memory
 
-check-storage-write: images
+check-storage-write: images $(USER_ELF)
 	$(MAKE) -B images STORAGE=1
-	python3 make_fs_image.py build/axfs.img
+	python3 make_fs_image.py $(USER_ELF) build/axfs.img
 	SD_IMAGE=$(abspath build/axfs.img) python3 check_boot.py --storage-write
 
 boot-disk: images
 	$(MAKE) -B images STORAGE=1 FS_BLOCK=64
 	$(MAKE) -C ../bootrom images
-	python3 make_boot_disk.py build/axos_boot.bin build/axos_boot.img
+	python3 make_boot_disk.py build/axos_boot.bin $(USER_ELF) build/axos_boot.img
 
 check-sdboot: boot-disk
 	SD_IMAGE=$(abspath build/axos_boot.img) BOOT_ROM=$(abspath ../bootrom/build/bootrom.hex) python3 check_boot.py --sd-boot

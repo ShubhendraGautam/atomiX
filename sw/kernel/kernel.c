@@ -8,7 +8,9 @@
 #include "scheduler.h"
 #include "syscall.h"
 #include "task.h"
+#if AXOS_EMBED_USER
 #include "userprog_image.h"
+#endif
 #include "vm.h"
 
 enum {
@@ -40,6 +42,15 @@ static volatile uint32_t console_mask;
  * apply the fork demo's assertion to every program that ever runs. */
 static volatile uint32_t expect_fork_markers;
 static uint32_t scheduler_free_pages;
+
+#if !AXOS_EMBED_USER
+/* Storage personalities load the first user program from AXFS instead of
+ * carrying a second copy inside the kernel image. This staging buffer is BSS,
+ * so it consumes runtime RAM but no boot-image sectors. */
+enum { STORAGE_USER_IMAGE_MAX = 24u * 1024u };
+static uint8_t storage_user_image[STORAGE_USER_IMAGE_MAX]
+    __attribute__((aligned(4), section(".noinit")));
+#endif
 
 /* Kept below the 128 KiB SoC RAM limit and aligned to their physical pages.
  * The root maps the three superpages needed by the first kernel; test_finisher
@@ -492,13 +503,28 @@ void kernel_fork_demo(void) {
   for (;;) __asm__ volatile("wfi");
 }
 
-/* Load and run the embedded ELF.  The program's own exit code is the verdict:
- * it checks its .data, .bss, and .rodata before printing, so a clean exit means
- * the loader mapped every segment correctly and with the right permissions. */
+/* Load and run the user ELF. The diskless personality uses the embedded loader
+ * fixture; an SD personality reads the same ELF from AXFS. The program's own
+ * exit code checks that every segment was mapped with the right contents. */
 void kernel_exec_demo(void) {
   expect_fork_markers = 0;
   scheduler_free_pages = page_free_count();
+#if AXOS_EMBED_USER
   scheduler_make_loaded_task(0, axos_user_image, axos_user_image_size);
+#else
+  (void)fs_mount();
+  const int file = fs_lookup("hello.elf");
+  const int32_t size = file < 0 ? -1 : fs_size(file);
+  if (size <= 0 || (uint32_t)size > sizeof(storage_user_image)) {
+    uart_puts("[kernel] user image missing or too large\n");
+    test_finish(22);
+  }
+  if (fs_read(file, 0, storage_user_image, (uint32_t)size) != size) {
+    uart_puts("[kernel] user image read failed\n");
+    test_finish(23);
+  }
+  scheduler_make_loaded_task(0, storage_user_image, (uint32_t)size);
+#endif
   scheduler_running = 1;
   clint_arm_timer(2000);
   for (;;) __asm__ volatile("wfi");

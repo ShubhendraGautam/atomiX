@@ -9,7 +9,7 @@ CLINT-driven preemptive scheduling, and a minimal U-mode process model.
 context; `SYS_WAIT` blocks and later reaps the child; `SYS_EXIT` releases every
 process page; `SYS_CONSOLE_PUTC` is the first user-visible write syscall.
 
-## Shell and RAM disk
+## Shell and filesystem
 
 The resident shell runs in S-mode and uses the platform 16550 RX/TX console.
 It supports `help`, `ls`, `cat NAME`, `write NAME TEXT`, `echo`, `fork`,
@@ -26,12 +26,17 @@ doorbell/status/descriptor cycle.  The shell `role` command prints the
 discovered role and, for `role.loopback`, drives one copy job end-to-end as a
 self-test.  Per-role job marshaling (GEMM for TPU-lite, SIMT kernels for
 GPU-compute) and the host-link service that will call this driver on behalf of
-remote requests layer on top of this same header driver.  Evidence:
-`make -C sw/kernel check-role-driver`. The initial immutable RAM disk is a named-file table. An optional AXFS
-v1 SD image path runs on cached external-memory RTL: `check-storage`
-mounts `motd` and `readme` through the kernel SPI block driver. `write` creates
-or replaces one sector-sized AXFS file through SD CMD24; it is deliberately not
-a crash-safe general filesystem. The RAM disk remains the ISS/QEMU fallback.
+remote requests layer on top of this same header driver. Evidence:
+`make -C sw/kernel check-role-driver`.
+
+The initial immutable RAM disk is a named-file table. An optional AXFS v1 SD
+image path runs on cached external-memory RTL: `check-storage` mounts `motd`,
+`readme`, and `hello.elf` through the kernel SPI block driver. Packaged files
+may occupy contiguous sector extents, while `write` creates or replaces one
+sector-sized AXFS file through SD CMD24; it is deliberately not a crash-safe
+general filesystem. Storage builds load `hello.elf` from AXFS for `exec`, which
+keeps the boot kernel below the sector-64 filesystem boundary. Diskless
+ISS/QEMU/RTL builds retain the built-in root and embedded user program.
 
 `fork` launches the U-mode parent/child demonstration. The child gets return
 value zero; the parent receives a child PID, blocks in `wait`, wakes when the
@@ -83,10 +88,11 @@ make -C sw/kernel kernel-component-test QEMU=/path/to/qemu-system-riscv32
 ```
 
 `check-sdboot` builds `build/axos_boot.img`, a bootable SD-card image with the
-kernel at its ROM-loader location and AXFS at sector 64. It then proves the
-ROM loader, the real `axsdram` pin-level controller model, and the mounted
-shell in one RTL run. See [docs/ulx3s-bringup.md](../../docs/ulx3s-bringup.md)
-to use the same image on an ULX3S.
+kernel at its ROM-loader location and AXFS (including `hello.elf`) at sector
+64. It then proves the ROM loader, the real `axsdram` pin-level controller
+model, the mounted shell, and filesystem-backed ELF execution in one RTL run.
+See [docs/ulx3s-bringup.md](../../docs/ulx3s-bringup.md) to use the same image
+on an ULX3S.
 
 To run the RTL console with a reproducible command script:
 

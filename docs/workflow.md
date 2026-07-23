@@ -281,6 +281,9 @@ make -C rtl/fpga synth COMPONENT_CONFIG=$PWD/configs/tangprimer25k.json # GW5A n
 so it passes with only `yosys` installed. For both Tang profiles it must map
 the 32 KB RAM to block RAM (`DPB` cells), not flip-flops — the memory uses
 registered reads (`axram` `SYNC_READ=1`) precisely so it infers BSRAM.
+Generated sources, logs, netlists, and bitstreams live in separate
+configuration-keyed directories below `rtl/fpga/build/`, so switching between
+CPU, GPU, and TPU profiles cannot reuse a sibling profile's artifact.
 
 ### 4.3 Synthesis, place-and-route, bitstream
 ```bash

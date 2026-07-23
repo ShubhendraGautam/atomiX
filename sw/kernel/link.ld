@@ -28,6 +28,13 @@ SECTIONS {
     __bss_end = .;
   } > RAM
 
+  /* Storage builds stage a filesystem-backed ELF here. The file read fills
+   * every consumed byte, so clearing this region during boot is wasted work,
+   * especially through the physical SDRAM controller. */
+  .noinit (NOLOAD) : {
+    *(.noinit*)
+  } > RAM
+
   /* Reserve one page for the initial M/S/trap stack. The allocator owns only
    * pages below this boundary, never the live bootstrap stack. */
   __stack_bottom = ORIGIN(RAM) + LENGTH(RAM) - 4K;

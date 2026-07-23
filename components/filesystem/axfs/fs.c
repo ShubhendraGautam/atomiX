@@ -1,9 +1,10 @@
 /* filesystem.axfs: AXFS v1, plus the built-in root a diskless boot mounts.
  *
  * AXFS v1 is deliberately tiny: one 512-byte superblock holding up to eight
- * 24-byte directory entries, and one 512-byte block per file.  It is a real
- * on-disk format rather than an in-memory table, which is what makes the SD
- * path a storage test.
+ * 24-byte directory entries. Each entry names a contiguous extent, so packaged
+ * read-only files may span blocks; runtime writes remain one block. It is a
+ * real on-disk format rather than an in-memory table, which is what makes the
+ * SD path a storage test.
  *
  * The built-in root exists because a machine with no card still has to have
  * files: the shell's `ls`/`cat` and the ABI's `openat`/`read` both need
@@ -74,7 +75,9 @@ static void write_u32(uint8_t *p, uint32_t value) {
 static uint32_t next_free_block(void) {
   uint32_t result = AXFS_BLOCK + 1;
   for (uint32_t i = 0; i < entry_count; ++i) {
-    const uint32_t end = entries[i].block + 1;  // AXFS v1 files are <= 512 B.
+    uint32_t blocks = (entries[i].length + 511u) / 512u;
+    if (blocks == 0) blocks = 1;  /* Runtime-created empty files own a block. */
+    const uint32_t end = entries[i].block + blocks;
     if (end > result) result = end;
   }
   return result;
@@ -98,7 +101,7 @@ static int mount_disk(void) {
     entries[i].block = read_u32(disk + 16);
     entries[i].length = read_u32(disk + 20);
     entries[i].builtin = 0;
-    if (entries[i].length > 512) return -1;
+    if (entries[i].block <= AXFS_BLOCK) return -1;
   }
   return 0;
 }
@@ -155,22 +158,33 @@ int32_t fs_read(int id, uint32_t offset, void *dst, uint32_t len) {
   uint32_t count = file->length - offset;
   if (count > len) count = len;
 
-  const uint8_t *src;
   if (file->builtin) {
-    src = file->builtin + offset;
-  } else {
-    if (cached_block != file->block) {
-      /* A v1 file is one block, so a hit here covers the whole file. */
-      if (sd_read_block(file->block, sector)) {
+    const uint8_t *const src = file->builtin + offset;
+    uint8_t *const out = dst;
+    for (uint32_t i = 0; i < count; ++i) out[i] = src[i];
+    return (int32_t)count;
+  }
+
+  uint8_t *const out = dst;
+  uint32_t cursor = offset;
+  uint32_t copied = 0;
+  while (copied < count) {
+    const uint32_t block = file->block + cursor / 512u;
+    const uint32_t within = cursor % 512u;
+    uint32_t chunk = 512u - within;
+    if (chunk > count - copied) chunk = count - copied;
+    if (cached_block != block) {
+      if (sd_read_block(block, sector)) {
         cached_block = 0xffffffffu;
         return -1;
       }
-      cached_block = file->block;
+      cached_block = block;
     }
-    src = sector + offset;
+    for (uint32_t i = 0; i < chunk; ++i)
+      out[copied + i] = sector[within + i];
+    copied += chunk;
+    cursor += chunk;
   }
-  uint8_t *const out = dst;
-  for (uint32_t i = 0; i < count; ++i) out[i] = src[i];
   return (int32_t)count;
 }
 

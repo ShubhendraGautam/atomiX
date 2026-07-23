@@ -51,6 +51,8 @@ custom component may define its own knobs without changing the common resolver.
 | `sim-axos.json` | reference SDRAM machine plus selectable aXos SD-boot payload |
 | `ulx3s-85f.json` | ULX3S/ECP5 board implementation and constraints |
 | `tangnano20k.json` | Tang Nano 20K/GW2A BRAM-only board target |
+| `tangnano20k-gpu.json` | Nano max GPU: minimal host plus 6-lane SIMT engine |
+| `tangnano20k-tpu.json` | Nano max TPU: folded 24-MAC int8 GEMM engine |
 | `tangprimer25k.json` | Tang Primer 25K Dock/GW5A BRAM-only board target |
 | `tangprimer25k-ax2.json` | Primer max CPU: dual-issue AX2, 2 KiB I-cache, 64-entry BTB |
 | `tangprimer25k-gpu.json` | Primer max GPU: minimal host plus 8-lane SIMT engine using 24 DSPs |
